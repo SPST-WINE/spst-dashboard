@@ -3,7 +3,9 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import Airtable from "airtable";
-import { adminAuth } from "@/lib/firebase-admin";
+import { adminAuth } from "@/lib/firebase-admin";  // ← usa alias @
+export const runtime = "nodejs";
+
 
 const base = new Airtable({ apiKey: process.env.AIRTABLE_API_TOKEN as string })
   .base(process.env.AIRTABLE_BASE_ID_SPST as string);
