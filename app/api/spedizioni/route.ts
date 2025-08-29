@@ -1,20 +1,19 @@
 // app/api/spedizioni/route.ts
-export const runtime = "nodejs";
-
 import { NextResponse } from "next/server";
 import Airtable from "airtable";
-import { adminAuth } from "@/lib/firebase-admin";  // ← usa alias @
-export const runtime = "nodejs";
+import { adminAuth } from "@/lib/firebase-admin";
 
+export const runtime = "nodejs"; // <-- solo UNA volta
 
-const base = new Airtable({ apiKey: process.env.AIRTABLE_API_TOKEN as string })
-  .base(process.env.AIRTABLE_BASE_ID_SPST as string);
+const base = new Airtable({
+  apiKey: process.env.AIRTABLE_API_TOKEN as string,
+}).base(process.env.AIRTABLE_BASE_ID_SPST as string);
 
 async function listByEmail(table: string, email: string) {
   const records = await base(table)
     .select({ filterByFormula: `{Mail Cliente} = '${email}'`, maxRecords: 200 })
     .all();
-  return records.map(r => ({ id: r.id, ...r.fields }));
+  return records.map((r) => ({ id: r.id, ...r.fields }));
 }
 
 export async function GET(req: Request) {
