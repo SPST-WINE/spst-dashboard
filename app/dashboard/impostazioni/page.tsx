@@ -1,5 +1,5 @@
-// app/dashboard/impostazioni/page.tsx
 "use client";
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { authedJson } from "@/lib/authed-fetch";
 
@@ -15,15 +15,28 @@ type FormData = {
 export default function Page() {
   const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm<FormData>();
 
+  // Prefill dai dati esistenti
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await authedJson("/api/utenti");
+        if (data) {
+          const { id, ...fields } = data;
+          reset(fields);
+        }
+      } catch {
+        // se 401/404 va bene, semplicemente form vuoto
+      }
+    })();
+  }, [reset]);
+
   async function onSubmit(values: FormData) {
     await authedJson("/api/utenti", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(values),
     });
-    // opzionale: feedback
     alert("Impostazioni salvate");
-    reset(values);
   }
 
   return (
