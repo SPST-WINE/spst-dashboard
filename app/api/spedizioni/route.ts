@@ -1,3 +1,4 @@
+// app/api/spedizioni/route.ts
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
@@ -28,10 +29,11 @@ export async function GET(req: Request) {
     listByEmail(process.env.AIRTABLE_TABLE_SPEDIZIONI_RIV as string, email),
   ]);
 
-  return NextResponse.json(
-    [...a, ...b].sort((x: any, y: any) =>
-      new Date(y["Data Ritiro"] || y["Data"] || 0).getTime() -
-      new Date(x["Data Ritiro"] || x["Data"] || 0).getTime()
-    )
-  );
+  const all = [...a, ...b].sort((x: any, y: any) => {
+    const dx = new Date(x["Data Ritiro"] || x["Data"] || 0).getTime();
+    const dy = new Date(y["Data Ritiro"] || y["Data"] || 0).getTime();
+    return dy - dx;
+  });
+
+  return NextResponse.json(all);
 }
