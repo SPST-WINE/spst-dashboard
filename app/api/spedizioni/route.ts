@@ -1,4 +1,4 @@
-export const runtime = "nodejs"; // firebase-admin non va su edge
+export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import Airtable from "airtable";
@@ -15,28 +15,23 @@ async function listByEmail(table: string, email: string) {
 }
 
 export async function GET(req: Request) {
-  try {
-    const authHeader = req.headers.get("authorization") ?? "";
-    const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
-    if (!idToken) return NextResponse.json({ error: "No token" }, { status: 401 });
+  const authHeader = req.headers.get("authorization") ?? "";
+  const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!idToken) return NextResponse.json({ error: "No token" }, { status: 401 });
 
-    const decoded = await adminAuth().verifyIdToken(idToken);
-    const email = decoded.email;
-    if (!email) return NextResponse.json({ error: "No email" }, { status: 403 });
+  const decoded = await adminAuth().verifyIdToken(idToken);
+  const email = decoded.email;
+  if (!email) return NextResponse.json({ error: "No email" }, { status: 403 });
 
-    const [a, b] = await Promise.all([
-      listByEmail(process.env.AIRTABLE_TABLE_SPEDIZIONI as string, email),
-      listByEmail(process.env.AIRTABLE_TABLE_SPEDIZIONI_RIV as string, email),
-    ]);
+  const [a, b] = await Promise.all([
+    listByEmail(process.env.AIRTABLE_TABLE_SPEDIZIONI as string, email),
+    listByEmail(process.env.AIRTABLE_TABLE_SPEDIZIONI_RIV as string, email),
+  ]);
 
-    const all = [...a, ...b].sort((x: any, y: any) => {
-      const dx = new Date(x["Data Ritiro"] || x["Data"] || 0).getTime();
-      const dy = new Date(y["Data Ritiro"] || y["Data"] || 0).getTime();
-      return dy - dx;
-    });
-
-    return NextResponse.json(all);
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
-  }
+  return NextResponse.json(
+    [...a, ...b].sort((x: any, y: any) =>
+      new Date(y["Data Ritiro"] || y["Data"] || 0).getTime() -
+      new Date(x["Data Ritiro"] || x["Data"] || 0).getTime()
+    )
+  );
 }
