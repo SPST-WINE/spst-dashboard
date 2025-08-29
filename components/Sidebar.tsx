@@ -1,4 +1,3 @@
-// components/Sidebar.tsx
 import Link from "next/link";
 
 function Item({ href, label }: { href: string; label: string }) {
