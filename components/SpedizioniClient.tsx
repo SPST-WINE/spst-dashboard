@@ -1,13 +1,14 @@
-// components/SpedizioniClient.tsx
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { authClient } from "@/lib/firebase-client";
 import { authedJson } from "@/lib/authed-fetch";
+import ShipmentCard from "./ShipmentCard";
 
 export default function SpedizioniClient() {
   const [data, setData] = useState<any[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [q, setQ] = useState("");
 
   useEffect(() => {
     const unsub = onAuthStateChanged(authClient(), async (user) => {
@@ -15,39 +16,51 @@ export default function SpedizioniClient() {
       try {
         const json = await authedJson("/api/spedizioni");
         setData(json);
-      } catch (e: any) {
-        setErr(e.message || "Errore");
-      }
+      } catch (e: any) { setErr(e.message || "Errore"); }
     });
     return () => unsub();
   }, []);
 
+  const filtered = useMemo(() => {
+    if (!data) return null;
+    const term = q.trim().toLowerCase();
+    if (!term) return data;
+    return data.filter((r) => {
+      const f = r as any;
+      return (
+        String(f["ID Spedizione"] || "").toLowerCase().includes(term) ||
+        String(f["Destinatario"] || "").toLowerCase().includes(term) ||
+        String(f["Città Destinatario"] || "").toLowerCase().includes(term) ||
+        String(f["Paese Destinatario"] || "").toLowerCase().includes(term)
+      );
+    });
+  }, [data, q]);
+
   if (err) return <div className="p-4 text-red-600">Errore: {err}</div>;
-  if (!data) return <div className="p-4">Caricamento…</div>;
-  if (data.length === 0) return <div className="p-4">Nessuna spedizione.</div>;
+  if (!filtered) return <div className="p-4">Caricamento…</div>;
+  if (!filtered.length) return (
+    <div className="p-6 text-sm text-gray-600 border rounded-2xl">
+      Nessuna spedizione trovata.
+    </div>
+  );
 
   return (
-    <div className="overflow-auto border rounded-2xl">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-gray-50 text-left">
-            <th className="p-3">ID</th>
-            <th className="p-3">Cliente</th>
-            <th className="p-3">Data ritiro</th>
-            <th className="p-3">Stato</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((s: any) => (
-            <tr key={s.id} className="border-t">
-              <td className="p-3">{s["ID Spedizione"] || s.id}</td>
-              <td className="p-3">{s["Mail Cliente"] || "-"}</td>
-              <td className="p-3">{s["Data Ritiro"] || "-"}</td>
-              <td className="p-3">{s["Stato"] || "-"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <input
+          className="w-full md:max-w-md border rounded-lg px-3 py-2"
+          placeholder="Cerca per ID, destinatario, città, paese…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        <div className="text-sm text-gray-500">{filtered.length} risultati</div>
+      </div>
+
+      <div className="grid gap-3">
+        {filtered.map((r: any) => (
+          <ShipmentCard key={r.id || r["ID Spedizione"]} f={r} />
+        ))}
+      </div>
     </div>
   );
 }
