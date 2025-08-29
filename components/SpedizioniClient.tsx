@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { authClient } from "@/lib/firebase-client";
+import { authedJson } from "@/lib/authed-fetch";
 
 export default function SpedizioniClient() {
   const [data, setData] = useState<any[] | null>(null);
@@ -12,13 +13,8 @@ export default function SpedizioniClient() {
     const unsub = onAuthStateChanged(authClient(), async (user) => {
       if (!user) return;
       try {
-        const idToken = await user.getIdToken();
-        const res = await fetch("/api/spedizioni", {
-          headers: { Authorization: "Bearer " + idToken },
-          cache: "no-store",
-        });
-        if (!res.ok) throw new Error(await res.text());
-        setData(await res.json());
+        const json = await authedJson("/api/spedizioni");
+        setData(json);
       } catch (e: any) {
         setErr(e.message || "Errore");
       }
