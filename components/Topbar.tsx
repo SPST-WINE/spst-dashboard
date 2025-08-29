@@ -1,4 +1,3 @@
-// components/Topbar.tsx
 "use client";
 import { signOut } from "firebase/auth";
 import { authClient } from "@/lib/firebase-client";
