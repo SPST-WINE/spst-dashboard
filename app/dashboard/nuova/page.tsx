@@ -220,4 +220,51 @@ export default function NuovaSpedizionePage() {
             <Text label="Link fattura (proforma/commerciale)" value={fattURL} onChange={setFattURL} placeholder="https://..." />
             <div className="flex items-center gap-2">
               <input id="delega" type="checkbox" className="h-4 w-4" checked={delegaFatt} onChange={e => setDelegaFatt(e.target.checked)} />
-              <label htmlFor="delega" className="text-sm">Non ho un documento: delego creaz
+              <label htmlFor="delega" className="text-sm">Non ho un documento: delego creazione a SPST</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {msg && (
+        <div className={['rounded-md px-3 py-2 text-sm',
+          msg.t==='ok' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'].join(' ')}
+        >
+          {msg.m}
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <button disabled={!canSave || saving} onClick={onSubmit}
+          className={['rounded-lg px-4 py-2 text-sm font-medium border',
+                      !canSave || saving ? 'opacity-60 cursor-not-allowed' : 'bg-spst-blue text-white hover:opacity-95'].join(' ')}>
+          {saving ? 'Salvataggio…' : 'Crea spedizione'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- piccoli input helper ---------- */
+function Text({ label, value, onChange, placeholder, className='' }:{label:string; value:string; onChange:(v:string)=>void; placeholder?:string; className?:string}) {
+  return (
+    <div className={className}>
+      <label className="mb-1 block text-sm font-medium">{label}</label>
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+             className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20"/>
+    </div>
+  );
+}
+function Number({ label, value, onChange, className='' }:{label:string; value:number; onChange:(v:number)=>void; className?:string}) {
+  return (
+    <div className={className}>
+      <label className="mb-1 block text-sm font-medium">{label}</label>
+      <input type="number" value={value} onChange={e => onChange(parseFloat(e.target.value || '0'))}
+             className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20"/>
+    </div>
+  );
+}
+function TextArea({ value, onChange, placeholder }:{value:string; onChange:(v:string)=>void; placeholder?:string}) {
+  return <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+                   className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20" rows={3} />;
+}
