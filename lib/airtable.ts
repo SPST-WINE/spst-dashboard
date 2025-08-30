@@ -1,21 +1,17 @@
-// lib/airtable.ts
-import Airtable from "airtable";
+const API = 'https://api.airtable.com/v0';
+const base = process.env.AIRTABLE_BASE_SPST!;
+const table = process.env.AIRTABLE_TABLE_SPEDIZIONI!;
+const headers = { Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}` };
 
-export const base = new Airtable({
-  apiKey: process.env.AIRTABLE_API_TOKEN as string,
-}).base(process.env.AIRTABLE_BASE_ID_SPST as string);
+export async function listSpedizioni() {
+  const url = new URL(`${API}/${base}/${encodeURIComponent(table)}`);
+  const res = await fetch(url.toString(), { headers, cache: 'no-store' });
+  const data = await res.json();
+  return data.records as any[];
+}
 
-export async function upsertUtente(email: string, fields: Record<string, any>) {
-  const table = base(process.env.AIRTABLE_TABLE_UTENTI || "UTENTI");
-  const found = await table
-    .select({ filterByFormula: `{Mail Cliente} = '${email}'`, maxRecords: 1 })
-    .firstPage();
-
-  if (found[0]) {
-    await table.update(found[0].id, fields as any);
-    return found[0].id;
-  } else {
-    const created = await table.create([{ fields: { "Mail Cliente": email, ...fields } as any }]);
-    return created[0].id;
-  }
+export async function getSpedizione(id: string) {
+  const res = await fetch(`${API}/${base}/${encodeURIComponent(table)}/${id}`, { headers, cache:'no-store' });
+  if (!res.ok) return null;
+  return await res.json();
 }
