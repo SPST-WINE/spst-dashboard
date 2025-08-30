@@ -4,7 +4,7 @@ import { upsertUtente, getUtenteByEmail } from '@/lib/airtable';
 
 export const runtime = 'nodejs';
 
-// GET /api/utenti?email=foo@bar.com  (MVP semplice)
+// GET /api/utenti?email=foo@bar.com
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const email = searchParams.get('email');
@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   }
 }
 
-// POST /api/utenti  body: { email, ...fieldsConsentiti }
+// POST /api/utenti  body: { email, ...fields }
 export async function POST(req: Request) {
   try {
     const body = await req.json();
