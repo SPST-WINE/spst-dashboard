@@ -5,23 +5,10 @@ const HDRS = { Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}` };
 const TBL_SPEDIZIONI = process.env.AIRTABLE_TABLE_SPEDIZIONI || 'SPEDIZIONI';
 const TBL_UTENTI = process.env.AIRTABLE_TABLE_UTENTI || 'UTENTI';
 
-export async function listSpedizioni() {
-  const url = new URL(`${API}/${AIRTABLE_BASE}/${encodeURIComponent(TBL_SPEDIZIONI)}`);
-  const res = await fetch(url, { headers: HDRS, cache: 'no-store' });
-  const data = await res.json();
-  return data.records as any[];
-}
-
-export async function getSpedizione(id: string) {
-  const res = await fetch(`${API}/${AIRTABLE_BASE}/${encodeURIComponent(TBL_SPEDIZIONI)}/${id}`, {
-    headers: HDRS, cache: 'no-store',
-  });
-  if (!res.ok) return null;
-  return await res.json();
-}
+// ... costanti come prima ...
 
 export async function getUtenteByEmail(email: string) {
-  const f = encodeURIComponent(`{Email} = '${email.replace(/'/g, "\\'")}'`);
+  const f = encodeURIComponent(`{Mail Cliente} = '${email.replace(/'/g, "\\'")}'`);
   const listUrl = `${API}/${AIRTABLE_BASE}/${encodeURIComponent(TBL_UTENTI)}?filterByFormula=${f}&maxRecords=1`;
   const listRes = await fetch(listUrl, { headers: HDRS, cache: 'no-store' });
   const list = await listRes.json();
@@ -35,14 +22,20 @@ export async function upsertUtente(email: string, payload: Record<string, any>) 
     const patchRes = await fetch(`${API}/${AIRTABLE_BASE}/${encodeURIComponent(TBL_UTENTI)}`, {
       method: 'PATCH',
       headers: { ...HDRS, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ records: [{ id: existing.id, fields: { Email: email, ...payload } }], typecast: true }),
+      body: JSON.stringify({
+        records: [{ id: existing.id, fields: { 'Mail Cliente': email, ...payload } }],
+        typecast: true,
+      }),
     });
     return patchRes.json();
   }
   const postRes = await fetch(`${API}/${AIRTABLE_BASE}/${encodeURIComponent(TBL_UTENTI)}`, {
     method: 'POST',
     headers: { ...HDRS, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ records: [{ fields: { Email: email, ...payload } }], typecast: true }),
+    body: JSON.stringify({
+      records: [{ fields: { 'Mail Cliente': email, ...payload } }],
+      typecast: true,
+    }),
   });
   return postRes.json();
 }
