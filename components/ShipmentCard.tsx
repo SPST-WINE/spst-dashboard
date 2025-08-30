@@ -2,18 +2,20 @@
 import Link from 'next/link';
 import { Package, User2, CalendarDays, FileDown } from 'lucide-react';
 
+type ShipmentFields = {
+  ID?: string;
+  Destinatario?: string;
+  DataRitiro?: string;
+  LetteraDiVetturaURL?: string;
+  ProformaURL?: string;
+  DLEURL?: string;
+  Stato?: string;
+};
+
 type Props = {
   data: {
     id: string;
-    fields: {
-      ID?: string;
-      Destinatario?: string;
-      DataRitiro?: string;
-      LetteraDiVetturaURL?: string;
-      ProformaURL?: string;
-      DLEURL?: string;
-      Stato?: string;
-    };
+    fields: ShipmentFields;
   };
 };
 
@@ -23,7 +25,7 @@ export default function ShipmentCard({ data }: Props) {
     { label: 'Lettera di Vettura', href: f.LetteraDiVetturaURL },
     { label: 'Proforma+Packing', href: f.ProformaURL },
     { label: 'DLE', href: f.DLEURL },
-  ].filter(d => !!d.href) as { label: string; href: string }[];
+  ].filter(Boolean) as { label: string; href: string }[];
 
   return (
     <div className="group rounded-xl border bg-white p-4 shadow-sm hover:shadow-md transition">
