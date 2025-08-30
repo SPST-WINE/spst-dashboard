@@ -1,9 +1,23 @@
-/* globals.css */
+/* app/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-@import 'react-day-picker/dist/style.css';
 
-:root { --font-inter: 'Inter'; }
+/* Brand helpers */
+:root {
+  --spst-blue: #1c3e5e;
+  --spst-orange: #f7911e;
+}
 
-html, body, * { font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, 'Apple Color Emoji','Segoe UI Emoji'; }
+/* DayPicker brand tweaks (opzionali) */
+.rdp-day_selected,
+.rdp-day_selected:focus-visible,
+.rdp-day_selected:hover {
+  background-color: var(--spst-blue);
+  color: #fff;
+}
+
+.rdp-button_reset:focus-visible {
+  outline: 2px solid rgba(28,62,94,0.3);
+  outline-offset: 2px;
+}
