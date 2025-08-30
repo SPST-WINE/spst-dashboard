@@ -1,5 +1,6 @@
 // app/layout.tsx  (ROOT LAYOUT)
 import './globals.css';
+import 'react-day-picker/dist/style.css';
 import { Inter } from 'next/font/google';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
