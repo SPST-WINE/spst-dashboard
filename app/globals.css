@@ -1,5 +1,8 @@
+/* globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-html, body { background:#f7f9fc; color:#0f172a; }
+:root { --font-inter: 'Inter'; }
+
+html, body, * { font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, 'Apple Color Emoji','Segoe UI Emoji'; }
