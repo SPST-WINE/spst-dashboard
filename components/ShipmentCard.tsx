@@ -12,20 +12,68 @@ type ShipmentFields = {
   Stato?: string;
 };
 
-type Props = {
-  data: {
-    id: string;
-    fields: ShipmentFields;
-  };
-};
+type AirtableRecord = { id: string; fields: ShipmentFields };
 
-export default function ShipmentCard({ data }: Props) {
-  const f = data.fields ?? {};
+// Supporta sia <ShipmentCard data={...}/> sia <ShipmentCard f={...} onOpen={...}/>
+type Props =
+  | { data: AirtableRecord; onOpen?: () => void }
+  | { f: any; onOpen?: () => void };
+
+function normalizeProps(props: Props): { rec: AirtableRecord; onOpen?: () => void } {
+  if ('data' in props) {
+    return { rec: props.data, onOpen: props.onOpen };
+  }
+  // legacy: props.f è o un record Airtable-like o un plain object con chiavi "italiane"
+  const legacy = props.f ?? {};
+  const id =
+    legacy.id ||
+    legacy.ID ||
+    legacy['ID'] ||
+    legacy['ID Spedizione'] ||
+    legacy['Id Spedizione'] ||
+    '';
+
+  const fields: ShipmentFields =
+    legacy.fields ??
+    ({
+      ID:
+        legacy.ID ||
+        legacy['ID'] ||
+        legacy['ID Spedizione'] ||
+        id,
+      Destinatario: legacy.Destinatario || legacy['Destinatario'],
+      DataRitiro:
+        legacy.DataRitiro ||
+        legacy['Data Ritiro'] ||
+        legacy['Data ritiro'],
+      LetteraDiVetturaURL:
+        legacy.LetteraDiVetturaURL ||
+        legacy['Lettera di Vettura'] ||
+        legacy['LetteraDiVettura'],
+      ProformaURL:
+        legacy.ProformaURL ||
+        legacy['Proforma+Packing'] ||
+        legacy['Fattura Proforma'] ||
+        legacy['Packing List'],
+      DLEURL:
+        legacy.DLEURL ||
+        legacy['DLE'] ||
+        legacy['Dichiarazione di Libera Esportazione'],
+      Stato: legacy.Stato || legacy['Stato'],
+    } as ShipmentFields);
+
+  return { rec: { id, fields }, onOpen: props.onOpen };
+}
+
+export default function ShipmentCard(props: Props) {
+  const { rec, onOpen } = normalizeProps(props);
+  const f = rec.fields ?? {};
+
   const docLinks = [
     { label: 'Lettera di Vettura', href: f.LetteraDiVetturaURL },
     { label: 'Proforma+Packing', href: f.ProformaURL },
     { label: 'DLE', href: f.DLEURL },
-  ].filter(Boolean) as { label: string; href: string }[];
+  ].filter((d) => !!d.href) as { label: string; href: string }[];
 
   return (
     <div className="group rounded-xl border bg-white p-4 shadow-sm hover:shadow-md transition">
@@ -37,7 +85,7 @@ export default function ShipmentCard({ data }: Props) {
           <div>
             <div className="text-sm text-slate-500">Spedizione</div>
             <div className="text-base font-semibold tracking-tight">
-              {f.ID || data.id}
+              {f.ID || rec.id || '—'}
             </div>
 
             <div className="mt-2 grid gap-1 text-sm">
@@ -58,7 +106,7 @@ export default function ShipmentCard({ data }: Props) {
         <div className="flex flex-col items-end gap-2">
           {docLinks.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
-              {docLinks.map(d => (
+              {docLinks.map((d) => (
                 <a
                   key={d.label}
                   href={d.href}
@@ -80,12 +128,22 @@ export default function ShipmentCard({ data }: Props) {
             >
               Supporto WhatsApp
             </a>
-            <Link
-              href={`/dashboard/spedizioni/${data.id}`}
-              className="rounded-md border px-3 py-1.5 text-xs hover:bg-slate-50"
-            >
-              Apri dettagli →
-            </Link>
+
+            {onOpen ? (
+              <button
+                onClick={onOpen}
+                className="rounded-md border px-3 py-1.5 text-xs hover:bg-slate-50"
+              >
+                Apri dettagli →
+              </button>
+            ) : (
+              <Link
+                href={`/dashboard/spedizioni/${rec.id}`}
+                className="rounded-md border px-3 py-1.5 text-xs hover:bg-slate-50"
+              >
+                Apri dettagli →
+              </Link>
+            )}
           </div>
         </div>
       </div>
