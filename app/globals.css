@@ -1,23 +1,8 @@
-/* app/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Brand helpers */
 :root {
   --spst-blue: #1c3e5e;
   --spst-orange: #f7911e;
-}
-
-/* DayPicker brand tweaks (opzionali) */
-.rdp-day_selected,
-.rdp-day_selected:focus-visible,
-.rdp-day_selected:hover {
-  background-color: var(--spst-blue);
-  color: #fff;
-}
-
-.rdp-button_reset:focus-visible {
-  outline: 2px solid rgba(28,62,94,0.3);
-  outline-offset: 2px;
 }
