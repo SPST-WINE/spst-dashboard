@@ -36,34 +36,32 @@ export async function getSpedizione(id: string) {
   return (await res.json()) as Spedizione;
 }
 
-/**
- * Upsert su tabella UTENTI per chiave Email.
- * Se esiste record con Email == email → PATCH; altrimenti → POST.
- */
+export async function getUtenteByEmail(email: string) {
+  const f = encodeURIComponent(`{Email} = '${email.replace(/'/g, "\\'")}'`);
+  const listUrl = `${API}/${AIRTABLE_BASE}/${encodeURIComponent(TBL_UTENTI)}?filterByFormula=${f}&maxRecords=1`;
+  const listRes = await fetch(listUrl, { headers: HDRS, cache: 'no-store' });
+  const list = await listRes.json();
+  if (!Array.isArray(list.records) || list.records.length === 0) return null;
+  return list.records[0];
+}
+
+/** Upsert su tabella UTENTI per chiave Email */
 export async function upsertUtente(email: string, payload: Record<string, any>) {
   if (!email) throw new Error('email required');
 
-  // 1) Cerca esistenza
-  const f = encodeURIComponent(`{Email} = '${email.replace(/'/g, "\\'")}'`);
-  const listUrl = `${API}/${AIRTABLE_BASE}/${encodeURIComponent(TBL_UTENTI)}?filterByFormula=${f}`;
-  const listRes = await fetch(listUrl, { headers: HDRS, cache: 'no-store' });
-  const list = await listRes.json();
-
-  if (Array.isArray(list.records) && list.records.length > 0) {
-    // PATCH
-    const id = list.records[0].id;
+  const existing = await getUtenteByEmail(email);
+  if (existing) {
     const patchRes = await fetch(`${API}/${AIRTABLE_BASE}/${encodeURIComponent(TBL_UTENTI)}`, {
       method: 'PATCH',
       headers: { ...HDRS, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        records: [{ id, fields: { Email: email, ...payload } }],
+        records: [{ id: existing.id, fields: { Email: email, ...payload } }],
         typecast: true,
       }),
     });
     return patchRes.json();
   }
 
-  // POST
   const postRes = await fetch(`${API}/${AIRTABLE_BASE}/${encodeURIComponent(TBL_UTENTI)}`, {
     method: 'POST',
     headers: { ...HDRS, 'Content-Type': 'application/json' },
