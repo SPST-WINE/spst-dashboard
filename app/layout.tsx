@@ -1,9 +1,8 @@
 // app/layout.tsx
 import './clean.css';
 import { Inter } from 'next/font/google';
-import type { Metadata } from 'next';
 
-export const metadata: Metadata = {
+export const metadata = {
   title: 'SPST – Area riservata',
   description: 'Dashboard SPST',
 };
