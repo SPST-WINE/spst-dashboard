@@ -8,7 +8,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <AppSidebar />
       <div className="flex min-h-screen flex-col">
         <AppTopbar />
-        <main className="p-6">{children}</main>
+        <main className="p-6">
+          {/* wrapper centrato e con respiro verticale */}
+          <div className="mx-auto w-full max-w-5xl space-y-6">
+            {children}
+          </div>
+        </main>
       </div>
     </div>
   );
