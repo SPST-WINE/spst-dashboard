@@ -1,17 +1,21 @@
-// app/layout.tsx
-import './globals.css';
-import { Inter } from 'next/font/google';
+// app/dashboard/layout.tsx
+import AppSidebar from '@/components/AppSidebar';
+import AppTopbar from '@/components/AppTopbar';
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
-
-export const metadata = {
-  title: 'SPST Dashboard',
-};
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="it" className={inter.variable}>
-      <body className="font-sans bg-slate-50 text-slate-900">{children}</body>
-    </html>
+    <div className="min-h-screen grid grid-cols-[260px_1fr]">
+      <AppSidebar />
+      <div className="flex min-h-screen flex-col">
+        <AppTopbar />
+        {/* padding solo orizzontale per avere simmetria visiva */}
+        <main className="px-8 py-6">
+          {/* wrapper centrato rispetto alla colonna di destra */}
+          <div className="mx-auto w-full max-w-4xl space-y-6">
+            {children}
+          </div>
+        </main>
+      </div>
+    </div>
   );
 }
