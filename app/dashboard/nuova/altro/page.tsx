@@ -6,7 +6,6 @@ import ColliCard, { Collo } from '@/components/nuova/ColliCard';
 import RitiroCard from '@/components/nuova/RitiroCard';
 import FatturaCard from '@/components/nuova/FatturaCard';
 import { Select } from '@/components/nuova/Field';
-import Switch from '@/components/nuova/Switch';
 
 const blankParty: Party = {
   ragioneSociale: '', referente: '', paese: '', citta: '',
@@ -15,7 +14,6 @@ const blankParty: Party = {
 
 export default function NuovaAltroPage() {
   const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
-  const [destAbilitato, setDestAbilitato] = useState<boolean>(false);
 
   const [mittente, setMittente] = useState<Party>(blankParty);
   const [destinatario, setDestinatario] = useState<Party>(blankParty);
@@ -34,51 +32,22 @@ export default function NuovaAltroPage() {
   const [noteFatt, setNoteFatt] = useState('');
   const [delega, setDelega] = useState(false);
 
-  const salva = () => {
-    console.log({
-      tipoSped,
-      destAbilitato,
-      mittente,
-      destinatario,
-      colli,
-      formato,
-      contenuto,
-      ritiroData,
-      ritiroNote,
-      incoterm,
-      valuta,
-      noteFatt,
-      delega,
-    });
-    alert('Dati raccolti (placeholder).');
-  };
-
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Nuova spedizione — altre spedizioni</h2>
 
-      {/* Tipologia spedizione */}
       <div className="rounded-2xl border bg-white p-4">
         <h3 className="mb-3 text-sm font-semibold text-spst-orange">Tipologia spedizione</h3>
-
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="w-full md:max-w-xl">
-            <Select
-              label="Stai spedendo ad un privato? O ad una azienda?"
-              value={tipoSped}
-              onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Sample')}
-              options={[
-                { label: 'B2C — Sto spedendo ad un privato / cliente', value: 'B2C' },
-                { label: 'B2B — Sto spedendo ad una azienda', value: 'B2B' },
-                { label: 'Sample — Sto spedendo una campionatura ad una azienda / importatore', value: 'Sample' },
-              ]}
-            />
-          </div>
-
-          <Switch
-            checked={destAbilitato}
-            onChange={setDestAbilitato}
-            label="Il destinatario è un soggetto abilitato ad importare vino nel paese di destinazione?"
+        <div className="w-full md:max-w-xl">
+          <Select
+            label="Stai spedendo ad un privato? O ad una azienda?"
+            value={tipoSped}
+            onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Sample')}
+            options={[
+              { label: 'B2C — Sto spedendo ad un privato / cliente', value: 'B2C' },
+              { label: 'B2B — Sto spedendo ad una azienda', value: 'B2B' },
+              { label: 'Sample — Sto spedendo una campionatura ad una azienda / importatore', value: 'Sample' },
+            ]}
           />
         </div>
       </div>
@@ -109,16 +78,6 @@ export default function NuovaAltroPage() {
         delega={delega}
         setDelega={setDelega}
       />
-
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={salva}
-          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
-        >
-          Salva
-        </button>
-      </div>
     </div>
   );
 }
