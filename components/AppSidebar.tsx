@@ -27,7 +27,7 @@ export default function AppSidebar() {
           alt="SPST"
           className="h-6 w-auto"
         />
-        <span className="text-sm font-semibold text-slate-700">— Area Riservata</span>
+        <span className="text-sm font-semibold text-slate-700"> Area Riservata</span>
       </div>
 
       <nav className="px-2 pb-6">
