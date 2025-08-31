@@ -34,10 +34,20 @@ export default function NuovaVinoPage() {
   const [noteFatt, setNoteFatt] = useState('');
   const [delega, setDelega] = useState(false);
 
+  // packing list (nuovi campi: prezzo + valuta)
   const [pl, setPl] = useState<RigaPL[]>([{
-    etichetta: '', bottiglie: 1, formato_litri: 0.75, gradazione: 12,
-    costo_unit: 0, peso_netto_bott: 0.75, peso_lordo_bott: 1.3,
+    etichetta: '',
+    bottiglie: 1,
+    formato_litri: 0.75,
+    gradazione: 12,
+    prezzo: 0,
+    valuta: 'EUR',
+    peso_netto_bott: 0.75,
+    peso_lordo_bott: 1.3,
   }]);
+
+  // allegato opzionale della packing list
+  const [plFile, setPlFile] = useState<File | undefined>(undefined);
 
   const salva = () => {
     console.log({
@@ -54,6 +64,7 @@ export default function NuovaVinoPage() {
       noteFatt,
       delega,
       packingList: pl,
+      packingListFileName: plFile?.name ?? null,
     });
     alert('Dati raccolti (placeholder).');
   };
@@ -62,11 +73,9 @@ export default function NuovaVinoPage() {
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Nuova spedizione — vino</h2>
 
-      {/* Tipologia spedizione — stessa larghezza delle card mittente/destinatario */}
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-2xl border bg-white p-4">
           <h3 className="mb-3 text-sm font-semibold text-spst-orange">Tipologia spedizione</h3>
-
           <div className="space-y-3">
             <Select
               label="Stai spedendo ad un privato? O ad una azienda?"
@@ -78,7 +87,6 @@ export default function NuovaVinoPage() {
                 { label: 'Sample — Sto spedendo una campionatura ad una azienda / importatore', value: 'Sample' },
               ]}
             />
-
             <Switch
               checked={destAbilitato}
               onChange={setDestAbilitato}
@@ -86,8 +94,6 @@ export default function NuovaVinoPage() {
             />
           </div>
         </div>
-
-        {/* colonna destra vuota per mantenere simmetria su desktop */}
         <div className="hidden md:block" />
       </div>
 
@@ -106,7 +112,13 @@ export default function NuovaVinoPage() {
       />
 
       <RitiroCard date={ritiroData} setDate={setRitiroData} note={ritiroNote} setNote={setRitiroNote} />
-      <PackingListVino righe={pl} onChange={setPl} />
+
+      <PackingListVino
+        righe={pl}
+        onChange={setPl}
+        allegato={plFile}
+        setAllegato={setPlFile}
+      />
 
       <FatturaCard
         incoterm={incoterm}
