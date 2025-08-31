@@ -1,0 +1,16 @@
+/* Stili leggeri per react-day-picker */
+.rdp { --rdp-accent:#1c3e5e; margin:0; font-size:14px; }
+.rdp-months { display:flex; gap:1rem; }
+.rdp-month { background:white; }
+.rdp-caption { display:flex; justify-content:space-between; align-items:center; padding:.5rem 0; font-weight:600; color:#0f172a; }
+.rdp-nav_button { width:2rem; height:2rem; border:1px solid #e2e8f0; border-radius:.5rem; }
+.rdp-nav_button:hover { background:#f1f5f9; }
+.rdp-table { width:100%; border-collapse:collapse; }
+.rdp-head_cell { padding:.25rem .5rem; font-weight:600; font-size:.75rem; color:#64748b; text-transform:lowercase; }
+.rdp-cell { padding:.125rem; }
+.rdp-day { width:2.25rem; height:2.25rem; border-radius:.5rem; line-height:2.25rem; }
+.rdp-day:hover { background:#f1f5f9; }
+.rdp-day_selected,
+.rdp-day_selected:focus-visible,
+.rdp-day_selected:hover { background:var(--rdp-accent); color:#fff; }
+.rdp-day_today { outline:2px solid rgba(28,62,94,.25); outline-offset:2px; border-radius:.5rem; }
