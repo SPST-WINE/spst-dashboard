@@ -1,108 +1,191 @@
 'use client';
 
-import { NumberField, Select, Text } from './Field';
-import { useMemo } from 'react';
+import React from 'react';
 
 export type Collo = {
-  lunghezza_cm: number;
-  larghezza_cm: number;
-  altezza_cm: number;
-  peso_kg: number;
+  lunghezza_cm: number | null;
+  larghezza_cm: number | null;
+  altezza_cm: number | null;
+  peso_kg: number | null;
 };
 
 type Props = {
   colli: Collo[];
-  onChange: (next: Collo[]) => void;
+  onChange: (c: Collo[]) => void;
+
   formato: 'Pacco' | 'Pallet';
-  setFormato: (v: 'Pacco' | 'Pallet') => void;
+  setFormato: (f: 'Pacco' | 'Pallet') => void;
+
   contenuto: string;
   setContenuto: (v: string) => void;
 };
 
+const toNum = (v: number | null) => (typeof v === 'number' && !isNaN(v) ? v : 0);
+const strVal = (v: number | null) => (v === null || isNaN(v as number) ? '' : String(v));
+
 export default function ColliCard({
-  colli, onChange, formato, setFormato, contenuto, setContenuto,
+  colli,
+  onChange,
+  formato,
+  setFormato,
+  contenuto,
+  setContenuto,
 }: Props) {
-  const setCollo =
-    (i: number, key: keyof Collo) =>
-    (v: number) => {
-      const next = [...colli];
-      next[i] = { ...next[i], [key]: v };
-      onChange(next);
+  const setField = (
+    index: number,
+    key: keyof Collo,
+    raw: string
+  ) => {
+    const next = [...colli];
+    const cleaned = raw.replace(',', '.'); // accetta virgola
+    next[index] = {
+      ...next[index],
+      [key]: cleaned === '' ? null : Number(cleaned),
     };
+    onChange(next);
+  };
 
   const addCollo = () =>
-    onChange([...colli, { lunghezza_cm: 0, larghezza_cm: 0, altezza_cm: 0, peso_kg: 0 }]);
+    onChange([
+      ...colli,
+      { lunghezza_cm: null, larghezza_cm: null, altezza_cm: null, peso_kg: null },
+    ]);
 
-  const removeCollo = (i: number) => onChange(colli.filter((_, idx) => idx !== i));
+  const removeCollo = (i: number) => {
+    const next = colli.filter((_, idx) => idx !== i);
+    onChange(next.length ? next : [{ lunghezza_cm: null, larghezza_cm: null, altezza_cm: null, peso_kg: null }]);
+  };
 
-  const totals = useMemo(() => {
-    const pesoReale = colli.reduce((s, c) => s + (c.peso_kg || 0), 0);
-    const volKg = colli.reduce((s, c) => {
-      const vol = ((c.lunghezza_cm || 0) * (c.larghezza_cm || 0) * (c.altezza_cm || 0)) / 4000;
-      return s + vol;
-    }, 0);
-    const tariffato = Math.max(pesoReale, volKg);
-    return { pesoReale, volKg, tariffato };
-  }, [colli]);
+  const totalePesoReale = colli.reduce((s, c) => s + toNum(c.peso_kg), 0);
+  const totaleVolumetrico = colli.reduce(
+    (s, c) =>
+      s + (toNum(c.lunghezza_cm) * toNum(c.larghezza_cm) * toNum(c.altezza_cm)) / 4000,
+    0
+  );
+  const pesoTariffato = Math.max(totalePesoReale, totaleVolumetrico);
 
   return (
     <div className="rounded-2xl border bg-white p-4">
       <h3 className="mb-3 text-sm font-semibold text-spst-orange">Colli</h3>
 
-      <div className="mb-3 grid gap-3 md:grid-cols-3">
-        <Select
-          label="Formato"
-          value={formato}
-          onChange={(v) => setFormato(v as 'Pacco' | 'Pallet')}
-          options={[
-            { label: 'Pacco', value: 'Pacco' },
-            { label: 'Pallet', value: 'Pallet' },
-          ]}
-        />
-        <Text
-          label="Contenuto colli"
-          value={contenuto}
-          onChange={setContenuto}
-          className="md:col-span-2"
-        />
+      {/* Formato + Contenuto colli */}
+      <div className="grid gap-3 md:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs text-slate-600">Formato</label>
+          <select
+            className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-200"
+            value={formato}
+            onChange={(e) => setFormato(e.target.value as 'Pacco' | 'Pallet')}
+          >
+            <option value="Pacco">Pacco</option>
+            <option value="Pallet">Pallet</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs text-slate-600">Contenuto colli</label>
+          <input
+            type="text"
+            className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-200"
+            placeholder="Es. bottiglie vino, brochure, etichette…"
+            value={contenuto}
+            onChange={(e) => setContenuto(e.target.value)}
+          />
+        </div>
       </div>
 
-      <div className="space-y-3">
+      {/* Lista colli */}
+      <div className="mt-4 space-y-3">
         {colli.map((c, i) => (
           <div key={i} className="rounded-xl border p-3">
-            <div className="mb-2 text-xs font-medium text-slate-500">Collo #{i + 1}</div>
-            <div className="grid gap-3 md:grid-cols-5">
-              <NumberField label="L (cm)" value={c.lunghezza_cm} onChange={setCollo(i, 'lunghezza_cm')} />
-              <NumberField label="W (cm)" value={c.larghezza_cm} onChange={setCollo(i, 'larghezza_cm')} />
-              <NumberField label="H (cm)" value={c.altezza_cm} onChange={setCollo(i, 'altezza_cm')} />
-              <NumberField label="Peso (kg)" step={0.1} value={c.peso_kg} onChange={setCollo(i, 'peso_kg')} />
+            <div className="mb-2 text-xs font-medium text-slate-500">
+              Collo #{i + 1}
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-4">
+              <NumberInput
+                label="L (cm)"
+                value={strVal(c.lunghezza_cm)}
+                onChange={(v) => setField(i, 'lunghezza_cm', v)}
+              />
+              <NumberInput
+                label="W (cm)"
+                value={strVal(c.larghezza_cm)}
+                onChange={(v) => setField(i, 'larghezza_cm', v)}
+              />
+              <NumberInput
+                label="H (cm)"
+                value={strVal(c.altezza_cm)}
+                onChange={(v) => setField(i, 'altezza_cm', v)}
+              />
+              <NumberInput
+                label="Peso (kg)"
+                value={strVal(c.peso_kg)}
+                onChange={(v) => setField(i, 'peso_kg', v)}
+              />
+            </div>
+
+            <div className="mt-3 flex justify-end">
               <button
                 type="button"
                 onClick={() => removeCollo(i)}
-                className="mt-6 h-10 rounded-lg border px-3 text-sm hover:bg-slate-50"
+                className="rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50"
               >
                 Rimuovi
               </button>
             </div>
           </div>
         ))}
+
+        <div>
+          <button
+            type="button"
+            onClick={addCollo}
+            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50"
+          >
+            + Aggiungi collo
+          </button>
+        </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button type="button" onClick={addCollo} className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50">
-          + Aggiungi collo
-        </button>
-
-        <span className="ml-auto rounded-md border bg-white px-2 py-1 text-xs">
-          Peso reale: <b>{totals.pesoReale.toFixed(2)} kg</b>
-        </span>
-        <span className="rounded-md border bg-white px-2 py-1 text-xs">
-          Volumetrico: <b>{totals.volKg.toFixed(2)} kg</b> (L×W×H/4000)
-        </span>
-        <span className="rounded-md border bg-white px-2 py-1 text-xs">
-          Peso tariffato: <b>{totals.tariffato.toFixed(2)} kg</b>
-        </span>
+      {/* Totali */}
+      <div className="mt-4 flex flex-wrap gap-2 text-xs">
+        <Badge> Peso reale: {totalePesoReale.toFixed(2)} kg </Badge>
+        <Badge>
+          Volumetrico: {totaleVolumetrico.toFixed(2)} kg (L×W×H/4000)
+        </Badge>
+        <Badge> Peso tariffato: {pesoTariffato.toFixed(2)} kg </Badge>
       </div>
     </div>
+  );
+}
+
+function NumberInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs text-slate-600">{label}</label>
+      <input
+        type="text"
+        inputMode="decimal"
+        pattern="[0-9]*[.,]?[0-9]*"
+        className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-200"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
+function Badge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="rounded-md border bg-slate-50 px-2 py-1">{children}</span>
   );
 }
