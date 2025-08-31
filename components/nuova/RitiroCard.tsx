@@ -17,26 +17,46 @@ import {
 import { it } from 'date-fns/locale';
 
 type Props = {
+  /** Data selezionata (opzionale) */
   date?: Date;
+  /** Setter per la data selezionata */
   setDate: (d?: Date) => void;
+  /** Testo note ritiro */
   note: string;
+  /** Setter per le note */
   setNote: (v: string) => void;
+  /** (opz.) prima data selezionabile, default = domani 00:00 */
+  minSelectableDate?: Date;
 };
 
-const CELL = 40; // lato cella in px
-const BLUE = '#1c3e5e';
+const CELL = 40;            // lato della cella (px)
+const BLUE = '#1c3e5e';     // SPST blue
+const ORANGE = '#f7911e';   // SPST orange
 
-export default function RitiroCard({ date, setDate, note, setNote }: Props) {
-  // domani alle 00:00 = prima data selezionabile
+export default function RitiroCard({
+  date,
+  setDate,
+  note,
+  setNote,
+  minSelectableDate,
+}: Props) {
+  // domani alle 00:00 se non fornito
   const minDate = React.useMemo(() => {
+    if (minSelectableDate) {
+      const d = new Date(minSelectableDate);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
     const d = new Date();
     d.setDate(d.getDate() + 1);
     d.setHours(0, 0, 0, 0);
     return d;
-  }, []);
+  }, [minSelectableDate]);
 
+  // mese mostrato
   const [month, setMonth] = React.useState<Date>(date ?? minDate);
 
+  // calcolo griglia settimane del mese corrente (lun–dom)
   const weeks = React.useMemo(() => {
     const start = startOfWeek(startOfMonth(month), { weekStartsOn: 1 });
     const end = endOfWeek(endOfMonth(month), { weekStartsOn: 1 });
@@ -46,7 +66,6 @@ export default function RitiroCard({ date, setDate, note, setNote }: Props) {
       days.push(cur);
       cur = addDays(cur, 1);
     }
-    // chunk per settimane
     const out: Date[][] = [];
     for (let i = 0; i < days.length; i += 7) out.push(days.slice(i, i + 7));
     return out;
@@ -57,15 +76,18 @@ export default function RitiroCard({ date, setDate, note, setNote }: Props) {
 
   return (
     <div className="rounded-2xl border bg-white p-4">
-      <h3 className="mb-3 text-sm font-semibold" style={{ color: '#f7911e' }}>
+      <h3 className="mb-3 text-sm font-semibold" style={{ color: ORANGE }}>
         Ritiro
       </h3>
 
       <div className="grid items-start gap-4 md:grid-cols-[auto,1fr]">
-        {/* Calendario */}
+        {/* CALENDARIO */}
         <div className="rounded-xl border p-3">
           {/* Caption */}
-          <div className="flex items-center justify-between px-1 pb-2" style={{ width: CELL * 7 }}>
+          <div
+            className="flex items-center justify-between px-1 pb-2"
+            style={{ width: CELL * 7 }}
+          >
             <button
               type="button"
               aria-label="Mese precedente"
@@ -102,10 +124,7 @@ export default function RitiroCard({ date, setDate, note, setNote }: Props) {
           {/* Days */}
           <div
             className="grid gap-[6px]"
-            style={{
-              gridTemplateColumns: 'repeat(7, 1fr)',
-              width: CELL * 7,
-            }}
+            style={{ gridTemplateColumns: 'repeat(7, 1fr)', width: CELL * 7 }}
           >
             {weeks.flat().map((d, idx) => {
               const selected = !!date && isSameDay(d, date);
@@ -136,7 +155,7 @@ export default function RitiroCard({ date, setDate, note, setNote }: Props) {
           </div>
         </div>
 
-        {/* Note */}
+        {/* NOTE / DATA SELEZIONATA */}
         <div className="rounded-xl border p-3 md:min-h-[360px]">
           <div className="mb-3 text-sm text-slate-600">
             <span className="font-medium text-slate-900">Data selezionata: </span>
