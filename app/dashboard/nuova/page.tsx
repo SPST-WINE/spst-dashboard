@@ -37,7 +37,7 @@ export default function NuovaSpedizionePage() {
                 Spedizione vino
               </h3>
               <p className="mt-1 text-sm text-slate-600">
-                Dati completi, fatture e packing list. Tutto ciò che serve per spedire prodotti soggetti ad accisa.
+                Dati completi e fatture. Tutto ciò che serve per spedire prodotti soggetti ad accisa.
               </p>
             </div>
           </div>
