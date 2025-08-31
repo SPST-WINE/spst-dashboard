@@ -1,4 +1,4 @@
-/* Stili leggeri per react-day-picker */
+/* Stile pulito per react-day-picker */
 .rdp { --rdp-accent:#1c3e5e; margin:0; font-size:14px; }
 .rdp-months { display:flex; gap:1rem; }
 .rdp-month { background:white; }
