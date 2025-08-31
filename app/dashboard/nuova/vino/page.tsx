@@ -9,14 +9,8 @@ import PackingListVino, { RigaPL } from '@/components/nuova/PackingListVino';
 import { Select } from '@/components/nuova/Field';
 
 const blankParty: Party = {
-  ragioneSociale: '',
-  referente: '',
-  paese: '',
-  citta: '',
-  cap: '',
-  indirizzo: '',
-  telefono: '',
-  piva: '',
+  ragioneSociale: '', referente: '', paese: '', citta: '',
+  cap: '', indirizzo: '', telefono: '', piva: '',
 };
 
 export default function NuovaVinoPage() {
@@ -33,17 +27,10 @@ export default function NuovaVinoPage() {
   const [valuta, setValuta] = useState<'EUR' | 'USD' | 'GBP'>('EUR');
   const [noteFatt, setNoteFatt] = useState('');
   const [delega, setDelega] = useState(false);
-  const [pl, setPl] = useState<RigaPL[]>([
-    {
-      etichetta: '',
-      bottiglie: 1,
-      formato_litri: 0.75,
-      gradazione: 12,
-      costo_unit: 0,
-      peso_netto_bott: 0.75,
-      peso_lordo_bott: 1.3,
-    },
-  ]);
+  const [pl, setPl] = useState<RigaPL[]>([{
+    etichetta: '', bottiglie: 1, formato_litri: 0.75, gradazione: 12,
+    costo_unit: 0, peso_netto_bott: 0.75, peso_lordo_bott: 1.3,
+  }]);
 
   const salva = () => {
     console.log({
@@ -73,7 +60,7 @@ export default function NuovaVinoPage() {
           <Select
             label="Tipo"
             value={tipoSped}
-            onChange={setTipoSped}
+            onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Campionatura')}
             options={[
               { label: 'B2B', value: 'B2B' },
               { label: 'B2C', value: 'B2C' },
