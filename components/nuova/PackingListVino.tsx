@@ -90,8 +90,8 @@ export default function PackingListVino({
 
       {/* intestazioni allineate alla griglia a 12 colonne */}
       <div className="mb-2 grid grid-cols-12 items-center gap-3 text-xs font-medium text-slate-600">
-        <div className="col-span-12 md:col-span-3">Etichetta</div>
-        <div className="col-span-6 md:col-span-1">Bott.</div>
+        <div className="col-span-12 md:col-span-3">Nome Etichetta</div>
+        <div className="col-span-6 md:col-span-1">Quantità Bottiglie</div>
         <div className="col-span-6 md:col-span-2">Formato (L)</div>
         <div className="col-span-6 md:col-span-1">Grad. %</div>
         <div className="col-span-6 md:col-span-1">Prezzo</div>
