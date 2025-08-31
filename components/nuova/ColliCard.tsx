@@ -20,12 +20,7 @@ type Props = {
 };
 
 export default function ColliCard({
-  colli,
-  onChange,
-  formato,
-  setFormato,
-  contenuto,
-  setContenuto,
+  colli, onChange, formato, setFormato, contenuto, setContenuto,
 }: Props) {
   const setCollo =
     (i: number, key: keyof Collo) =>
@@ -58,7 +53,7 @@ export default function ColliCard({
         <Select
           label="Formato"
           value={formato}
-          onChange={setFormato}
+          onChange={(v) => setFormato(v as 'Pacco' | 'Pallet')}
           options={[
             { label: 'Pacco', value: 'Pacco' },
             { label: 'Pallet', value: 'Pallet' },
@@ -74,10 +69,7 @@ export default function ColliCard({
 
       <div className="space-y-3">
         {colli.map((c, i) => (
-          <div
-            key={i}
-            className="rounded-xl border p-3"
-          >
+          <div key={i} className="rounded-xl border p-3">
             <div className="mb-2 text-xs font-medium text-slate-500">Collo #{i + 1}</div>
             <div className="grid gap-3 md:grid-cols-5">
               <NumberField label="L (cm)" value={c.lunghezza_cm} onChange={setCollo(i, 'lunghezza_cm')} />
@@ -97,11 +89,7 @@ export default function ColliCard({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={addCollo}
-          className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
-        >
+        <button type="button" onClick={addCollo} className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50">
           + Aggiungi collo
         </button>
 
