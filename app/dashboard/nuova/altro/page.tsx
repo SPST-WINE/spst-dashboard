@@ -28,8 +28,8 @@ export default function NuovaAltroPage() {
 
   // Colli
   const [colli, setColli] = useState<Collo[]>([
-    { lunghezza_cm: 0, larghezza_cm: 0, altezza_cm: 0, peso_kg: 0 },
-  ]);
+  { lunghezza_cm: null, larghezza_cm: null, altezza_cm: null, peso_kg: null },
+]);
   const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
   const [contenuto, setContenuto] = useState<string>('');
 
