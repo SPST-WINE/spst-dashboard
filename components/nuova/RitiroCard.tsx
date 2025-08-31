@@ -14,13 +14,19 @@ type Props = {
 };
 
 export default function RitiroCard({ date, setDate, note, setNote }: Props) {
+  const tomorrow = React.useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
   return (
     <div className="rounded-2xl border bg-white p-4">
       <h3 className="mb-3 text-sm font-semibold text-spst-orange">Ritiro</h3>
 
-      {/* Colonna sinistra (calendario) auto-width, destra (note) 1fr */}
+      {/* sinistra: calendario (auto), destra: note (1fr) */}
       <div className="grid items-start gap-4 md:grid-cols-[auto,1fr]">
-        {/* wrapper inline, così la card prende *esattamente* la misura del calendario */}
         <div className="inline-block rounded-xl border bg-white p-3">
           <DayPicker
             mode="single"
@@ -28,16 +34,18 @@ export default function RitiroCard({ date, setDate, note, setNote }: Props) {
             selected={date}
             onSelect={setDate}
             showOutsideDays
-            disabled={{ dayOfWeek: [0, 6] }} // domenica & sabato disabilitati
+            // weekend off + niente date prima di domani
+            disabled={[{ dayOfWeek: [0, 6] }, { before: tomorrow }]}
+            // mostro come mese iniziale quello di domani (o la data già scelta)
+            defaultMonth={date ?? tomorrow}
             className="rdp !m-0"
             formatters={{
-              // intestazioni brevi: lun, mar, mer, gio, ven
+              // intestazioni brevi in italiano: lun, mar, mer, gio, ven
               formatWeekdayName: (day, options) => format(day, 'eee', { locale: it }),
             }}
           />
         </div>
 
-        {/* Dettagli + note (più alta) */}
         <div className="rounded-xl border bg-white p-3 md:min-h-[360px]">
           <div className="mb-3 text-sm text-slate-600">
             <span className="font-medium text-slate-900">Data selezionata: </span>
@@ -54,36 +62,38 @@ export default function RitiroCard({ date, setDate, note, setNote }: Props) {
         </div>
       </div>
 
-      {/* Stili DayPicker: allineamenti corretti e hover pulito */}
+      {/* Fix visuali DayPicker: colonne allineate 7x7 e hover centrato */}
       <style jsx global>{`
         .rdp {
           --rdp-cell-size: 40px;
-          --rdp-accent-color: #1c3e5e;      /* blu SPST */
+          --rdp-accent-color: #1c3e5e; /* blu SPST */
           --rdp-background-color: #eaf1f7;
           font-size: 14px;
         }
-        /* RIPRISTINO layout nativo della tabella: niente border-spacing custom */
         .rdp-months { gap: 8px; }
         .rdp-month { margin: 0; padding: 0; }
-        .rdp-table { border-collapse: collapse; } /* <-- importante per allineare header/giorni */
+        .rdp-table { border-collapse: collapse; table-layout: fixed; }
         .rdp-head_row { height: 28px; }
+        .rdp-head_cell,
+        .rdp-day {
+          width: var(--rdp-cell-size);       /* <— fondamentale per allineare header/giorni */
+          min-width: var(--rdp-cell-size);
+          text-align: center;
+        }
         .rdp-head_cell {
           color: #64748b;
           font-weight: 600;
           text-transform: lowercase;
           padding: 4px 0;
-          text-align: center;
         }
-
         .rdp-day {
           height: var(--rdp-cell-size);
-          width: var(--rdp-cell-size);
           border-radius: 10px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           line-height: 1;
-          transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+          transition: background-color .15s ease, color .15s ease, box-shadow .15s ease;
         }
         .rdp-day:hover:not(.rdp-day_disabled):not(.rdp-day_selected) {
           background-color: var(--rdp-background-color);
@@ -97,7 +107,6 @@ export default function RitiroCard({ date, setDate, note, setNote }: Props) {
           opacity: 0.4;
           cursor: not-allowed;
         }
-        /* Pulizia padding/margini interni del componente */
         .rdp-caption { padding: 4px 0 8px; }
         .rdp-nav { gap: 6px; }
         .rdp-button_reset { margin: 0; }
