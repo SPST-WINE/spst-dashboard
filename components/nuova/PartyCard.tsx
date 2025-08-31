@@ -20,7 +20,6 @@ type Props = {
 };
 
 export default function PartyCard({ title, value, onChange }: Props) {
-  // helper per aggiornare un singolo campo mantenendo gli altri
   const set =
     <K extends keyof Party>(key: K) =>
     (val: string) =>
@@ -41,14 +40,11 @@ export default function PartyCard({ title, value, onChange }: Props) {
           value={value.referente}
           onChange={set('referente')}
         />
-
         <Text label="Paese" value={value.paese} onChange={set('paese')} />
         <Text label="Città" value={value.citta} onChange={set('citta')} />
-
         <Text label="CAP" value={value.cap} onChange={set('cap')} />
         <Text label="Telefono" value={value.telefono} onChange={set('telefono')} />
 
-        {/* Indirizzo a tutta riga */}
         <Text
           className="md:col-span-2"
           label="Indirizzo"
@@ -56,7 +52,6 @@ export default function PartyCard({ title, value, onChange }: Props) {
           onChange={set('indirizzo')}
         />
 
-        {/* P.IVA / CF a tutta riga */}
         <Text
           className="md:col-span-2"
           label="Partita IVA / Codice Fiscale"
