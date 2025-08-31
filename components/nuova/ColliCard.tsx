@@ -95,7 +95,7 @@ export default function ColliCard({
             {/* Riga unica con tutti i campi + bottone rimuovi allineato a destra */}
             <div className="flex flex-wrap items-end gap-3">
               <NumberField
-                label="L (cm)"
+                label="Lato 1 (cm)"
                 value={c.lunghezza_cm}
                 onChange={(v) => update(i, { lunghezza_cm: v })}
                 min={0}
@@ -103,7 +103,7 @@ export default function ColliCard({
                 className="min-w-[120px] flex-1"
               />
               <NumberField
-                label="W (cm)"
+                label="Lato 2 (cm)"
                 value={c.larghezza_cm}
                 onChange={(v) => update(i, { larghezza_cm: v })}
                 min={0}
@@ -111,7 +111,7 @@ export default function ColliCard({
                 className="min-w-[120px] flex-1"
               />
               <NumberField
-                label="H (cm)"
+                label="Lato 3 (cm)"
                 value={c.altezza_cm}
                 onChange={(v) => update(i, { altezza_cm: v })}
                 min={0}
