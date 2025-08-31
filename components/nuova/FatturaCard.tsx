@@ -14,14 +14,7 @@ type Props = {
 };
 
 export default function FatturaCard({
-  incoterm,
-  setIncoterm,
-  valuta,
-  setValuta,
-  note,
-  setNote,
-  delega,
-  setDelega,
+  incoterm, setIncoterm, valuta, setValuta, note, setNote, delega, setDelega,
 }: Props) {
   return (
     <div className="rounded-2xl border bg-white p-4">
@@ -31,7 +24,7 @@ export default function FatturaCard({
         <Select
           label="Incoterm"
           value={incoterm}
-          onChange={setIncoterm}
+          onChange={(v) => setIncoterm(v as 'DAP' | 'DDP' | 'EXW')}
           options={[
             { label: 'DAP', value: 'DAP' },
             { label: 'DDP', value: 'DDP' },
@@ -41,36 +34,23 @@ export default function FatturaCard({
         <Select
           label="Valuta"
           value={valuta}
-          onChange={setValuta}
+          onChange={(v) => setValuta(v as 'EUR' | 'USD' | 'GBP')}
           options={[
             { label: 'EUR', value: 'EUR' },
             { label: 'USD', value: 'USD' },
             { label: 'GBP', value: 'GBP' },
           ]}
         />
-        <Area
-          className="md:col-span-2"
-          label="Note"
-          value={note}
-          onChange={setNote}
-          rows={4}
-        />
+        <Area className="md:col-span-2" label="Note" value={note} onChange={setNote} rows={4} />
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <label className="inline-flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={delega}
-            onChange={(e) => setDelega(e.target.checked)}
-          />
+          <input type="checkbox" checked={delega} onChange={(e) => setDelega(e.target.checked)} />
           Non ho la fattura, <b>createla voi</b> (SPST)
         </label>
 
-        <button
-          type="button"
-          className="ml-auto rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
-        >
+        <button type="button" className="ml-auto rounded-lg border px-3 py-2 text-sm hover:bg-slate-50">
           Allega fattura (PDF)
         </button>
       </div>
