@@ -152,9 +152,9 @@ export default function FatturaCard({
           value={incoterm}
           onChange={(e) => setIncoterm(e.target.value as Incoterm)}
         >
-          <option value="DAP">DAP</option>
-          <option value="DDP">DDP</option>
-          <option value="EXW">EXW</option>
+          <option value="DAP">DAP - Spedizione a carico del mittente - dazi, oneri e accise a carico del destinatario</option>
+          <option value="DDP">DDP - Tutto a carico del mittente</option>
+          <option value="EXW">EXW - Tutto a carico del destinatario</option>
         </select>
 
         <select
