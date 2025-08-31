@@ -14,19 +14,26 @@ const blankParty: Party = {
 };
 
 export default function NuovaVinoPage() {
-  const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Campionatura'>('B2B');
+  // ⬇️ nuovo union type: B2B | B2C | Sample
+  const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
+  const [destAbilitato, setDestAbilitato] = useState<boolean>(false);
+
   const [mittente, setMittente] = useState<Party>(blankParty);
   const [destinatario, setDestinatario] = useState<Party>(blankParty);
+
   const [colli, setColli] = useState<Collo[]>([
     { lunghezza_cm: 0, larghezza_cm: 0, altezza_cm: 0, peso_kg: 0 },
   ]);
   const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
+
   const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
   const [ritiroNote, setRitiroNote] = useState('');
+
   const [incoterm, setIncoterm] = useState<'DAP' | 'DDP' | 'EXW'>('DAP');
   const [valuta, setValuta] = useState<'EUR' | 'USD' | 'GBP'>('EUR');
   const [noteFatt, setNoteFatt] = useState('');
   const [delega, setDelega] = useState(false);
+
   const [pl, setPl] = useState<RigaPL[]>([{
     etichetta: '', bottiglie: 1, formato_litri: 0.75, gradazione: 12,
     costo_unit: 0, peso_netto_bott: 0.75, peso_lordo_bott: 1.3,
@@ -35,6 +42,7 @@ export default function NuovaVinoPage() {
   const salva = () => {
     console.log({
       tipoSped,
+      destAbilitato,
       mittente,
       destinatario,
       colli,
@@ -54,19 +62,31 @@ export default function NuovaVinoPage() {
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Nuova spedizione — vino</h2>
 
+      {/* Tipologia spedizione - NUOVO BLOCCO */}
       <div className="rounded-2xl border bg-white p-4">
         <h3 className="mb-3 text-sm font-semibold text-spst-orange">Tipologia spedizione</h3>
         <div className="grid gap-3 md:grid-cols-3">
           <Select
-            label="Tipo"
+            label="Stai spedendo ad un privato? O ad una azienda?"
             value={tipoSped}
-            onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Campionatura')}
+            onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Sample')}
             options={[
-              { label: 'B2B', value: 'B2B' },
-              { label: 'B2C', value: 'B2C' },
-              { label: 'Campionatura', value: 'Campionatura' },
+              { label: 'B2C — Sto spedendo ad un privato / cliente', value: 'B2C' },
+              { label: 'B2B — Sto spedendo ad una azienda', value: 'B2B' },
+              { label: 'Sample — Sto spedendo una campionatura ad una azienda / importatore', value: 'Sample' },
             ]}
           />
+          <div className="md:col-span-2 flex items-center gap-2">
+            <input
+              id="chk-abilitato"
+              type="checkbox"
+              checked={destAbilitato}
+              onChange={(e) => setDestAbilitato(e.target.checked)}
+            />
+            <label htmlFor="chk-abilitato" className="text-sm">
+              Il destinatario è un soggetto <b>abilitato ad importare vino</b> nel paese di destinazione?
+            </label>
+          </div>
         </div>
       </div>
 
@@ -84,12 +104,7 @@ export default function NuovaVinoPage() {
         setContenuto={() => {}}
       />
 
-      <RitiroCard
-        date={ritiroData}
-        setDate={setRitiroData}
-        note={ritiroNote}
-        setNote={setRitiroNote}
-      />
+      <RitiroCard date={ritiroData} setDate={setRitiroData} note={ritiroNote} setNote={setRitiroNote} />
 
       <PackingListVino righe={pl} onChange={setPl} />
 
