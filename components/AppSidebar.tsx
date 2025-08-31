@@ -2,123 +2,90 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { ElementType } from 'react';
-import {
-  LayoutDashboard,
-  PackageSearch,
-  Box,
-  ShieldCheck,
-  Settings,
-  BookOpen,
-} from 'lucide-react';
+import { LayoutDashboard, PackageSearch, ShieldCheck, Settings, CircleHelp, Package } from 'lucide-react';
+// import Image from 'next/image';
 
-// --- util: classnames senza dipendenze
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(' ');
+function cn(...a: Array<string | false | null | undefined>) {
+  return a.filter(Boolean).join(' ');
 }
 
-type NavItem = {
+type Item = {
   label: string;
   href: string;
-  icon: ElementType;
-  activeWhen?: (path: string) => boolean;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  /** se true, l'item è attivo solo su match esatto (utile per Overview) */
+  exact?: boolean;
 };
 
-// Modifica gli href se i tuoi path sono diversi
-const NAV_ITEMS: NavItem[] = [
-  {
-    label: 'Overview',
-    href: '/dashboard',
-    icon: LayoutDashboard,
-    activeWhen: (p) => p === '/dashboard', // evita che /dashboard/nuova evidenzi Overview
-  },
-  {
-    label: 'Le mie spedizioni',
-    href: '/dashboard/spedizioni',
-    icon: PackageSearch,
-    activeWhen: (p) => p.startsWith('/dashboard/spedizioni'),
-  },
-  {
-    label: 'Nuova spedizione',
-    href: '/dashboard/nuova',
-    icon: Box,
-    activeWhen: (p) => p.startsWith('/dashboard/nuova'), // include /nuova/vino e /nuova/altro
-  },
-  {
-    label: 'Compliance',
-    href: '/dashboard/compliance',
-    icon: ShieldCheck,
-    activeWhen: (p) => p.startsWith('/dashboard/compliance'),
-  },
-  {
-    label: 'Impostazioni',
-    href: '/dashboard/impostazioni',
-    icon: Settings,
-    activeWhen: (p) => p.startsWith('/dashboard/impostazioni'),
-  },
-  {
-    label: 'Informazioni utili',
-    href: '/dashboard/informazioni-utili',
-    icon: BookOpen,
-    activeWhen: (p) => p.startsWith('/dashboard/informazioni-utili'),
-  },
+const NAV: Item[] = [
+  { label: 'Overview',          href: '/dashboard',                   icon: LayoutDashboard, exact: true },
+  { label: 'Le mie spedizioni', href: '/dashboard/spedizioni',        icon: PackageSearch },
+  { label: 'Nuova spedizione',  href: '/dashboard/nuova',             icon: Package },
+  { label: 'Compliance',        href: '/dashboard/compliance',        icon: ShieldCheck },
+  { label: 'Impostazioni',      href: '/dashboard/impostazioni',      icon: Settings },
+  { label: 'Informazioni utili',href: '/dashboard/informazioni-utili',icon: CircleHelp },
 ];
 
-export default function Sidebar() {
+/** Piccolo logo con fallback sicuro. Sostituisci col tuo SVG se disponibile. */
+function BrandMark() {
+  return (
+    <div className="flex items-center gap-2">
+      {/* Se hai il file, scommenta e imposta il path corretto:
+      <Image src="/spst-logo.svg" alt="SPST" width={20} height={20} priority />
+      */}
+      <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#F7911E] text-white text-[11px] font-bold">S</div>
+      <span className="text-sm font-semibold text-slate-800">Area Riservata</span>
+    </div>
+  );
+}
+
+export default function AppSidebar() {
   const pathname = usePathname();
 
+  const isActive = (item: Item) => {
+    if (item.exact) {
+      // attivo SOLO su /dashboard o /dashboard/
+      return pathname === item.href || pathname === item.href + '/';
+    }
+    // per gli altri: attivo su /percorso o sottopagine
+    return pathname === item.href || pathname.startsWith(item.href + '/');
+  };
+
   return (
-    <aside
-      className={cn(
-        // colonna sempre visibile
-        'sticky top-0 h-screen w-64 shrink-0',
-        // stile fondo/contorno coerente con app
-        'border-r bg-white',
-        // gestione scroll interno se l’elenco fosse lungo
-        'overflow-y-auto'
-      )}
-    >
-      {/* Header piccolo della sidebar (logo/titolo se vuoi) */}
-      <div className="px-4 py-4">
-        <div className="flex items-center gap-2">
-          {/* Se hai un logo, mettilo qui */}
-          <span className="text-sm font-semibold text-slate-700">Area Riservata</span>
+    <aside className="sticky top-0 h-screen border-r bg-slate-50/60 backdrop-blur-sm">
+      <div className="flex h-full flex-col">
+        {/* Header brand */}
+        <div className="flex h-14 items-center gap-2 px-4">
+          <BrandMark />
         </div>
-      </div>
 
-      {/* Navigazione */}
-      <nav className="px-2 pb-6">
-        <ul className="space-y-1">
-          {NAV_ITEMS.map(({ label, href, icon: Icon, activeWhen }) => {
-            const active = activeWhen ? activeWhen(pathname) : pathname === href;
-
+        {/* Nav */}
+        <nav className="mt-2 flex-1 space-y-1 px-2">
+          {NAV.map((item) => {
+            const active = isActive(item);
+            const Icon = item.icon;
             return (
-              <li key={href}>
-                <Link
-                  href={href}
-                  aria-current={active ? 'page' : undefined}
-                  className={cn(
-                    'group flex items-center gap-2 rounded-md px-3 py-2 text-sm',
-                    'transition-colors',
-                    active
-                      ? 'bg-slate-100 text-slate-900 ring-1 ring-slate-200'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  )}
-                >
-                  <Icon
-                    className={cn(
-                      'h-4 w-4',
-                      active ? 'text-slate-900' : 'text-slate-500 group-hover:text-slate-900'
-                    )}
-                    strokeWidth={2.25}
-                  />
-                  <span className="truncate">{label}</span>
-                </Link>
-              </li>
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+                  active
+                    ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
+                    : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'
+                )}
+                aria-current={active ? 'page' : undefined}
+              >
+                <Icon className={cn('h-4 w-4', active ? 'text-[#F7911E]' : 'text-slate-400')} />
+                <span className="truncate">{item.label}</span>
+              </Link>
             );
           })}
-        </ul>
-      </nav>
+        </nav>
+
+        {/* Footer opzionale (spacer) */}
+        <div className="h-4" />
+      </div>
     </aside>
   );
 }
