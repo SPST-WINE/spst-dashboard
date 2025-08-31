@@ -1,7 +1,10 @@
 'use client';
 
 import React from 'react';
-import clsx from 'clsx';
+
+function cx(...parts: Array<string | undefined | null | false>) {
+  return parts.filter(Boolean).join(' ');
+}
 
 type BaseProps = {
   label: string;
@@ -21,7 +24,7 @@ export function Text({
   placeholder?: string;
 }) {
   return (
-    <div className={clsx('space-y-1', className)}>
+    <div className={cx('space-y-1', className)}>
       <label className="text-xs font-medium text-slate-600">{label}</label>
       <input
         type="text"
@@ -50,7 +53,7 @@ export function NumberField({
   placeholder?: string;
 }) {
   return (
-    <div className={clsx('space-y-1', className)}>
+    <div className={cx('space-y-1', className)}>
       <label className="text-xs font-medium text-slate-600">{label}</label>
       <input
         type="number"
@@ -82,7 +85,7 @@ export function Select({
   options: Array<{ label: string; value: string }>;
 }) {
   return (
-    <div className={clsx('space-y-1', className)}>
+    <div className={cx('space-y-1', className)}>
       <label className="text-xs font-medium text-slate-600">{label}</label>
       <select
         value={value}
