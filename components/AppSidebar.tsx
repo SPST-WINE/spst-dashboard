@@ -31,7 +31,7 @@ function BrandMark() {
   return (
     <div className="flex items-center gap-2">
       {/* Se hai il file, scommenta e imposta il path corretto:
-      <Image src="/spst-logo.svg" alt="SPST" width={20} height={20} priority />
+      <Image src="https://cdn.prod.website-files.com/6800cc3b5f399f3e2b7f2ffa/68079e968300482f70a36a4a_output-onlinepngtools%20(1).png" alt="SPST" width={20} height={20} priority />
       */}
       <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#F7911E] text-white text-[11px] font-bold">S</div>
       <span className="text-sm font-semibold text-slate-800">Area Riservata</span>
