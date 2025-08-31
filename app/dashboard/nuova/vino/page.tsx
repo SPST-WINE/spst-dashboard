@@ -10,36 +10,27 @@ import { Select } from '@/components/nuova/Field';
 import Switch from '@/components/nuova/Switch';
 
 const blankParty: Party = {
-  ragioneSociale: '',
-  referente: '',
-  paese: '',
-  citta: '',
-  cap: '',
-  indirizzo: '',
-  telefono: '',
-  piva: '',
+  ragioneSociale: '', referente: '', paese: '', citta: '',
+  cap: '', indirizzo: '', telefono: '', piva: '',
 };
 
 export default function NuovaVinoPage() {
-  // tipologia
   const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
-  const [destAbilitato, setDestAbilitato] = useState(false);
+  const [destAbilitato, setDestAbilitato] = useState<boolean>(false);
 
-  // parti
   const [mittente, setMittente] = useState<Party>(blankParty);
   const [destinatario, setDestinatario] = useState<Party>(blankParty);
 
-  // colli
+  // NEW: colli con campi vuoti (null) e contenuto editabile
   const [colli, setColli] = useState<Collo[]>([
-    { lunghezza_cm: 0, larghezza_cm: 0, altezza_cm: 0, peso_kg: 0 },
+    { lunghezza_cm: null, larghezza_cm: null, altezza_cm: null, peso_kg: null },
   ]);
   const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
+  const [contenuto, setContenuto] = useState<string>('');
 
-  // ritiro
   const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
   const [ritiroNote, setRitiroNote] = useState('');
 
-  // fattura (commerciali + anagrafica fatturazione)
   const [incoterm, setIncoterm] = useState<'DAP' | 'DDP' | 'EXW'>('DAP');
   const [valuta, setValuta] = useState<'EUR' | 'USD' | 'GBP'>('EUR');
   const [noteFatt, setNoteFatt] = useState('');
@@ -49,19 +40,10 @@ export default function NuovaVinoPage() {
   const [sameAsMitt, setSameAsMitt] = useState(false);
   const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined);
 
-  // packing list
-  const [pl, setPl] = useState<RigaPL[]>([
-    {
-      etichetta: '',
-      bottiglie: 1,
-      formato_litri: 0.75,
-      gradazione: 12,
-      prezzo: 0,
-      valuta: 'EUR',
-      peso_netto_bott: 0.75,
-      peso_lordo_bott: 1.3,
-    },
-  ]);
+  const [pl, setPl] = useState<RigaPL[]>([{
+    etichetta: '', bottiglie: 1, formato_litri: 0.75, gradazione: 12,
+    costo_unit: 0, peso_netto_bott: 0.75, peso_lordo_bott: 1.3,
+  }]);
 
   const salva = () => {
     console.log({
@@ -71,6 +53,7 @@ export default function NuovaVinoPage() {
       destinatario,
       colli,
       formato,
+      contenuto,
       ritiroData,
       ritiroNote,
       incoterm,
@@ -89,12 +72,9 @@ export default function NuovaVinoPage() {
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Nuova spedizione — vino</h2>
 
-      {/* Tipologia + switch abilitato import */}
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-2xl border bg-white p-4">
-          <h3 className="mb-3 text-sm font-semibold text-spst-orange">
-            Tipologia spedizione
-          </h3>
+          <h3 className="mb-3 text-sm font-semibold text-spst-orange">Tipologia spedizione</h3>
 
           <div className="space-y-3">
             <Select
@@ -102,19 +82,9 @@ export default function NuovaVinoPage() {
               value={tipoSped}
               onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Sample')}
               options={[
-                {
-                  label: 'B2C — Sto spedendo ad un privato / cliente',
-                  value: 'B2C',
-                },
-                {
-                  label: 'B2B — Sto spedendo ad una azienda',
-                  value: 'B2B',
-                },
-                {
-                  label:
-                    'Sample — Sto spedendo una campionatura ad una azienda / importatore',
-                  value: 'Sample',
-                },
+                { label: 'B2C — Sto spedendo ad un privato / cliente', value: 'B2C' },
+                { label: 'B2B — Sto spedendo ad una azienda', value: 'B2B' },
+                { label: 'Sample — Sto spedendo una campionatura ad una azienda / importatore', value: 'Sample' },
               ]}
             />
 
@@ -128,38 +98,23 @@ export default function NuovaVinoPage() {
         <div className="hidden md:block" />
       </div>
 
-      {/* mittente/destinatario */}
       <div className="grid gap-4 md:grid-cols-2">
         <PartyCard title="Mittente" value={mittente} onChange={setMittente} />
-        <PartyCard
-          title="Destinatario"
-          value={destinatario}
-          onChange={setDestinatario}
-        />
+        <PartyCard title="Destinatario" value={destinatario} onChange={setDestinatario} />
       </div>
 
-      {/* colli */}
       <ColliCard
         colli={colli}
         onChange={setColli}
         formato={formato}
         setFormato={setFormato}
-        contenuto={''}
-        setContenuto={() => {}}
+        contenuto={contenuto}
+        setContenuto={setContenuto}
       />
 
-      {/* ritiro */}
-      <RitiroCard
-        date={ritiroData}
-        setDate={setRitiroData}
-        note={ritiroNote}
-        setNote={setRitiroNote}
-      />
-
-      {/* packing list */}
+      <RitiroCard date={ritiroData} setDate={setRitiroData} note={ritiroNote} setNote={setRitiroNote} />
       <PackingListVino righe={pl} onChange={setPl} />
 
-      {/* fattura */}
       <FatturaCard
         incoterm={incoterm}
         setIncoterm={setIncoterm}
@@ -167,10 +122,10 @@ export default function NuovaVinoPage() {
         setValuta={setValuta}
         note={noteFatt}
         setNote={setNoteFatt}
-        delega={delega}
+        delega={(delega)}
         setDelega={(v) => {
           setDelega(v);
-          if (v) setFatturaFile(undefined); // se delega, azzera l’eventuale allegato
+          if (v) setFatturaFile(undefined);
         }}
         fatturazione={fatturazione}
         setFatturazione={setFatturazione}
