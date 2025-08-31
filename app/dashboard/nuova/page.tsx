@@ -13,7 +13,7 @@ export default function NuovaPage() {
         >
           <h3 className="mb-2 text-spst-orange">Spedizione vino</h3>
           <p className="text-sm text-slate-600">
-            Dati completi + packing list bottiglie.
+            Dati completi, fatture e packing list. Tutto ciò che serve per spedire prodotti soggetti ad accisa.
           </p>
         </Link>
 
