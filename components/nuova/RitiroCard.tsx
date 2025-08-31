@@ -1,11 +1,19 @@
 'use client';
+
 import './daypicker.css';
 import { DayPicker } from 'react-day-picker';
 import { Area } from './Field';
 
-export default function RitiroCard({ date, setDate, note, setNote }:{
-  date: Date|undefined; setDate: (d:Date|undefined)=>void;
-  note: string; setNote: (s:string)=>void;
+export default function RitiroCard({
+  date,
+  setDate,
+  note,
+  setNote,
+}: {
+  date: Date | undefined;
+  setDate: (d: Date | undefined) => void;
+  note: string;
+  setNote: (s: string) => void;
 }) {
   return (
     <div className="rounded-2xl border bg-white p-4">
@@ -22,7 +30,10 @@ export default function RitiroCard({ date, setDate, note, setNote }:{
         </div>
         <div>
           <p className="mb-2 text-sm text-slate-600">
-            Data selezionata: <span className="font-medium">{date?.toLocaleDateString('it-IT') ?? '—'}</span>
+            Data selezionata:{' '}
+            <span className="font-medium">
+              {date ? date.toLocaleDateString('it-IT') : '—'}
+            </span>
           </p>
           <Area label="Note sul ritiro" value={note} onChange={setNote} rows={8} />
         </div>
