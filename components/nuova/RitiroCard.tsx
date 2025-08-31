@@ -19,12 +19,11 @@ type Props = {
   setDate: (d?: Date) => void;
   note: string;
   setNote: (v: string) => void;
-  /** opzionale: cambia la prima data selezionabile (default: domani) */
-  minSelectableDate?: Date;
+  minSelectableDate?: Date; // opzionale (default: domani)
 };
 
-const BLUE = '#1c3e5e';   // SPST blu
-const ORANGE = '#f7911e'; // SPST arancio
+const BLUE = '#1c3e5e';
+const ORANGE = '#f7911e';
 
 export default function RitiroCard({
   date,
@@ -33,7 +32,7 @@ export default function RitiroCard({
   setNote,
   minSelectableDate,
 }: Props) {
-  // Domani 00:00 come minimo, se non specificato
+  // domani (00:00) come minimo se non passato
   const minDate = React.useMemo(() => {
     const d = minSelectableDate ? new Date(minSelectableDate) : new Date();
     if (!minSelectableDate) d.setDate(d.getDate() + 1);
@@ -41,24 +40,19 @@ export default function RitiroCard({
     return d;
   }, [minSelectableDate]);
 
-  // Mese mostrato
   const [month, setMonth] = React.useState<Date>(date ?? minDate);
 
-  // Giorni del mese corrente
   const firstOfMonth = startOfMonth(month);
   const lastOfMonth = endOfMonth(month);
   const daysInMonth = eachDayOfInterval({ start: firstOfMonth, end: lastOfMonth });
 
-  // indice del giorno della settimana per il 1° del mese (lunedì=0 … domenica=6)
+  // lun=0 … dom=6
   const firstWeekday = (getDay(firstOfMonth) + 6) % 7;
-
-  // quanti “vuoti” prima e dopo per completare una griglia multipla di 7
   const leadingBlanks = Array.from({ length: firstWeekday });
   const totalCells = leadingBlanks.length + daysInMonth.length;
   const trailingBlanks = Array.from({ length: (7 - (totalCells % 7 || 7)) });
 
-  const canSelect = (d: Date) =>
-    !isWeekend(d) && !isBefore(d, minDate);
+  const canSelect = (d: Date) => !isWeekend(d) && !isBefore(d, minDate);
 
   return (
     <div className="rounded-2xl border bg-white p-4">
@@ -66,10 +60,10 @@ export default function RitiroCard({
         Ritiro
       </h3>
 
-      <div className="grid items-start gap-4 md:grid-cols-[minmax(280px,340px)_1fr]">
+      {/* Allineamento colonne: items-stretch */}
+      <div className="grid items-stretch gap-4 md:grid-cols-[minmax(280px,340px)_1fr]">
         {/* CALENDARIO */}
-        <div className="rounded-xl border p-3">
-          {/* Header mese */}
+        <div className="h-full rounded-xl border p-3">
           <div className="mb-2 flex items-center justify-between">
             <button
               type="button"
@@ -92,21 +86,17 @@ export default function RitiroCard({
             </button>
           </div>
 
-          {/* Intestazione giorni (lun…dom) */}
           <div className="grid grid-cols-7 text-center text-xs font-semibold text-slate-600">
             {['lun','mar','mer','gio','ven','sab','dom'].map((d) => (
               <div key={d} className="py-1">{d}</div>
             ))}
           </div>
 
-          {/* Griglia giorni */}
           <div className="grid grid-cols-7 gap-1.5">
-            {/* vuoti iniziali */}
             {leadingBlanks.map((_, i) => (
               <div key={`lead-${i}`} className="h-10" />
             ))}
 
-            {/* giorni del mese */}
             {daysInMonth.map((d) => {
               const selected = !!date && isSameDay(d, date);
               const disabled = !canSelect(d);
@@ -132,7 +122,6 @@ export default function RitiroCard({
               );
             })}
 
-            {/* vuoti finali */}
             {trailingBlanks.map((_, i) => (
               <div key={`trail-${i}`} className="h-10" />
             ))}
@@ -140,18 +129,18 @@ export default function RitiroCard({
         </div>
 
         {/* DATA & NOTE */}
-        <div className="rounded-xl border p-3 md:min-h-[340px]">
+        <div className="flex h-full flex-col rounded-xl border p-3">
           <div className="mb-3 text-sm text-slate-600">
             <span className="font-medium text-slate-900">Data selezionata: </span>
             {date ? format(date, 'd LLLL yyyy', { locale: it }) : '—'}
           </div>
+
           <label className="mb-1 block text-sm text-slate-600">Note sul ritiro</label>
           <textarea
-            rows={9}
+            className="min-h-[120px] flex-1 resize-none rounded-lg border px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-[#1c3e5e]"
+            placeholder="Es. orario preferito, contatto magazzino, accessi, ecc."
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="w-full rounded-lg border px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-[#1c3e5e]"
-            placeholder="Es. orario preferito, contatto magazzino, accessi, ecc."
           />
         </div>
       </div>
