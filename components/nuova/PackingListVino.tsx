@@ -181,7 +181,7 @@ export default function PackingListVino({
                 onClick={() => removeRow(i)}
                 className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
               >
-                Rimuovi riga
+                Rimuovi
               </button>
             </div>
           </div>
