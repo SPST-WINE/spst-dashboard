@@ -8,23 +8,15 @@ import FatturaCard from '@/components/nuova/FatturaCard';
 import { Select } from '@/components/nuova/Field';
 
 const blankParty: Party = {
-  ragioneSociale: '',
-  referente: '',
-  paese: '',
-  citta: '',
-  cap: '',
-  indirizzo: '',
-  telefono: '',
-  piva: '',
+  ragioneSociale: '', referente: '', paese: '', citta: '',
+  cap: '', indirizzo: '', telefono: '', piva: '',
 };
 
 export default function NuovaAltroPage() {
   const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Campionatura'>('B2B');
   const [mittente, setMittente] = useState<Party>(blankParty);
   const [destinatario, setDestinatario] = useState<Party>(blankParty);
-  const [colli, setColli] = useState<Collo[]>([
-    { lunghezza_cm: 0, larghezza_cm: 0, altezza_cm: 0, peso_kg: 0 },
-  ]);
+  const [colli, setColli] = useState<Collo[]>([{ lunghezza_cm: 0, larghezza_cm: 0, altezza_cm: 0, peso_kg: 0 }]);
   const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
   const [contenuto, setContenuto] = useState('');
   const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
@@ -35,21 +27,7 @@ export default function NuovaAltroPage() {
   const [delega, setDelega] = useState(false);
 
   const salva = () => {
-    // placeholder: qui invieremo i dati al backend
-    console.log({
-      tipoSped,
-      mittente,
-      destinatario,
-      colli,
-      formato,
-      contenuto,
-      ritiroData,
-      ritiroNote,
-      incoterm,
-      valuta,
-      noteFatt,
-      delega,
-    });
+    console.log({ tipoSped, mittente, destinatario, colli, formato, contenuto, ritiroData, ritiroNote, incoterm, valuta, noteFatt, delega });
     alert('Dati raccolti (placeholder).');
   };
 
@@ -63,7 +41,7 @@ export default function NuovaAltroPage() {
           <Select
             label="Tipo"
             value={tipoSped}
-            onChange={setTipoSped}
+            onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Campionatura')}
             options={[
               { label: 'B2B', value: 'B2B' },
               { label: 'B2C', value: 'B2C' },
@@ -87,12 +65,7 @@ export default function NuovaAltroPage() {
         setContenuto={setContenuto}
       />
 
-      <RitiroCard
-        date={ritiroData}
-        setDate={setRitiroData}
-        note={ritiroNote}
-        setNote={setRitiroNote}
-      />
+      <RitiroCard date={ritiroData} setDate={setRitiroData} note={ritiroNote} setNote={setRitiroNote} />
 
       <FatturaCard
         incoterm={incoterm}
@@ -106,11 +79,7 @@ export default function NuovaAltroPage() {
       />
 
       <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={salva}
-          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
-        >
+        <button type="button" onClick={salva} className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">
           Salva
         </button>
       </div>
