@@ -1,315 +1,141 @@
 'use client';
 
-import { FileText, Pallet, Package, Download, ChevronDown } from 'lucide-react';
-import { useState } from 'react';
+import { FileText, Boxes, Package, Download } from 'lucide-react';
+import Link from 'next/link';
+
+// Mini util per classi
+function cn(...a: Array<string | false | null | undefined>) {
+  return a.filter(Boolean).join(' ');
+}
 
 type Guide = {
-  icon: 'pallet' | 'package' | 'file';
   title: string;
   description: string;
   href: string;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
 };
 
-type Faq = { q: string; a: React.ReactNode };
+const guides: Guide[] = [
+  {
+    title: 'Guida alla Preparazione del Pallet',
+    description:
+      'Scopri come preparare un pallet in modo corretto per evitare costi aggiuntivi, ritardi e rifiuti da parte del corriere.',
+    href: 'https://cdn.prod.website-files.com/6800cc3b5f399f3e2b7f2ffa/68552b0539a032b44d4d54c5_GUIDA%20PALLET%20SNS.pdf',
+    icon: Boxes, // <— sostituisce Pallet
+  },
+  {
+    title: 'Guida alla Preparazione dei Pacchi',
+    description:
+      'Le regole fondamentali per imballare correttamente pacchi di piccole dimensioni, compresi quelli contenenti vino.',
+    href: 'https://cdn.prod.website-files.com/6800cc3b5f399f3e2b7f2ffa/6855774c7ac5278ddcbb9003_GUIDA%20PACCHI.pdf',
+    icon: Package,
+  },
+  {
+    title: 'Regole di Compliance e Accise',
+    description:
+      'Tutto ciò che c’è da sapere su accise, responsabilità del mittente e regole base di compliance per l’export conforme.',
+    href: 'https://cdn.prod.website-files.com/6800cc3b5f399f3e2b7f2ffa/6855352a2db24df3341935b0_COMPLIANCE%20PDF.pdf',
+    icon: FileText,
+  },
+];
 
-const ORANGE = '#f7911e';
+const faqs: Array<{ q: string; a: string }> = [
+  { q: 'Quali documenti devo attaccare sul pacco?',
+    a: "L'etichetta di spedizione e, se richiesto, la dichiarazione di libera esportazione e la fattura proforma. Tutti devono essere visibili e leggibili." },
+  { q: 'Che tempi di consegna ci sono?',
+    a: 'In Europa 24–72h; extra-UE 2–7 giorni lavorativi salvo ritardi doganali.' },
+  { q: 'Come funziona il servizio Express 12?',
+    a: 'Consegna entro le 12:00 del giorno lavorativo successivo, solo nelle zone coperte.' },
+  { q: "Come funziona l'Express Internazionale?",
+    a: 'Servizio più veloce per l’estero: ritiro prioritario, sdoganamento rapido, consegna 1–3 giorni nei Paesi principali.' },
+  { q: 'Cosa è una dichiarazione di libera esportazione?',
+    a: "Documento che attesta che la merce può uscire dall’UE senza restrizioni. Necessario per spedizioni extra-UE." },
+  { q: 'Cosa succede se non pago le accise?',
+    a: 'La merce può essere bloccata, respinta o sequestrata. Le accise devono essere assolte o sospese regolarmente.' },
+  { q: 'Chi paga i costi accessori?',
+    a: 'Di norma il mittente (salvo accordi). Nascono da fuori formato, giacenze o errori di imballo.' },
+  { q: 'Cosa sono gli Incoterm?',
+    a: 'Termini internazionali che definiscono chi paga cosa (trasporto, assicurazione, dazi, responsabilità).' },
+  { q: 'Chi paga la dogana?',
+    a: "Dipende dall'Incoterm. In genere l’importatore, ma può essere a carico del mittente se previsto." },
+  { q: 'Cosa è una dogana?',
+    a: 'Autorità che controlla l’ingresso/uscita delle merci e può applicare dazi, blocchi o ispezioni.' },
+  { q: 'Come faccio a prenotare un ritiro con SPST?',
+    a: 'Compila il modulo online o invia i dati via email/WhatsApp. Ti inviamo lettera di vettura e istruzioni.' },
+  { q: 'Posso spedire vino a privati all’estero (B2C)?',
+    a: 'Sì, verso alcuni Paesi autorizzati. SPST verifica la fattibilità e gestisce le pratiche necessarie.' },
+  { q: 'È obbligatorio includere una fattura proforma?',
+    a: 'Sì per extra-UE. In UE dipende da contenuto e Paese. SPST può generarla per te quando serve.' },
+  { q: 'Che cos’è l’accisa assolta?',
+    a: 'Tasse sull’alcol già pagate in Italia. Obbligatoria per vendite B2C o spedizioni senza e-DAS.' },
+  { q: 'Posso usare una mia etichetta di spedizione?',
+    a: 'No. L’etichetta viene generata dal nostro sistema e va applicata così com’è.' },
+  { q: 'Come traccio la mia spedizione?',
+    a: 'Ricevi un link di tracking; in alternativa accedi alla tua area riservata SPST.' },
+  { q: 'Posso spedire prodotti diversi nello stesso collo?',
+    a: 'Sì, se compatibili e ben separati. Ogni prodotto va dichiarato correttamente.' },
+  { q: 'È possibile spedire con temperatura controllata?',
+    a: 'Al momento no. Consigliamo packaging termico professionale per merce delicata.' },
+  { q: 'SPST si occupa anche dello sdoganamento?',
+    a: 'Sì, offriamo assistenza e, dove incluso, gestiamo direttamente lo sdoganamento.' },
+  { q: 'Posso assicurare la mia spedizione?',
+    a: 'Sì, assicurazione sul valore dichiarato (smarrimento, furto, danneggiamento).' },
+];
 
-function IconWrap({ children }: { children: React.ReactNode }) {
+export default function InfoUtiliPage() {
   return (
-    <div
-      className="flex h-10 w-10 items-center justify-center rounded-xl ring-1"
-      style={{ backgroundColor: '#FFF4E6', color: ORANGE, borderColor: 'rgba(247,145,30,0.35)' }}
-    >
-      {children}
-    </div>
-  );
-}
+    <div className="space-y-6">
+      <h2 className="text-lg font-semibold">Documenti &amp; informazioni utili</h2>
 
-function InfoCard({ guide }: { guide: Guide }) {
-  const icon =
-    guide.icon === 'pallet' ? <Pallet className="h-5 w-5" strokeWidth={2.25} /> :
-    guide.icon === 'package' ? <Package className="h-5 w-5" strokeWidth={2.25} /> :
-    <FileText className="h-5 w-5" strokeWidth={2.25} />;
-
-  return (
-    <div className="rounded-2xl border bg-white p-5 shadow-sm">
-      <div className="flex items-start gap-3">
-        <IconWrap>{icon}</IconWrap>
-        <div className="min-w-0">
-          <h3 className="text-base font-semibold" style={{ color: ORANGE }}>
-            {guide.title}
-          </h3>
-          <p className="mt-1 text-sm text-slate-600">{guide.description}</p>
-          <div className="mt-3 text-right">
-            <a
-              href={guide.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium text-teal-700 hover:bg-teal-50"
-            >
-              <Download className="h-4 w-4" />
-              Scarica il PDF
-            </a>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function FaqItem({ item }: { item: Faq }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="border-b py-3">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-start justify-between gap-4 text-left"
-      >
-        <span className="text-[15px] font-semibold" style={{ color: ORANGE }}>
-          {item.q}
-        </span>
-        <ChevronDown
-          className={`mt-0.5 h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`}
-          color="#1d3e5e"
-        />
-      </button>
-      {open && <div className="mt-2 text-[15px] leading-relaxed text-[#1d3e5e]">{item.a}</div>}
-    </div>
-  );
-}
-
-export default function InformazioniUtiliPage() {
-  const guides: Guide[] = [
-    {
-      icon: 'pallet',
-      title: 'Guida alla Preparazione del Pallet',
-      description:
-        'Scopri come preparare un pallet in modo corretto per evitare costi aggiuntivi, ritardi e rifiuti da parte del corriere.',
-      href:
-        'https://cdn.prod.website-files.com/6800cc3b5f399f3e2b7f2ffa/68552b0539a032b44d4d54c5_GUIDA%20PALLET%20SNS.pdf',
-    },
-    {
-      icon: 'package',
-      title: 'Guida alla Preparazione dei Pacchi',
-      description:
-        'Regole fondamentali per imballare correttamente pacchi di piccole dimensioni (anche vino) ed evitare danni e costi extra.',
-      href:
-        'https://cdn.prod.website-files.com/6800cc3b5f399f3e2b7f2ffa/6855774c7ac5278ddcbb9003_GUIDA%20PACCHI.pdf',
-    },
-    {
-      icon: 'file',
-      title: 'Regole di Compliance e Accise',
-      description:
-        'Tutto ciò che serve sapere su accise, responsabilità del mittente e regole base di compliance per export conformi.',
-      href:
-        'https://cdn.prod.website-files.com/6800cc3b5f399f3e2b7f2ffa/6855352a2db24df3341935b0_COMPLIANCE%20PDF.pdf',
-    },
-  ];
-
-  const faqs: Faq[] = [
-    {
-      q: 'Quali documenti devo attaccare sul pacco?',
-      a: (
-        <p>
-          <strong>L&apos;etichetta di spedizione</strong> e, se richiesto,{' '}
-          <strong>la dichiarazione di libera esportazione</strong> e la{' '}
-          <strong>fattura proforma</strong>. Tutti devono essere{' '}
-          <strong>visibili, leggibili e non coperti</strong>.
-        </p>
-      ),
-    },
-    {
-      q: 'Che tempi di consegna ci sono?',
-      a: (
-        <p>
-          In Europa: <strong>24–72h</strong> in base alla destinazione e al servizio scelto.
-          Extra-UE: <strong>2–7 giorni lavorativi</strong>, salvo ritardi doganali.
-        </p>
-      ),
-    },
-    {
-      q: 'Come funziona il servizio Express 12?',
-      a: (
-        <p>
-          Consegna <strong>entro le 12:00</strong> del giorno lavorativo successivo al ritiro,{' '}
-          <strong>solo nelle zone coperte</strong>.
-        </p>
-      ),
-    },
-    {
-      q: "Come funziona l'Express Internazionale?",
-      a: (
-        <p>
-          Servizio estero più veloce: include <strong>ritiro prioritario</strong>,{' '}
-          <strong>sdoganamento rapido</strong> e <strong>consegna urgente</strong> in 1–3 giorni verso i principali Paesi.
-        </p>
-      ),
-    },
-    {
-      q: 'Cosa è una dichiarazione di libera esportazione?',
-      a: (
-        <p>
-          Documento che attesta che la merce può uscire dall’UE <strong>senza restrizioni</strong>.
-          Serve per spedizioni <strong>extra-UE</strong>.
-        </p>
-      ),
-    },
-    {
-      q: 'Cosa succede se non pago le accise?',
-      a: (
-        <p>
-          La merce può essere <strong>bloccata, respinta o sequestrata</strong>. SPST verifica che
-          le accise siano <strong>assolte o sospese regolarmente</strong>.
-        </p>
-      ),
-    },
-    {
-      q: 'Chi paga i costi accessori?',
-      a: (
-        <p>
-          Generalmente il <strong>mittente</strong>, salvo accordi diversi. Possono derivare da{' '}
-          <strong>fuori formato, giacenze (anche in dogana), errori d’imballaggio</strong>.
-        </p>
-      ),
-    },
-    {
-      q: 'Cosa sono gli Incoterm?',
-      a: (
-        <p>
-          Termini internazionali che definiscono <strong>chi paga cosa</strong> (trasporto,
-          assicurazione, dazi, responsabilità). Vanno concordati prima della spedizione.
-        </p>
-      ),
-    },
-    {
-      q: 'Chi paga la dogana?',
-      a: (
-        <p>
-          Dipende dall’Incoterm. Di norma paga <strong>l’importatore (destinatario)</strong>, ma può
-          essere a carico <strong>del mittente</strong> se previsto.
-        </p>
-      ),
-    },
-    {
-      q: 'Cosa è una dogana?',
-      a: (
-        <p>
-          Autorità che <strong>controlla e autorizza</strong> l’ingresso/uscita delle merci. Può
-          richiedere documenti e applicare <strong>dazi, blocchi o ispezioni</strong>.
-        </p>
-      ),
-    },
-    {
-      q: 'Come faccio a prenotare un ritiro con SPST?',
-      a: (
-        <p>
-          Puoi <strong>compilare il modulo online</strong> o inviare i dati via email/WhatsApp.
-          Riceverai <strong>lettera di vettura e istruzioni</strong>.
-        </p>
-      ),
-    },
-    {
-      q: 'Posso spedire vino a privati all’estero (B2C)?',
-      a: (
-        <p>
-          Sì, verso <strong>alcuni Paesi autorizzati</strong>. SPST verifica la fattibilità e{' '}
-          <strong>gestisce le pratiche necessarie</strong>.
-        </p>
-      ),
-    },
-    {
-      q: 'È obbligatorio includere una fattura proforma?',
-      a: (
-        <p>
-          <strong>Sì</strong> per extra-UE. In UE dipende da contenuto e Paese. SPST può{' '}
-          <strong>generarla automaticamente</strong> quando necessaria.
-        </p>
-      ),
-    },
-    {
-      q: 'Che cos’è l’accisa assolta?',
-      a: (
-        <p>
-          Le <strong>tasse sull’alcol sono già state pagate in Italia</strong>. Obbligatoria per
-          B2C o vino senza e-DAS.
-        </p>
-      ),
-    },
-    {
-      q: 'Posso usare una mia etichetta di spedizione?',
-      a: (
-        <p>
-          <strong>No</strong>. L’etichetta è generata dal nostro sistema <strong>per ogni
-          spedizione</strong> e va applicata così com’è.
-        </p>
-      ),
-    },
-    {
-      q: 'Come traccio la mia spedizione?',
-      a: (
-        <p>
-          Ricevi un <strong>link di tracking</strong> alla partenza. In alternativa, nell’{' '}
-          <strong>Area Riservata SPST</strong> vedi stato e documenti.
-        </p>
-      ),
-    },
-    {
-      q: 'Posso spedire prodotti diversi nello stesso collo?',
-      a: (
-        <p>
-          Sì, se <strong>compatibili e ben separati</strong>. Ogni prodotto va{' '}
-          <strong>dichiarato correttamente</strong> in documentazione.
-        </p>
-      ),
-    },
-    {
-      q: 'È possibile spedire con temperatura controllata?',
-      a: (
-        <p>
-          Al momento no: servizi <strong>espresso standard</strong>. Per merce delicata consigliamo{' '}
-          <strong>packaging termico professionale</strong>.
-        </p>
-      ),
-    },
-    {
-      q: 'SPST si occupa anche dello sdoganamento?',
-      a: (
-        <p>
-          Sì. Offriamo assistenza completa e, dove incluso, <strong>gestiamo lo sdoganamento</strong>{' '}
-          e il flusso documentale.
-        </p>
-      ),
-    },
-    {
-      q: 'Posso assicurare la mia spedizione?',
-      a: (
-        <p>
-          Certo. Possibile assicurazione sul <strong>valore dichiarato</strong> (smarrimento, furto,
-          danneggiamento).
-        </p>
-      ),
-    },
-  ];
-
-  return (
-    <div className="space-y-8">
-      <h2 className="text-lg font-semibold">Documenti e informazioni utili</h2>
-
-      {/* Cards documentazione */}
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+      {/* Cards guide */}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {guides.map((g) => (
-          <InfoCard key={g.title} guide={g} />
+          <div
+            key={g.title}
+            className="rounded-2xl border bg-white p-5 shadow-sm"
+          >
+            <div className="flex items-start gap-3">
+              <g.icon className="h-6 w-6 text-[#F7911E]" strokeWidth={2.25} />
+              <div className="min-w-0">
+                <h3 className="truncate text-base font-semibold text-slate-800">
+                  {g.title}
+                </h3>
+                <p className="mt-1 text-sm text-slate-600">{g.description}</p>
+              </div>
+            </div>
+            <div className="mt-4 text-right">
+              <Link
+                href={g.href}
+                target="_blank"
+                className="inline-flex items-center gap-1 text-sm font-medium text-teal-700 hover:text-teal-800"
+              >
+                <Download className="h-4 w-4" />
+                Scarica PDF
+              </Link>
+            </div>
+          </div>
         ))}
       </div>
 
       {/* FAQ */}
-      <section className="rounded-2xl border bg-white p-6">
-        <h3 className="mb-2 text-xl font-bold" style={{ color: '#1d3e5e' }}>
-          Domande Frequenti
-        </h3>
+      <section className="rounded-2xl border bg-white p-5 shadow-sm">
+        <h3 className="mb-4 text-base font-semibold text-slate-800">Domande frequenti</h3>
         <div className="divide-y">
-          {faqs.map((f, i) => (
-            <FaqItem key={i} item={f} />
+          {faqs.map(({ q, a }, i) => (
+            <details key={i} className="group py-3">
+              <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-[#F7911E]">
+                <span>{q}</span>
+                <span
+                  className={cn(
+                    'ml-3 inline-block text-[10px] text-slate-500 transition-transform',
+                    'group-open:rotate-180'
+                  )}
+                >
+                  ▾
+                </span>
+              </summary>
+              <p className="mt-2 text-sm leading-relaxed text-slate-700">{a}</p>
+            </details>
           ))}
         </div>
       </section>
