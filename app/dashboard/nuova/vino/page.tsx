@@ -62,12 +62,12 @@ export default function NuovaVinoPage() {
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Nuova spedizione — vino</h2>
 
-      {/* Tipologia spedizione */}
-      <div className="rounded-2xl border bg-white p-4">
-        <h3 className="mb-3 text-sm font-semibold text-spst-orange">Tipologia spedizione</h3>
+      {/* Tipologia spedizione — stessa larghezza delle card mittente/destinatario */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-2xl border bg-white p-4">
+          <h3 className="mb-3 text-sm font-semibold text-spst-orange">Tipologia spedizione</h3>
 
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="w-full md:max-w-xl">
+          <div className="space-y-3">
             <Select
               label="Stai spedendo ad un privato? O ad una azienda?"
               value={tipoSped}
@@ -78,14 +78,17 @@ export default function NuovaVinoPage() {
                 { label: 'Sample — Sto spedendo una campionatura ad una azienda / importatore', value: 'Sample' },
               ]}
             />
-          </div>
 
-          <Switch
-            checked={destAbilitato}
-            onChange={setDestAbilitato}
-            label="Il destinatario è un soggetto abilitato ad importare vino nel paese di destinazione?"
-          />
+            <Switch
+              checked={destAbilitato}
+              onChange={setDestAbilitato}
+              label="Il destinatario è un soggetto abilitato ad importare vino nel paese di destinazione?"
+            />
+          </div>
         </div>
+
+        {/* colonna destra vuota per mantenere simmetria su desktop */}
+        <div className="hidden md:block" />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
