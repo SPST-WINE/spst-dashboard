@@ -1,35 +1,69 @@
 'use client';
+
 import { Text } from './Field';
 
 export type Party = {
-  ragione: string; paese: string; indirizzo: string; cap: string; citta: string; telefono: string;
-  referente?: string; piva_cf?: string;
+  ragioneSociale: string;
+  referente: string;
+  paese: string;
+  citta: string;
+  cap: string;
+  indirizzo: string;
+  telefono: string;
+  piva: string; // P.IVA / CF
 };
 
-export default function PartyCard({
-  title, value, onChange,
-}:{ title: string; value: Party; onChange: (p: Party)=>void; }) {
+type Props = {
+  title: string;
+  value: Party;
+  onChange: (next: Party) => void;
+};
+
+export default function PartyCard({ title, value, onChange }: Props) {
+  // helper per aggiornare un singolo campo mantenendo gli altri
+  const set =
+    <K extends keyof Party>(key: K) =>
+    (val: string) =>
+      onChange({ ...value, [key]: val });
+
   return (
     <div className="rounded-2xl border bg-white p-4">
-  <h3 className="mb-3 text-sm font-semibold text-spst-orange">{title}</h3>
+      <h3 className="mb-3 text-sm font-semibold text-spst-orange">{title}</h3>
 
-  <div className="grid gap-3 md:grid-cols-2">
-    <Text label="Ragione sociale" value={ragioneSociale} onChange={setRagioneSociale} />
-    <Text label="Persona di riferimento" value={referente} onChange={setReferente} />
-    <Text label="Paese" value={paese} onChange={setPaese} />
-    <Text label="Città" value={citta} onChange={setCitta} />
-    <Text label="CAP" value={cap} onChange={setCap} />
-    <Text label="Telefono" value={telefono} onChange={setTelefono} />
-    <Text className="md:col-span-2" label="Indirizzo" value={indirizzo} onChange={setIndirizzo} />
+      <div className="grid gap-3 md:grid-cols-2">
+        <Text
+          label="Ragione sociale"
+          value={value.ragioneSociale}
+          onChange={set('ragioneSociale')}
+        />
+        <Text
+          label="Persona di riferimento"
+          value={value.referente}
+          onChange={set('referente')}
+        />
 
-    {/* P.IVA / CF a tutta riga */}
-    <Text
-      className="md:col-span-2"
-      label="Partita IVA / Codice Fiscale"
-      value={piva}
-      onChange={setPiva}
-    />
-  </div>
-</div>
+        <Text label="Paese" value={value.paese} onChange={set('paese')} />
+        <Text label="Città" value={value.citta} onChange={set('citta')} />
+
+        <Text label="CAP" value={value.cap} onChange={set('cap')} />
+        <Text label="Telefono" value={value.telefono} onChange={set('telefono')} />
+
+        {/* Indirizzo a tutta riga */}
+        <Text
+          className="md:col-span-2"
+          label="Indirizzo"
+          value={value.indirizzo}
+          onChange={set('indirizzo')}
+        />
+
+        {/* P.IVA / CF a tutta riga */}
+        <Text
+          className="md:col-span-2"
+          label="Partita IVA / Codice Fiscale"
+          value={value.piva}
+          onChange={set('piva')}
+        />
+      </div>
+    </div>
   );
 }
