@@ -6,6 +6,7 @@ import ColliCard, { Collo } from '@/components/nuova/ColliCard';
 import RitiroCard from '@/components/nuova/RitiroCard';
 import FatturaCard from '@/components/nuova/FatturaCard';
 import { Select } from '@/components/nuova/Field';
+import Switch from '@/components/nuova/Switch';
 
 const blankParty: Party = {
   ragioneSociale: '', referente: '', paese: '', citta: '',
@@ -13,7 +14,6 @@ const blankParty: Party = {
 };
 
 export default function NuovaAltroPage() {
-  // ⬇️ nuovo union type: B2B | B2C | Sample
   const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
   const [destAbilitato, setDestAbilitato] = useState<boolean>(false);
 
@@ -57,31 +57,29 @@ export default function NuovaAltroPage() {
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Nuova spedizione — altre spedizioni</h2>
 
-      {/* Tipologia spedizione - NUOVO BLOCCO */}
+      {/* Tipologia spedizione */}
       <div className="rounded-2xl border bg-white p-4">
         <h3 className="mb-3 text-sm font-semibold text-spst-orange">Tipologia spedizione</h3>
-        <div className="grid gap-3 md:grid-cols-3">
-          <Select
-            label="Stai spedendo ad un privato? O ad una azienda?"
-            value={tipoSped}
-            onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Sample')}
-            options={[
-              { label: 'B2C — Sto spedendo ad un privato / cliente', value: 'B2C' },
-              { label: 'B2B — Sto spedendo ad una azienda', value: 'B2B' },
-              { label: 'Sample — Sto spedendo una campionatura ad una azienda / importatore', value: 'Sample' },
-            ]}
-          />
-          <div className="md:col-span-2 flex items-center gap-2">
-            <input
-              id="chk-abilitato"
-              type="checkbox"
-              checked={destAbilitato}
-              onChange={(e) => setDestAbilitato(e.target.checked)}
+
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="w-full md:max-w-xl">
+            <Select
+              label="Stai spedendo ad un privato? O ad una azienda?"
+              value={tipoSped}
+              onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Sample')}
+              options={[
+                { label: 'B2C — Sto spedendo ad un privato / cliente', value: 'B2C' },
+                { label: 'B2B — Sto spedendo ad una azienda', value: 'B2B' },
+                { label: 'Sample — Sto spedendo una campionatura ad una azienda / importatore', value: 'Sample' },
+              ]}
             />
-            <label htmlFor="chk-abilitato" className="text-sm">
-              Il destinatario è un soggetto <b>abilitato ad importare vino</b> nel paese di destinazione?
-            </label>
           </div>
+
+          <Switch
+            checked={destAbilitato}
+            onChange={setDestAbilitato}
+            label="Il destinatario è un soggetto abilitato ad importare vino nel paese di destinazione?"
+          />
         </div>
       </div>
 
