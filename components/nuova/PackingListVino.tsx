@@ -18,7 +18,6 @@ export type RigaPL = {
 type Props = {
   righe: RigaPL[];
   onChange: (rows: RigaPL[]) => void;
-  /** opzionale: se vuoi gestire l’upload fuori dal componente */
   setAllegato?: (file?: File) => void;
   allegato?: File;
 };
@@ -53,26 +52,27 @@ export default function PackingListVino({
     ]);
   };
 
-  const removeRow = (i: number) => {
-    const next = righe.filter((_, idx) => idx !== i);
-    onChange(next);
-  };
+  const removeRow = (i: number) => onChange(righe.filter((_, idx) => idx !== i));
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (setAllegato) setAllegato(f);
   };
 
+  const inputCls =
+    'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-[#1c3e5e]';
+
   return (
     <div className="rounded-2xl border bg-white p-4">
-      <div className="mb-3 flex items-center justify-between">
+      {/* header */}
+      <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold" style={{ color: ORANGE }}>
           Packing list (vino)
         </h3>
 
         <div className="flex items-center gap-3">
           {allegato && (
-            <span className="truncate text-xs text-slate-500 max-w-[220px]">
+            <span className="max-w-[220px] truncate text-xs text-slate-500">
               {allegato.name}
             </span>
           )}
@@ -88,29 +88,25 @@ export default function PackingListVino({
         </div>
       </div>
 
-      {/* intestazioni */}
-      <div className="mb-2 grid items-center gap-3 text-xs font-medium text-slate-600
-        md:grid-cols-[2fr_.6fr_.9fr_.8fr_.9fr_.9fr_1fr_1fr_auto]">
-        <div>Etichetta</div>
-        <div>Bott.</div>
-        <div>Formato (L)</div>
-        <div>Grad. %</div>
-        <div>Prezzo</div>
-        <div>Valuta</div>
-        <div>Peso netto (kg)</div>
-        <div>Peso lordo (kg)</div>
-        <div className="text-right pr-1"> </div>
+      {/* intestazioni allineate alla griglia a 12 colonne */}
+      <div className="mb-2 grid grid-cols-12 items-center gap-3 text-xs font-medium text-slate-600">
+        <div className="col-span-12 md:col-span-3">Etichetta</div>
+        <div className="col-span-6 md:col-span-1">Bott.</div>
+        <div className="col-span-6 md:col-span-2">Formato (L)</div>
+        <div className="col-span-6 md:col-span-1">Grad. %</div>
+        <div className="col-span-6 md:col-span-1">Prezzo</div>
+        <div className="col-span-6 md:col-span-1">Valuta</div>
+        <div className="col-span-6 md:col-span-1">Peso netto (kg)</div>
+        <div className="col-span-6 md:col-span-1">Peso lordo (kg)</div>
+        <div className="col-span-12 md:col-span-1 text-right pr-1"> </div>
       </div>
 
       {/* righe */}
       <div className="space-y-3">
         {righe.map((r, i) => (
-          <div
-            key={i}
-            className="grid items-center gap-3 md:grid-cols-[2fr_.6fr_.9fr_.8fr_.9fr_.9fr_1fr_1fr_auto]"
-          >
+          <div key={i} className="grid grid-cols-12 items-center gap-3">
             <input
-              className="rounded-lg border px-3 py-2 text-sm outline-none focus:border-[#1c3e5e]"
+              className={`${inputCls} col-span-12 md:col-span-3`}
               placeholder="Nome etichetta"
               value={r.etichetta}
               onChange={(e) => changeRow(i, 'etichetta', e.target.value)}
@@ -119,7 +115,7 @@ export default function PackingListVino({
             <input
               type="number"
               min={0}
-              className="rounded-lg border px-3 py-2 text-sm outline-none focus:border-[#1c3e5e]"
+              className={`${inputCls} col-span-6 md:col-span-1`}
               value={r.bottiglie}
               onChange={(e) => changeRow(i, 'bottiglie', Number(e.target.value))}
             />
@@ -128,7 +124,7 @@ export default function PackingListVino({
               type="number"
               step="0.01"
               min={0}
-              className="rounded-lg border px-3 py-2 text-sm outline-none focus:border-[#1c3e5e]"
+              className={`${inputCls} col-span-6 md:col-span-2`}
               value={r.formato_litri}
               onChange={(e) => changeRow(i, 'formato_litri', Number(e.target.value))}
             />
@@ -137,7 +133,7 @@ export default function PackingListVino({
               type="number"
               step="0.1"
               min={0}
-              className="rounded-lg border px-3 py-2 text-sm outline-none focus:border-[#1c3e5e]"
+              className={`${inputCls} col-span-6 md:col-span-1`}
               value={r.gradazione}
               onChange={(e) => changeRow(i, 'gradazione', Number(e.target.value))}
             />
@@ -146,13 +142,13 @@ export default function PackingListVino({
               type="number"
               step="0.01"
               min={0}
-              className="rounded-lg border px-3 py-2 text-sm outline-none focus:border-[#1c3e5e]"
+              className={`${inputCls} col-span-6 md:col-span-1`}
               value={r.prezzo}
               onChange={(e) => changeRow(i, 'prezzo', Number(e.target.value))}
             />
 
             <select
-              className="rounded-lg border px-3 py-2 text-sm outline-none focus:border-[#1c3e5e]"
+              className={`${inputCls} col-span-6 md:col-span-1`}
               value={r.valuta}
               onChange={(e) => changeRow(i, 'valuta', e.target.value as Valuta)}
             >
@@ -165,7 +161,7 @@ export default function PackingListVino({
               type="number"
               step="0.01"
               min={0}
-              className="rounded-lg border px-3 py-2 text-sm outline-none focus:border-[#1c3e5e]"
+              className={`${inputCls} col-span-6 md:col-span-1`}
               value={r.peso_netto_bott}
               onChange={(e) => changeRow(i, 'peso_netto_bott', Number(e.target.value))}
             />
@@ -174,12 +170,12 @@ export default function PackingListVino({
               type="number"
               step="0.01"
               min={0}
-              className="rounded-lg border px-3 py-2 text-sm outline-none focus:border-[#1c3e5e]"
+              className={`${inputCls} col-span-6 md:col-span-1`}
               value={r.peso_lordo_bott}
               onChange={(e) => changeRow(i, 'peso_lordo_bott', Number(e.target.value))}
             />
 
-            <div className="flex justify-end">
+            <div className="col-span-12 flex justify-end md:col-span-1">
               <button
                 type="button"
                 onClick={() => removeRow(i)}
