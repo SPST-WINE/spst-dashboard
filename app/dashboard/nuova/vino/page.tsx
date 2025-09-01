@@ -26,36 +26,29 @@ const blankParty: Party = {
 };
 
 export default function NuovaVinoPage() {
-  // Tipologia e abilitazione destinatario all’import
   const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
   const [destAbilitato, setDestAbilitato] = useState(false);
 
-  // Parti
   const [mittente, setMittente] = useState<Party>(blankParty);
   const [destinatario, setDestinatario] = useState<Party>(blankParty);
 
-  // Colli
   const [colli, setColli] = useState<Collo[]>([
     { lunghezza_cm: null, larghezza_cm: null, altezza_cm: null, peso_kg: null },
   ]);
   const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
 
-  // Ritiro
   const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
   const [ritiroNote, setRitiroNote] = useState('');
 
-  // Dati commerciali / fattura
   const [incoterm, setIncoterm] = useState<'DAP' | 'DDP' | 'EXW'>('DAP');
   const [valuta, setValuta] = useState<'EUR' | 'USD' | 'GBP'>('EUR');
   const [noteFatt, setNoteFatt] = useState('');
   const [delega, setDelega] = useState(false);
 
-  // Fatturazione (anagrafica)
   const [fatturazione, setFatturazione] = useState<Party>(blankParty);
   const [sameAsDest, setSameAsDest] = useState(false);
   const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined);
 
-  // Packing list vino
   const [pl, setPl] = useState<RigaPL[]>([
     {
       etichetta: '',
@@ -116,10 +109,7 @@ export default function NuovaVinoPage() {
           value={tipoSped}
           onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Sample')}
           options={[
-            {
-              label: 'B2C — Sto spedendo ad un privato / cliente',
-              value: 'B2C',
-            },
+            { label: 'B2C — Sto spedendo ad un privato / cliente', value: 'B2C' },
             { label: 'B2B — Sto spedendo ad una azienda', value: 'B2B' },
             {
               label:
@@ -133,31 +123,17 @@ export default function NuovaVinoPage() {
       {/* Mittente / Destinatario */}
       <div className="grid gap-4 md:grid-cols-2">
         <PartyCard title="Mittente" value={mittente} onChange={setMittente} />
-        <PartyCard
-          title="Destinatario"
-          value={destinatario}
-          onChange={setDestinatario}
-        />
+        <PartyCard title="Destinatario" value={destinatario} onChange={setDestinatario} />
       </div>
 
-      {/* Packing list (vino) */}
-      <PackingListVino rows={pl} onChange={setPl} />
+      {/* Packing list (vino) — usa la prop corretta "value" */}
+      <PackingListVino value={pl} onChange={setPl} />
 
       {/* Colli */}
-      <ColliCard
-        colli={colli}
-        onChange={setColli}
-        formato={formato}
-        setFormato={setFormato}
-      />
+      <ColliCard colli={colli} onChange={setColli} formato={formato} setFormato={setFormato} />
 
       {/* Ritiro */}
-      <RitiroCard
-        date={ritiroData}
-        setDate={setRitiroData}
-        note={ritiroNote}
-        setNote={setRitiroNote}
-      />
+      <RitiroCard date={ritiroData} setDate={setRitiroData} note={ritiroNote} setNote={setRitiroNote} />
 
       {/* Fattura */}
       <FatturaCard
