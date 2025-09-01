@@ -1,4 +1,6 @@
 // lib/firebase-admin.ts
+// Complete module: exports getAdminAuth + alias adminAuth (compat)
+
 import { getApps, initializeApp, cert, applicationDefault } from 'firebase-admin/app';
 import { getAuth, Auth } from 'firebase-admin/auth';
 
@@ -11,7 +13,6 @@ export function getAdminAuth(): Auth {
   const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
   let privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
 
-  // Sostituzione delle \n se presenti
   if (privateKey && privateKey.includes('\\n')) {
     privateKey = privateKey.replace(/\\n/g, '\n');
   }
@@ -26,13 +27,13 @@ export function getAdminAuth(): Auth {
         }),
       });
     } else {
-      // fallback: Application Default Credentials (se presenti)
-      initializeApp({
-        credential: applicationDefault(),
-      });
+      initializeApp({ credential: applicationDefault() });
     }
   }
 
   _auth = getAuth();
   return _auth!;
 }
+
+// Alias per compatibilità con import esistenti
+export const adminAuth = getAdminAuth;
