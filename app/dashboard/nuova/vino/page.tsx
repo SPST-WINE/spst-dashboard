@@ -22,9 +22,9 @@ const blankParty: Party = {
 };
 
 export default function NuovaVinoPage() {
-  // Tipologia + flag destinatario abilitato (solo su VINO)
+  // Tipologia + switch “abilitato all’import” (solo pagina vino)
   const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
-  const [destAbilitato, setDestAbilitato] = useState<boolean>(false);
+  const [destAbilitato, setDestAbilitato] = useState(false);
 
   // Parti
   const [mittente, setMittente] = useState<Party>(blankParty);
@@ -35,7 +35,7 @@ export default function NuovaVinoPage() {
     { lunghezza_cm: 0, larghezza_cm: 0, altezza_cm: 0, peso_kg: 0 },
   ]);
   const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
-  const [contenuto, setContenuto] = useState<string>(''); // testo libero contenuto colli
+  const [contenuto, setContenuto] = useState<string>('');
 
   // Ritiro
   const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
@@ -48,19 +48,18 @@ export default function NuovaVinoPage() {
   const [delega, setDelega] = useState(false);
 
   const [fatturazione, setFatturazione] = useState<Party>(blankParty);
+  const [sameAsDest, setSameAsDest] = useState(false);
   const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined);
 
-  // Fatturazione uguale a DESTINATARIO (correzione refuso)
-  const [sameAsDest, setSameAsDest] = useState(false);
-
-  // Packing list vino
+  // Packing list vino (NB: RigaPL richiede anche `valuta`)
   const [pl, setPl] = useState<RigaPL[]>([
     {
       etichetta: '',
       bottiglie: 1,
       formato_litri: 0.75,
       gradazione: 12,
-      prezzo: 0, // (ex costo_unit)
+      prezzo: 0,
+      valuta: 'EUR',
       peso_netto_bott: 0.75,
       peso_lordo_bott: 1.3,
     },
@@ -91,36 +90,34 @@ export default function NuovaVinoPage() {
 
   return (
     <div className="space-y-4">
-      {/* Tipologia spedizione — stessa larghezza delle card mittente/destinatario */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border bg-white p-4">
-          <h3 className="mb-3 text-sm font-semibold text-spst-orange">Tipologia spedizione</h3>
+      {/* Tipologia spedizione */}
+      <div className="rounded-2xl border bg-white p-4">
+        <h3 className="mb-3 text-sm font-semibold text-spst-orange">
+          Tipologia spedizione
+        </h3>
 
-          <div className="space-y-3">
-            <Select
-              label="Stai spedendo ad un privato? O ad una azienda?"
-              value={tipoSped}
-              onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Sample')}
-              options={[
-                { label: 'B2C — Sto spedendo ad un privato / cliente', value: 'B2C' },
-                { label: 'B2B — Sto spedendo ad una azienda', value: 'B2B' },
-                {
-                  label: 'Sample — Sto spedendo una campionatura ad una azienda / importatore',
-                  value: 'Sample',
-                },
-              ]}
-            />
+        <div className="space-y-3">
+          <Select
+            label="Stai spedendo ad un privato? O ad una azienda?"
+            value={tipoSped}
+            onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Sample')}
+            options={[
+              { label: 'B2C — Sto spedendo ad un privato / cliente', value: 'B2C' },
+              { label: 'B2B — Sto spedendo ad una azienda', value: 'B2B' },
+              {
+                label:
+                  'Sample — Sto spedendo una campionatura ad una azienda / importatore',
+                value: 'Sample',
+              },
+            ]}
+          />
 
-            <Switch
-              checked={destAbilitato}
-              onChange={setDestAbilitato}
-              label="Il destinatario è un soggetto abilitato ad importare vino nel paese di destinazione?"
-            />
-          </div>
+          <Switch
+            checked={destAbilitato}
+            onChange={setDestAbilitato}
+            label="Il destinatario è un soggetto abilitato ad importare vino nel paese di destinazione?"
+          />
         </div>
-
-        {/* colonna destra vuota per simmetria su desktop */}
-        <div className="hidden md:block" />
       </div>
 
       {/* Mittente / Destinatario */}
@@ -140,7 +137,12 @@ export default function NuovaVinoPage() {
       />
 
       {/* Ritiro */}
-      <RitiroCard date={ritiroData} setDate={setRitiroData} note={ritiroNote} setNote={setRitiroNote} />
+      <RitiroCard
+        date={ritiroData}
+        setDate={setRitiroData}
+        note={ritiroNote}
+        setNote={setRitiroNote}
+      />
 
       {/* Packing list vino */}
       <PackingListVino righe={pl} onChange={setPl} />
@@ -157,7 +159,7 @@ export default function NuovaVinoPage() {
         setDelega={setDelega}
         fatturazione={fatturazione}
         setFatturazione={setFatturazione}
-        destinatario={destinatario}   // copia dai dati del destinatario quando attivo
+        destinatario={destinatario}
         sameAsDest={sameAsDest}
         setSameAsDest={setSameAsDest}
         fatturaFile={fatturaFile}
