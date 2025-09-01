@@ -6,31 +6,44 @@ export type Valuta = 'EUR' | 'USD' | 'GBP';
 
 export type RigaPL = {
   etichetta: string;
-  bottiglie: number;
-  formato_litri: number;
-  gradazione: number;
-  prezzo: number;
+  bottiglie: number | null;
+  formato_litri: number | null;
+  gradazione: number | null;
+  prezzo: number | null;
   valuta: Valuta;
-  peso_netto_bott: number;
-  peso_lordo_bott: number;
+  peso_netto_bott: number | null;
+  peso_lordo_bott: number | null;
 };
 
 type Props = {
   value: RigaPL[];
   onChange: (rows: RigaPL[]) => void;
-  onPickFile?: (file?: File) => void; // opzionale: “Allega packing list”
+  onPickFile?: (file?: File) => void; // “Allega packing list” opzionale
 };
 
 const ORANGE = '#f7911e';
 const inputCls =
   'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-[#1c3e5e]';
 
+const emptyRow: RigaPL = {
+  etichetta: '',
+  bottiglie: null,
+  formato_litri: null,
+  gradazione: null,
+  prezzo: null,
+  valuta: 'EUR',
+  peso_netto_bott: null,
+  peso_lordo_bott: null,
+};
+
 export default function PackingListVino({ value, onChange, onPickFile }: Props) {
   const rows = value ?? [];
 
-  const toNum = (s: string) => {
-    const n = parseFloat(String(s).replace(',', '.'));
-    return Number.isFinite(n) ? n : 0;
+  const toNumOrNull = (s: string): number | null => {
+    const trimmed = s.trim();
+    if (!trimmed) return null;
+    const n = parseFloat(trimmed.replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
   };
 
   const update = <K extends keyof RigaPL>(i: number, k: K, v: RigaPL[K]) => {
@@ -39,24 +52,8 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
     onChange(next);
   };
 
-  const addRow = () => {
-    onChange([
-      ...rows,
-      {
-        etichetta: '',
-        bottiglie: 1,
-        formato_litri: 0.75,
-        gradazione: 12,
-        prezzo: 0,
-        valuta: 'EUR',
-        peso_netto_bott: 0.75,
-        peso_lordo_bott: 1.3,
-      },
-    ]);
-  };
-
+  const addRow = () => onChange([...rows, { ...emptyRow }]);
   const remove = (i: number) => onChange(rows.filter((_, idx) => idx !== i));
-
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) =>
     onPickFile?.(e.target.files?.[0] ?? undefined);
 
@@ -78,12 +75,7 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
 
           <label className="inline-flex cursor-pointer items-center rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50">
             Allega packing list
-            <input
-              type="file"
-              accept="application/pdf"
-              className="hidden"
-              onChange={onPick}
-            />
+            <input type="file" accept="application/pdf" className="hidden" onChange={onPick} />
           </label>
         </div>
       </div>
@@ -102,15 +94,13 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
               onChange={(e) => update(i, 'etichetta', e.target.value)}
             />
 
-            {/* Bottiglie */}
+            {/* Bott. */}
             <input
               className={inputCls}
               placeholder="1"
               inputMode="numeric"
-              value={r.bottiglie}
-              onChange={(e) =>
-                update(i, 'bottiglie', Math.max(1, Math.trunc(toNum(e.target.value))))
-              }
+              value={r.bottiglie ?? ''}
+              onChange={(e) => update(i, 'bottiglie', toNumOrNull(e.target.value))}
             />
 
             {/* Formato (L) */}
@@ -118,17 +108,17 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
               className={inputCls}
               placeholder="0,75"
               inputMode="decimal"
-              value={r.formato_litri}
-              onChange={(e) => update(i, 'formato_litri', toNum(e.target.value))}
+              value={r.formato_litri ?? ''}
+              onChange={(e) => update(i, 'formato_litri', toNumOrNull(e.target.value))}
             />
 
-            {/* Gradazione % */}
+            {/* Grad. % */}
             <input
               className={inputCls}
               placeholder="12"
               inputMode="decimal"
-              value={r.gradazione}
-              onChange={(e) => update(i, 'gradazione', toNum(e.target.value))}
+              value={r.gradazione ?? ''}
+              onChange={(e) => update(i, 'gradazione', toNumOrNull(e.target.value))}
             />
 
             {/* Prezzo */}
@@ -136,8 +126,8 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
               className={inputCls}
               placeholder="0"
               inputMode="decimal"
-              value={r.prezzo}
-              onChange={(e) => update(i, 'prezzo', toNum(e.target.value))}
+              value={r.prezzo ?? ''}
+              onChange={(e) => update(i, 'prezzo', toNumOrNull(e.target.value))}
             />
 
             {/* Valuta */}
@@ -156,8 +146,8 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
               className={inputCls}
               placeholder="0,75"
               inputMode="decimal"
-              value={r.peso_netto_bott}
-              onChange={(e) => update(i, 'peso_netto_bott', toNum(e.target.value))}
+              value={r.peso_netto_bott ?? ''}
+              onChange={(e) => update(i, 'peso_netto_bott', toNumOrNull(e.target.value))}
             />
 
             {/* Peso lordo (kg) */}
@@ -165,8 +155,8 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
               className={inputCls}
               placeholder="1,3"
               inputMode="decimal"
-              value={r.peso_lordo_bott}
-              onChange={(e) => update(i, 'peso_lordo_bott', toNum(e.target.value))}
+              value={r.peso_lordo_bott ?? ''}
+              onChange={(e) => update(i, 'peso_lordo_bott', toNumOrNull(e.target.value))}
             />
 
             {/* Azioni */}
@@ -183,9 +173,7 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
         ))}
 
         {rows.length === 0 && (
-          <div className="text-sm text-slate-500">
-            Nessuna riga. Aggiungi una riga per iniziare.
-          </div>
+          <div className="text-sm text-slate-500">Nessuna riga. Aggiungi una riga per iniziare.</div>
         )}
       </div>
     </div>
