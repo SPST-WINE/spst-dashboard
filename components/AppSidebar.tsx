@@ -1,95 +1,80 @@
+// components/AppSidebar.tsx
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard,
-  PackageSearch,
+  Home,
   Package,
+  FileText,
   ShieldCheck,
   Settings,
-  CircleHelp,
+  Info,
 } from 'lucide-react';
 
-function cn(...a: Array<string | false | null | undefined>) {
-  return a.filter(Boolean).join(' ');
-}
-
-type Item = {
-  label: string;
+type NavItem = {
   href: string;
+  label: string;
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-  /** attivo solo per path esattamente uguale */
+  // overview deve fare match esatto
   exact?: boolean;
 };
 
-const NAV: Item[] = [
-  { label: 'Overview',           href: '/dashboard',                    icon: LayoutDashboard, exact: true },
-  { label: 'Le mie spedizioni',  href: '/dashboard/spedizioni',         icon: PackageSearch },
-  { label: 'Nuova spedizione',   href: '/dashboard/nuova',              icon: Package },
-  { label: 'Compliance',         href: '/dashboard/compliance',         icon: ShieldCheck },
-  { label: 'Impostazioni',       href: '/dashboard/impostazioni',       icon: Settings },
-  { label: 'Informazioni utili', href: '/dashboard/informazioni-utili', icon: CircleHelp },
+const NAV: NavItem[] = [
+  { href: '/dashboard', label: 'Overview', icon: Home, exact: true },
+  { href: '/dashboard/spedizioni', label: 'Le mie spedizioni', icon: Package },
+  { href: '/dashboard/nuova', label: 'Nuova spedizione', icon: FileText },
+  { href: '/dashboard/compliance', label: 'Compliance', icon: ShieldCheck },
+  { href: '/dashboard/impostazioni', label: 'Impostazioni', icon: Settings },
+  { href: '/dashboard/informazioni-utili', label: 'Informazioni utili', icon: Info },
 ];
-
-function BrandMark() {
-  return (
-    <div className="flex items-center gap-2">
-      <img
-        src="https://cdn.prod.website-files.com/6800cc3b5f399f3e2b7f2ffa/68079e968300482f70a36a4a_output-onlinepngtools%20(1).png"
-        alt="SPST"
-        width={24}
-        height={24}
-        className="h-6 w-6 object-contain"
-      />
-      <span className="text-sm font-semibold text-slate-800">Area Riservata</span>
-    </div>
-  );
-}
 
 export default function AppSidebar() {
   const pathname = usePathname();
 
-  const isActive = (item: Item) => {
-    if (item.exact) return pathname === item.href || pathname === item.href + '/';
-    return pathname === item.href || pathname.startsWith(item.href + '/');
-  };
-
   return (
-    <aside className="sticky top-0 h-screen border-r bg-slate-50/60 backdrop-blur-sm">
-      <div className="flex h-full flex-col">
-        {/* header */}
-        <div className="flex h-14 items-center gap-2 px-4">
-          <BrandMark />
-        </div>
-
-        {/* nav */}
-        <nav className="mt-2 flex-1 space-y-1 px-2">
-          {NAV.map((item) => {
-            const active = isActive(item);
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                  active
-                    ? 'bg-[#1c3e5e] text-white ring-1 ring-[#1c3e5e] shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                )}
-              >
-                {/* icone sempre neutre (grigie), anche quando attivo */}
-                <Icon className="h-4 w-4 text-slate-500" />
-                <span className="truncate">{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="h-4" />
+    <aside className="sticky top-0 h-screen border-r bg-white">
+      {/* Header con logo */}
+      <div className="flex items-center gap-3 px-4 py-4">
+        <Image
+          src="https://cdn.prod.website-files.com/6800cc3b5f399f3e2b7f2ffa/68079e968300482f70a36a4a_output-onlinepngtools%20(1).png"
+          alt="SPST"
+          width={24}
+          height={24}
+          priority
+        />
+        <span className="text-sm font-medium text-slate-700">Area Riservata</span>
       </div>
+
+      {/* Navigazione */}
+      <nav className="mt-2 space-y-1 px-2">
+        {NAV.map(({ href, label, icon: Icon, exact }) => {
+          const isActive = exact
+            ? pathname === href
+            : pathname === href || pathname.startsWith(href + '/');
+
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={[
+                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+                isActive
+                  ? 'bg-[#1c3e5e] text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-100',
+              ].join(' ')}
+              aria-current={isActive ? 'page' : undefined}
+            >
+              <Icon
+                className="h-4 w-4 shrink-0"
+                // le icone usano currentColor: diventano bianche quando attive
+              />
+              <span>{label}</span>
+            </Link>
+          );
+        })}
+      </nav>
     </aside>
   );
 }
