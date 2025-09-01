@@ -126,7 +126,8 @@ export default function NuovaVinoPage() {
       </div>
 
       {/* Packing list (vino) */}
-      <PackingListVino value={pl} onChange={setPl} />
+<PackingListVino value={pl} onChange={setPl} />
+
 
       {/* Colli */}
       <ColliCard
