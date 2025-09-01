@@ -9,12 +9,9 @@ const COOKIE_NAME = process.env.FIREBASE_SESSION_COOKIE_NAME || 'spst_session';
 export async function POST(req: Request) {
   try {
     const { idToken } = await req.json();
-    if (!idToken) {
-      return NextResponse.json({ error: 'missing idToken' }, { status: 400 });
-    }
+    if (!idToken) return NextResponse.json({ error: 'missing idToken' }, { status: 400 });
 
-    // durata cookie: 5 giorni
-    const expiresIn = 1000 * 60 * 60 * 24 * 5;
+    const expiresIn = 1000 * 60 * 60 * 24 * 5; // 5 giorni
     const sessionCookie = await adminAuth.createSessionCookie(idToken, { expiresIn });
 
     const res = NextResponse.json({ ok: true });
