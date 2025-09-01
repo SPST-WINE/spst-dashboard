@@ -11,12 +11,12 @@ export const TABLE = {
 export const F = {
   // Generali
   Stato: 'Stato',
-  Sorgente: 'Tipo',                              // ⬅️ rinominato da "Tipo (Vino, Altro)"
-  Tipo: 'Sottotipo',                             // ⬅️ rinominato da "Sottotipo (B2B, B2C, Sample)"
+  Sorgente: 'Tipo',                 // (Vino | Altro)
+  Tipo: 'Sottotipo',                // (B2B | B2C | Sample)
   Formato: 'Formato',
   Contenuto: 'Contenuto Colli',
-  RitiroData: 'Ritiro – Data',
-  RitiroNote: 'Ritiro – Note',
+  RitiroData: 'Ritiro - Data',      // ⬅️ usa il trattino normale "-"
+  RitiroNote: 'Ritiro - Note',      // ⬅️ idem
   CreatoDaEmail: 'Creato da',
   Corriere: 'Corriere',
   Tracking: 'Tracking Number',
