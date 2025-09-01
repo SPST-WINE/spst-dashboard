@@ -1,99 +1,39 @@
 // app/api/check-user/route.ts
-import { NextResponse } from 'next/server';
-import { getAirtableUserByEmail } from '@/lib/airtable';
+import { NextResponse, type NextRequest } from 'next/server';
 import { buildCorsHeaders } from '@/lib/cors';
+import { getUtenteByEmail } from '@/lib/airtable';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-function guessEnabled(fields: Record<string, any>): boolean {
-  // Nomi possibili del campo "abilitazione"
-  const candidates = [
-    'Abilitato',
-    'abilitato',
-    'Enabled',
-    'enabled',
-    'Attivo',
-    'attivo',
-    'Accesso',
-    'Accesso abilitato',
-    'accessEnabled',
-  ];
-
-  let found = false;
-  let value: any = undefined;
-
-  for (const key of candidates) {
-    if (Object.prototype.hasOwnProperty.call(fields, key)) {
-      found = true;
-      value = fields[key];
-      break;
-    }
-  }
-
-  // Se il campo NON esiste -> di default è ABILITATO
-  if (!found) return true;
-
-  // Se il campo esiste, consideriamo "non abilitato" solo se è esplicitamente false/0/"no"
-  if (value === false || value === 0) return false;
-  if (typeof value === 'string' && value.trim().toLowerCase() === 'no') return false;
-
-  // Tutto il resto (true, "si", "yes", checkbox spuntato, testo qualunque) -> abilitato
-  return true;
+export async function OPTIONS(req: NextRequest) {
+  const origin = req.headers.get('origin') ?? undefined;
+  return new NextResponse(null, { status: 204, headers: buildCorsHeaders(origin) });
 }
 
-export async function OPTIONS(req: Request) {
-  return new NextResponse(null, { status: 204, headers: buildCorsHeaders(req) });
-}
+export async function POST(req: NextRequest) {
+  const origin = req.headers.get('origin') ?? undefined;
+  const cors = buildCorsHeaders(origin);
 
-export async function POST(req: Request) {
-  const cors = buildCorsHeaders(req);
   try {
-    const { email } = await req.json();
+    const { email } = (await req.json()) as { email?: string };
     if (!email) {
-      return NextResponse.json({ error: 'email required' }, { status: 400, headers: cors });
+      return NextResponse.json({ ok: false, error: 'EMAIL_REQUIRED' }, { status: 400, headers: cors });
     }
 
-    const rec = await getAirtableUserByEmail(email);
-    if (!rec) {
-      return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404, headers: cors });
+    if (process.env.DEBUG_CHECK_USER === '1') {
+      return NextResponse.json({ ok: true, exists: true }, { headers: cors });
     }
 
-    const enabled = guessEnabled(rec.fields || {});
+    const record = await getUtenteByEmail(email);
     return NextResponse.json(
-      { ok: true, id: rec.id, fields: rec.fields, enabled },
-      { headers: cors }
+      { ok: true, exists: !!record, recordId: record?.id ?? null },
+      { headers: cors },
     );
   } catch (e: any) {
     return NextResponse.json(
-      { error: 'SERVER_ERROR', detail: e?.message || 'unknown' },
-      { status: 500, headers: cors }
-    );
-  }
-}
-
-export async function GET(req: Request) {
-  const cors = buildCorsHeaders(req);
-  try {
-    const { searchParams } = new URL(req.url);
-    const email = searchParams.get('email')?.trim();
-    if (!email) {
-      return NextResponse.json({ error: 'email required' }, { status: 400, headers: cors });
-    }
-
-    const rec = await getAirtableUserByEmail(email);
-    if (!rec) {
-      return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404, headers: cors });
-    }
-
-    const enabled = guessEnabled(rec.fields || {});
-    return NextResponse.json(
-      { ok: true, id: rec.id, fields: rec.fields, enabled },
-      { headers: cors }
-    );
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: 'SERVER_ERROR', detail: e?.message || 'unknown' },
-      { status: 500, headers: cors }
+      { ok: false, error: e?.message || 'SERVER_ERROR' },
+      { status: 500, headers: cors },
     );
   }
 }
