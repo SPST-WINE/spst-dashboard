@@ -1,11 +1,16 @@
-export const dynamic = "force-dynamic";
-import SpedizioniClient from "@/components/SpedizioniClient";
+// app/dashboard/spedizioni/page.tsx
+export const dynamic = 'force-dynamic';
+
+import Protected from '@/components/Protected';
+import SpedizioniClient from '@/components/SpedizioniClient';
 
 export default function Page() {
   return (
-    <>
-      <h1 className="text-xl font-semibold mb-4">Le mie spedizioni</h1>
-      <SpedizioniClient />
-    </>
+    <Protected>
+      <div className="p-6">
+        <h1 className="mb-4 text-xl font-semibold">Le mie spedizioni</h1>
+        <SpedizioniClient />
+      </div>
+    </Protected>
   );
 }
