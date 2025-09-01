@@ -1,44 +1,15 @@
 // lib/airtable.ts
-// Helpers Airtable lato server (Node runtime)
+import { TABLE, F, FCOLLO, FPL } from './airtable.schema';
 
-import Airtable from 'airtable';
+const AIRTABLE_TOKEN = process.env.AIRTABLE_API_TOKEN!;
+const AIRTABLE_BASE = process.env.AIRTABLE_BASE_ID_SPST!;
 
-const AIRTABLE_API_TOKEN = process.env.AIRTABLE_API_TOKEN!;
-const AIRTABLE_BASE_ID_SPST = process.env.AIRTABLE_BASE_ID_SPST!;
+if (!AIRTABLE_TOKEN) throw new Error('Missing AIRTABLE_API_TOKEN');
+if (!AIRTABLE_BASE) throw new Error('Missing AIRTABLE_BASE_ID_SPST');
 
-const AIRTABLE_TABLE_UTENTI =
-  process.env.AIRTABLE_TABLE_UTENTI ?? 'UTENTI';
+const API = `https://api.airtable.com/v0/${AIRTABLE_BASE}`;
 
-const AIRTABLE_USERS_EMAIL_FIELD =
-  process.env.AIRTABLE_USERS_EMAIL_FIELD ?? 'Mail Cliente';
-
-const AIRTABLE_TABLE_SPED_WEBAPP =
-  process.env.AIRTABLE_TABLE_SPED_WEBAPP ?? 'SpedizioniWebApp';
-
-const AIRTABLE_TABLE_SPED_COLLI =
-  process.env.AIRTABLE_TABLE_SPED_COLLI ?? 'SPED_COLLI';
-
-const AIRTABLE_TABLE_SPED_PL =
-  process.env.AIRTABLE_TABLE_SPED_PL ?? 'SPED_PL';
-
-const AIRTABLE_LINK_FIELD_COLLI =
-  process.env.AIRTABLE_LINK_FIELD_COLLI ?? 'Spedizione';
-
-const AIRTABLE_LINK_FIELD_PL =
-  process.env.AIRTABLE_LINK_FIELD_PL ?? 'Spedizione';
-
-if (!AIRTABLE_API_TOKEN) throw new Error('Missing AIRTABLE_API_TOKEN');
-if (!AIRTABLE_BASE_ID_SPST) throw new Error('Missing AIRTABLE_BASE_ID_SPST');
-
-const base = new Airtable({ apiKey: AIRTABLE_API_TOKEN }).base(
-  AIRTABLE_BASE_ID_SPST
-);
-
-type AirtRecord = Airtable.Record<any>;
-
-/* =========================
-   TYPES condivisi col FE
-========================= */
+type SingleSelect = string;
 
 export type Party = {
   ragioneSociale: string;
@@ -51,7 +22,7 @@ export type Party = {
   piva: string;
 };
 
-export type ColloInput = {
+export type Collo = {
   lunghezza_cm: number | null;
   larghezza_cm: number | null;
   altezza_cm: number | null;
@@ -64,254 +35,271 @@ export type RigaPL = {
   formato_litri: number;
   gradazione: number;
   prezzo: number;
-  // Se in Airtable non hai un campo Valuta in PL, questo valore
-  // viene ignorato nella scrittura delle righe PL.
-  valuta?: 'EUR' | 'USD' | 'GBP';
+  valuta: 'EUR' | 'USD' | 'GBP';
   peso_netto_bott: number;
   peso_lordo_bott: number;
 };
 
 export type SpedizionePayload = {
-  // tipologia
+  // “Tipo (Vino, Altro)”
+  sorgente: 'vino' | 'altro';
+  // “Sottotipo (B2B, B2C, Sample)”
   tipoSped: 'B2B' | 'B2C' | 'Sample';
+  // “Formato”
   formato: 'Pacco' | 'Pallet';
+  // “Contenuto Colli”
   contenuto?: string;
 
-  // soggetti
+  // Ritiro
+  ritiroData?: string; // ISO
+  ritiroNote?: string;
+
+  // Parti
   mittente: Party;
   destinatario: Party;
 
-  // solo pagina vino (opzionale)
-  destAbilitato?: boolean;
-
-  // colli
-  colli: ColloInput[];
-
-  // ritiro
-  ritiroData?: string | Date;
-  ritiroNote?: string;
-
-  // fattura commerciale
+  // Fattura
   incoterm: 'DAP' | 'DDP' | 'EXW';
   valuta: 'EUR' | 'USD' | 'GBP';
   noteFatt?: string;
-
-  // fattura: dati anagrafici
   fatturazione: Party;
-  sameAsDest?: boolean;
-  delega: boolean;
-  fatturaFileUrl?: string; // URL pubblico se vuoi allegare subito
+  fattSameAsDest?: boolean;
+  fattDelega?: boolean;
+  fatturaFileName?: string | null; // solo nome; nessun upload via API in questo step
 
-  // packing list (solo vino)
+  // Colli
+  colli: Collo[];
+
+  // PL vino
   packingList?: RigaPL[];
 
-  // opzionale: per tracciare chi crea
+  // Server-side derivato dal token
   createdByEmail?: string;
 };
 
-/* =========================
-   UTILS
-========================= */
+async function at<T = any>(
+  path: string,
+  init?: RequestInit
+): Promise<T> {
+  const res = await fetch(`${API}/${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+      'Content-Type': 'application/json',
+      ...(init?.headers || {}),
+    },
+    // ATTENZIONE: niente cache—siamo in API route
+    cache: 'no-store',
+  });
 
-function toObj(rec: AirtRecord) {
-  return { id: rec.id, fields: rec.fields as Record<string, any> };
-}
-
-function escapeFormulaString(value: string) {
-  return value.replace(/'/g, "\\'");
-}
-
-function toIsoOrUndefined(d?: string | Date) {
-  if (!d) return undefined;
-  const date = typeof d === 'string' ? new Date(d) : d;
-  if (Number.isNaN(date.getTime())) return undefined;
-  return date.toISOString();
-}
-
-async function createInChunks(
-  table: Airtable.Table<any>,
-  rows: Array<{ fields: Record<string, any> }>
-) {
-  const chunk = 10;
-  for (let i = 0; i < rows.length; i += chunk) {
-    await table.create(rows.slice(i, i + chunk));
+  if (!res.ok) {
+    const text = await res.text();
+    let detail = text;
+    try {
+      const j = JSON.parse(text);
+      detail = j?.error?.message || j?.message || text;
+    } catch {}
+    throw new Error(`AT_${res.status}: ${detail}`);
   }
+  return res.json() as Promise<T>;
 }
 
-/* =========================
-   UTENTI
-========================= */
-
-export async function getUtenteByEmail(email: string) {
-  const table = base.table(AIRTABLE_TABLE_UTENTI);
-  const emailNorm = email.trim().toLowerCase();
-  const emailEsc = escapeFormulaString(emailNorm);
-  const formula = `LOWER(TRIM({${AIRTABLE_USERS_EMAIL_FIELD}})) = '${emailEsc}'`;
-
-  const records = await table
-    .select({ maxRecords: 1, filterByFormula: formula })
-    .firstPage();
-
-  if (!records || records.length === 0) return null;
-  return toObj(records[0]);
+function chunk<T>(arr: T[], size = 10): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
 }
 
-export async function upsertUtente(params: {
-  email: string;
-  fields?: Record<string, any>;
-}) {
-  const email = params.email.trim();
-  const fields = params.fields ?? {};
-
-  const fieldsWithEmail = {
-    ...fields,
-    [AIRTABLE_USERS_EMAIL_FIELD]: email,
-  };
-
-  const existing = await getUtenteByEmail(email);
-  const table = base.table(AIRTABLE_TABLE_UTENTI);
-
-  if (existing) {
-    const updated = await table.update(existing.id, fieldsWithEmail);
-    return toObj(updated);
-  } else {
-    const created = await table.create(fieldsWithEmail);
-    return toObj(created);
-  }
-}
-
-/* =========================
-   SPEDIZIONI WEB APP
-========================= */
+// ------------------------ CREATE -------------------------------------------
 
 export async function createSpedizioneWebApp(payload: SpedizionePayload) {
-  const {
-    tipoSped,
-    formato,
-    contenuto,
-    mittente,
-    destinatario,
-    destAbilitato,
-    colli,
-    ritiroData,
-    ritiroNote,
-    incoterm,
-    valuta,
-    noteFatt,
-    fatturazione,
-    sameAsDest,
-    delega,
-    fatturaFileUrl,
-    packingList,
-    createdByEmail,
-  } = payload;
+  // 1) crea record principale
+  const fields: Record<string, any> = {
+    [F.Stato]: 'Nuova',
+    [F.Sorgente]: payload.sorgente === 'vino' ? 'Vino' : 'Altro',
+    [F.Tipo]: payload.tipoSped,
+    [F.Formato]: payload.formato,
+    [F.Contenuto]: payload.contenuto || '',
+    [F.RitiroData]: payload.ritiroData || null,
+    [F.RitiroNote]: payload.ritiroNote || '',
+    [F.CreatoDaEmail]: payload.createdByEmail || '',
 
-  const spedTable = base.table(AIRTABLE_TABLE_SPED_WEBAPP);
-  const colliTable = base.table(AIRTABLE_TABLE_SPED_COLLI);
-  const plTable = base.table(AIRTABLE_TABLE_SPED_PL);
+    // Mittente
+    [F.M_RS]: payload.mittente.ragioneSociale,
+    [F.M_REF]: payload.mittente.referente,
+    [F.M_PAESE]: payload.mittente.paese,
+    [F.M_CITTA]: payload.mittente.citta,
+    [F.M_CAP]: payload.mittente.cap,
+    [F.M_INDIRIZZO]: payload.mittente.indirizzo,
+    [F.M_TEL]: payload.mittente.telefono,
+    [F.M_PIVA]: payload.mittente.piva,
 
-  // Mappa campi MAIN (SpedizioniWebApp)
-  const mainFields: Record<string, any> = {
-    // tipologia
-    'Tipo spedizione': tipoSped,
-    Formato: formato,
-    Contenuto: contenuto ?? '',
+    // Destinatario
+    [F.D_RS]: payload.destinatario.ragioneSociale,
+    [F.D_REF]: payload.destinatario.referente,
+    [F.D_PAESE]: payload.destinatario.paese,
+    [F.D_CITTA]: payload.destinatario.citta,
+    [F.D_CAP]: payload.destinatario.cap,
+    [F.D_INDIRIZZO]: payload.destinatario.indirizzo,
+    [F.D_TEL]: payload.destinatario.telefono,
+    [F.D_PIVA]: payload.destinatario.piva,
 
-    // ritiro
-    'Ritiro data': toIsoOrUndefined(ritiroData),
-    'Ritiro note': ritiroNote ?? '',
-
-    // stato iniziale
-    Stato: 'Nuova',
-
-    // opzionale: traccia chi crea
-    'Creato da (email)': createdByEmail ?? undefined,
-
-    // mittente
-    'Mitt Ragione sociale': mittente.ragioneSociale,
-    'Mitt Referente': mittente.referente,
-    'Mitt Paese': mittente.paese,
-    'Mitt Città': mittente.citta,
-    'Mitt CAP': mittente.cap,
-    'Mitt Indirizzo': mittente.indirizzo,
-    'Mitt Telefono': mittente.telefono,
-    'Mitt PIVA/CF': mittente.piva,
-
-    // destinatario
-    'Dest Ragione sociale': destinatario.ragioneSociale,
-    'Dest Referente': destinatario.referente,
-    'Dest Paese': destinatario.paese,
-    'Dest Città': destinatario.citta,
-    'Dest CAP': destinatario.cap,
-    'Dest Indirizzo': destinatario.indirizzo,
-    'Dest Telefono': destinatario.telefono,
-    'Dest PIVA/CF': destinatario.piva,
-
-    // solo vino (se presente)
-    'Dest abilitato import vino': typeof destAbilitato === 'boolean' ? destAbilitato : undefined,
-
-    // commerciale fattura
-    Incoterm: incoterm,
-    Valuta: valuta,
-    'Note Fattura': noteFatt ?? '',
-
-    // fatturazione anagrafica
-    'FATT Ragione sociale': fatturazione.ragioneSociale,
-    'FATT Referente': fatturazione.referente,
-    'FATT Paese': fatturazione.paese,
-    'FATT Città': fatturazione.citta,
-    'FATT CAP': fatturazione.cap,
-    'FATT Indirizzo': fatturazione.indirizzo,
-    'FATT Telefono': fatturazione.telefono,
-    'FATT PIVA/CF': fatturazione.piva,
-    'FATT Uguale a Destinatario': typeof sameAsDest === 'boolean' ? sameAsDest : undefined,
-
-    // fattura flusso
-    'Fattura – Delega a SPST': delega,
-    'Fattura – Allegato': fatturaFileUrl
-      ? [{ url: fatturaFileUrl }]
-      : undefined,
+    // Fatturazione
+    [F.F_RS]: payload.fatturazione.ragioneSociale,
+    [F.F_REF]: payload.fatturazione.referente,
+    [F.F_PAESE]: payload.fatturazione.paese,
+    [F.F_CITTA]: payload.fatturazione.citta,
+    [F.F_CAP]: payload.fatturazione.cap,
+    [F.F_INDIRIZZO]: payload.fatturazione.indirizzo,
+    [F.F_TEL]: payload.fatturazione.telefono,
+    [F.F_PIVA]: payload.fatturazione.piva,
+    [F.F_SAME_DEST]: !!payload.fattSameAsDest,
+    [F.Incoterm]: payload.incoterm as SingleSelect,
+    [F.Valuta]: payload.valuta as SingleSelect,
+    [F.NoteFatt]: payload.noteFatt || '',
+    [F.F_Delega]: !!payload.fattDelega,
+    // [F.F_Att]: allegati: omessi (non abbiamo URL da caricare ora)
   };
 
-  // Crea record principale
-  const createdMain = await spedTable.create(mainFields);
-  const main = toObj(createdMain);
-  const link = [main.id];
+  const main = await at<{ id: string }>(`${TABLE.SPED}`, {
+    method: 'POST',
+    body: JSON.stringify({ fields }),
+  });
 
-  // Crea COLLI (a chunk di 10)
-  if (Array.isArray(colli) && colli.length > 0) {
-    const rows = colli.map((c) => ({
+  const parentId = main.id;
+
+  // 2) crea COLLI
+  const colli = (payload.colli || []).filter(
+    (c) => c.lunghezza_cm || c.larghezza_cm || c.altezza_cm || c.peso_kg
+  );
+
+  if (colli.length) {
+    const recs = colli.map((c) => ({
       fields: {
-        [AIRTABLE_LINK_FIELD_COLLI]: link,
-        'Lunghezza (cm)': c.lunghezza_cm ?? undefined,
-        'Larghezza (cm)': c.larghezza_cm ?? undefined,
-        'Altezza (cm)': c.altezza_cm ?? undefined,
-        'Peso (kg)': c.peso_kg ?? undefined,
+        [FCOLLO.LinkSped]: [parentId],
+        [FCOLLO.L]: c.lunghezza_cm ?? null,
+        [FCOLLO.W]: c.larghezza_cm ?? null,
+        [FCOLLO.H]: c.altezza_cm ?? null,
+        [FCOLLO.Peso]: c.peso_kg ?? null,
       },
     }));
-    await createInChunks(colliTable, rows);
+
+    for (const group of chunk(recs, 10)) {
+      await at(`${TABLE.COLLI}`, {
+        method: 'POST',
+        body: JSON.stringify({ records: group }),
+      });
+    }
   }
 
-  // Crea PACKING LIST (se presente). Nota: non scriviamo la valuta per riga
-  // se il campo non esiste nella base. Manteniamo "Prezzo" numerico.
-  if (Array.isArray(packingList) && packingList.length > 0) {
-    const rows = packingList.map((r) => ({
+  // 3) crea PL (solo se sorgente = vino)
+  if (payload.sorgente === 'vino' && payload.packingList?.length) {
+    const recsPL = payload.packingList.map((r) => ({
       fields: {
-        [AIRTABLE_LINK_FIELD_PL]: link,
-        Etichetta: r.etichetta,
-        Bottiglie: r.bottiglie,
-        'Formato (L)': r.formato_litri,
-        Gradazione: r.gradazione,
-        Prezzo: r.prezzo,
-        'Peso netto bott (kg)': r.peso_netto_bott,
-        'Peso lordo bott (kg)': r.peso_lordo_bott,
-        // Se nella tua base hai anche un campo "Valuta" nella tabella PL,
-        // decommenta la riga seguente e assicurati che il nome del campo combaci.
-        // Valuta: r.valuta,
+        [FPL.LinkSped]: [parentId],
+        [FPL.Etichetta]: r.etichetta,
+        [FPL.Bottiglie]: r.bottiglie,
+        [FPL.FormatoL]: r.formato_litri,
+        [FPL.Grad]: r.gradazione,
+        [FPL.Prezzo]: r.prezzo,
+        [FPL.Valuta]: r.valuta,
+        [FPL.PesoNettoBott]: r.peso_netto_bott,
+        [FPL.PesoLordoBott]: r.peso_lordo_bott,
       },
     }));
-    await createInChunks(plTable, rows);
+
+    for (const group of chunk(recsPL, 10)) {
+      await at(`${TABLE.PL}`, {
+        method: 'POST',
+        body: JSON.stringify({ records: group }),
+      });
+    }
   }
 
-  return main; // { id, fields }
+  return { id: parentId };
+}
+
+// ------------------------ LIST ---------------------------------------------
+
+type ListOpts = { email?: string };
+
+export async function listSpedizioni(opts: ListOpts = {}) {
+  const params = new URLSearchParams();
+
+  // Filtro per email se presente
+  if (opts.email) {
+    // formula: {Creato da} = 'email'
+    params.set(
+      'filterByFormula',
+      encodeURIComponent(`{${F.CreatoDaEmail}}='${opts.email.replace(/'/g, "\\'")}'`)
+    );
+  }
+
+  // ordina per createdTime desc (visuale più comoda)
+  params.set(
+    'sort[0][field]',
+    'Created'
+  ); // se non hai un campo "Created", commenta; in alternativa Airtable usa createdTime()
+  params.set('sort[0][direction]', 'desc');
+
+  // NB: se non hai un campo “Created”, rimuovi il sort qui sopra
+
+  const out: any[] = [];
+  let offset: string | undefined = undefined;
+
+  do {
+    const url =
+      `${TABLE.SPED}?pageSize=100` +
+      (offset ? `&offset=${offset}` : '') +
+      (params.toString() ? `&${params.toString()}` : '');
+
+    const page = await at<{
+      records: { id: string; createdTime: string; fields: Record<string, any> }[];
+      offset?: string;
+    }>(url);
+
+    for (const r of page.records) {
+      const f = r.fields;
+
+      // Oggetto “arricchito” per la UI attuale (con fallback chiavi legacy)
+      out.push({
+        id: r.id,
+        createdTime: r.createdTime,
+
+        // per ricerca/compat con UI
+        ['ID Spedizione']: r.id,
+        ['Destinatario']: f[F.D_RS] || '',
+        ['Città Destinatario']: f[F.D_CITTA] || '',
+        ['Paese Destinatario']: f[F.D_PAESE] || '',
+        ['Stato']: f[F.Stato] || '',
+
+        // altri dati utili in dettaglio
+        mittente: {
+          ragioneSociale: f[F.M_RS] || '',
+          paese: f[F.M_PAESE] || '',
+          citta: f[F.M_CITTA] || '',
+        },
+        destinatario: {
+          ragioneSociale: f[F.D_RS] || '',
+          paese: f[F.D_PAESE] || '',
+          citta: f[F.D_CITTA] || '',
+        },
+        tipo: f[F.Sorgente] || '',
+        sottotipo: f[F.Tipo] || '',
+        formato: f[F.Formato] || '',
+        contenuto: f[F.Contenuto] || '',
+        ritiroData: f[F.RitiroData] || null,
+        ritiroNote: f[F.RitiroNote] || '',
+        corriere: f[F.Corriere] || '',
+        tracking: f[F.Tracking] || '',
+        incoterm: f[F.Incoterm] || '',
+        valuta: f[F.Valuta] || '',
+        noteFatt: f[F.NoteFatt] || '',
+      });
+    }
+
+    offset = (page as any).offset;
+  } while (offset);
+
+  return out;
 }
