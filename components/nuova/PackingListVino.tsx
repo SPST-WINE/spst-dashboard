@@ -80,6 +80,19 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
         </div>
       </div>
 
+      {/* TITOLI COLONNE */}
+      <div className="hidden md:grid md:grid-cols-[minmax(160px,1fr)_90px_110px_100px_110px_110px_130px_130px_auto] gap-2 px-1 pb-2 text-[11px] font-medium text-slate-500">
+        <div>Etichetta</div>
+        <div>Bott.</div>
+        <div>Formato (L)</div>
+        <div>Grad. %</div>
+        <div>Prezzo</div>
+        <div>Valuta</div>
+        <div>Peso netto (kg)</div>
+        <div>Peso lordo (kg)</div>
+        <div className="text-transparent">Azioni</div>
+      </div>
+
       <div className="space-y-3">
         {rows.map((r, i) => (
           <div
@@ -90,6 +103,7 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
             <input
               className={inputCls}
               placeholder="Nome etichetta"
+              aria-label="Etichetta"
               value={r.etichetta}
               onChange={(e) => update(i, 'etichetta', e.target.value)}
             />
@@ -98,6 +112,7 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
             <input
               className={inputCls}
               placeholder="1"
+              aria-label="Bottiglie"
               inputMode="numeric"
               value={r.bottiglie ?? ''}
               onChange={(e) => update(i, 'bottiglie', toNumOrNull(e.target.value))}
@@ -107,6 +122,7 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
             <input
               className={inputCls}
               placeholder="0,75"
+              aria-label="Formato in litri"
               inputMode="decimal"
               value={r.formato_litri ?? ''}
               onChange={(e) => update(i, 'formato_litri', toNumOrNull(e.target.value))}
@@ -116,6 +132,7 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
             <input
               className={inputCls}
               placeholder="12"
+              aria-label="Gradazione percentuale"
               inputMode="decimal"
               value={r.gradazione ?? ''}
               onChange={(e) => update(i, 'gradazione', toNumOrNull(e.target.value))}
@@ -125,6 +142,7 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
             <input
               className={inputCls}
               placeholder="0"
+              aria-label="Prezzo unitario"
               inputMode="decimal"
               value={r.prezzo ?? ''}
               onChange={(e) => update(i, 'prezzo', toNumOrNull(e.target.value))}
@@ -133,6 +151,7 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
             {/* Valuta */}
             <select
               className={inputCls}
+              aria-label="Valuta"
               value={r.valuta}
               onChange={(e) => update(i, 'valuta', e.target.value as Valuta)}
             >
@@ -145,6 +164,7 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
             <input
               className={inputCls}
               placeholder="0,75"
+              aria-label="Peso netto per bottiglia (kg)"
               inputMode="decimal"
               value={r.peso_netto_bott ?? ''}
               onChange={(e) => update(i, 'peso_netto_bott', toNumOrNull(e.target.value))}
@@ -154,6 +174,7 @@ export default function PackingListVino({ value, onChange, onPickFile }: Props) 
             <input
               className={inputCls}
               placeholder="1,3"
+              aria-label="Peso lordo per bottiglia (kg)"
               inputMode="decimal"
               value={r.peso_lordo_bott ?? ''}
               onChange={(e) => update(i, 'peso_lordo_bott', toNumOrNull(e.target.value))}
