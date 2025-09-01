@@ -3,7 +3,6 @@ import Link from 'next/link';
 import {
   Package,
   Truck,
-  Clock,
   AlertTriangle,
   FileText,
   HelpCircle,
@@ -22,11 +21,11 @@ type Shipment = {
   status: 'in_transito' | 'in_consegna' | 'consegnata' | 'azione_richiesta';
 };
 
+// 3 KPI (tempo medio rimosso)
 const stats: Stat[] = [
   { label: 'Spedizioni in corso', value: '12', icon: Truck },
   { label: 'In consegna oggi', value: '3', icon: Package },
   { label: 'Azioni richieste', value: '2', icon: AlertTriangle },
-  { label: 'Tempo medio consegna', value: '2,1 gg', icon: Clock },
 ];
 
 const recent: Shipment[] = [
@@ -60,9 +59,9 @@ export default function DashboardOverview() {
         </p>
       </header>
 
-      {/* KPI */}
+      {/* KPI (3 card) */}
       <section>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {stats.map(({ label, value, icon: Icon }) => (
             <div key={label} className="rounded-2xl border bg-white p-4">
               <div className="flex items-center gap-3">
@@ -228,6 +227,7 @@ export default function DashboardOverview() {
             Hai bisogno di aiuto? Siamo a disposizione per domande su compliance, documenti e tracking.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
+            {/* stessa misura (padding) per entrambi i bottoni */}
             <Link
               href="/dashboard/informazioni-utili"
               className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-[#1c3e5e] hover:bg-slate-50"
@@ -238,7 +238,7 @@ export default function DashboardOverview() {
             <Link
               href="https://wa.me/393204662570"
               target="_blank"
-              className="inline-flex items-center gap-2 rounded-lg bg-[#1c3e5e] px-3 py-2 text-sm text-white hover:opacity-95"
+              className="inline-flex items-center gap-2 rounded-lg bg-[#f7911e] px-3 py-2 text-sm text-white hover:opacity-95"
             >
               <HelpCircle className="h-4 w-4" />
               WhatsApp
