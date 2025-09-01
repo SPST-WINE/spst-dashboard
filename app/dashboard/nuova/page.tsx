@@ -6,7 +6,7 @@ import { Package, FileText } from 'lucide-react';
 export default function NuovaSpedizioneSelettore() {
   return (
     <div className="mx-auto max-w-5xl">
-      <h2 className="text-lg font-semibold">Nuova spedizione</h2>
+      <h2 className="text-lg font-semibold"></h2>
 
       {/* wrapper centrale */}
       <div className="mt-8 flex min-h-[55vh] items-center justify-center">
