@@ -123,4 +123,129 @@ export default function DashboardOverview() {
               </span>
               <div>
                 <div className="font-medium text-slate-900">Documenti utili</div>
-                <p className=
+                <p className="text-sm text-slate-500">Guide pallet/pacchi, compliance e FAQ.</p>
+              </div>
+            </div>
+          </Link>
+        </div>
+      </section>
+
+      {/* Ultime spedizioni + Compliance */}
+      <section className="grid gap-6 lg:grid-cols-3">
+        {/* Tabella */}
+        <div className="rounded-2xl border bg-white p-4 lg:col-span-2">
+          <h3 className="mb-3 text-sm font-semibold text-[#f7911e]">Ultime spedizioni</h3>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-500">
+                  <th className="px-2 py-2 font-medium">Riferimento</th>
+                  <th className="px-2 py-2 font-medium">Destinazione</th>
+                  <th className="px-2 py-2 font-medium">ETA</th>
+                  <th className="px-2 py-2 font-medium">Stato</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {recent.map((r) => (
+                  <tr key={r.id} className="text-slate-800">
+                    <td className="px-2 py-2">{r.ref}</td>
+                    <td className="px-2 py-2">{r.to}</td>
+                    <td className="px-2 py-2">{r.eta}</td>
+                    <td className="px-2 py-2">
+                      <StatusBadge s={r.status} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-3 text-right">
+            <Link
+              href="/dashboard/spedizioni"
+              className="inline-flex items-center gap-1 text-[#1c3e5e] hover:underline"
+            >
+              Vedi tutte <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+
+        {/* Compliance / To-do */}
+        <div className="rounded-2xl border bg-white p-4">
+          <h3 className="mb-3 text-sm font-semibold text-[#f7911e]">Compliance / To-do</h3>
+          <ul className="space-y-3 text-sm">
+            <li className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-500" />
+              <div>
+                Completa <span className="font-medium">dichiarazione libera esportazione</span>{' '}
+                per SPST-24078.
+              </div>
+            </li>
+            <li className="flex items-start gap-2">
+              <FileText className="mt-0.5 h-4 w-4 text-sky-600" />
+              <div>
+                Carica <span className="font-medium">fattura proforma</span> per le spedizioni Extra-UE.
+              </div>
+            </li>
+            <li className="flex items-start gap-2">
+              <HelpCircle className="mt-0.5 h-4 w-4 text-slate-500" />
+              <div>
+                Dubbi sulle accise? Vedi{' '}
+                <Link href="/dashboard/informazioni-utili" className="text-[#1c3e5e] underline">
+                  Documenti utili
+                </Link>
+                .
+              </div>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      {/* Ritiri + Supporto */}
+      <section className="grid gap-6 lg:grid-cols-2">
+        <div className="rounded-2xl border bg-white p-4">
+          <h3 className="mb-3 text-sm font-semibold text-[#f7911e]">Ritiri programmati</h3>
+          <ul className="space-y-3 text-sm">
+            <li className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-[#1c3e5e]" />
+                <span>12 settembre 2025 – Milano (IT)</span>
+              </div>
+              <span className="text-xs text-slate-500">Fascia 14-17</span>
+            </li>
+            <li className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-[#1c3e5e]" />
+                <span>13 settembre 2025 – Siena (IT)</span>
+              </div>
+              <span className="text-xs text-slate-500">Fascia 9-12</span>
+            </li>
+          </ul>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-4">
+          <h3 className="mb-3 text-sm font-semibold text-[#f7911e]">Supporto</h3>
+          <p className="text-sm text-slate-600">
+            Hai bisogno di aiuto? Siamo a disposizione per domande su compliance, documenti e tracking.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href="/dashboard/informazioni-utili"
+              className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-[#1c3e5e] hover:bg-slate-50"
+            >
+              <FileText className="h-4 w-4" />
+              Documenti utili
+            </Link>
+            <Link
+              href="https://wa.me/393204662570"
+              target="_blank"
+              className="inline-flex items-center gap-2 rounded-lg bg-[#1c3e5e] px-3 py-2 text-sm text-white hover:opacity-95"
+            >
+              <HelpCircle className="h-4 w-4" />
+              WhatsApp
+            </Link>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
