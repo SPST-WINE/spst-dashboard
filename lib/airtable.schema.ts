@@ -11,13 +11,13 @@ export const TABLE = {
 export const F = {
   // Generali
   Stato: 'Stato',
-  Sorgente: 'Tipo (Vino, Altro)',                 // <— prima “Sorgente”
-  Tipo: 'Sottotipo (B2B, B2C, Sample)',           // <— prima “Tipo spedizione”
+  Sorgente: 'Tipo',                              // ⬅️ rinominato da "Tipo (Vino, Altro)"
+  Tipo: 'Sottotipo',                             // ⬅️ rinominato da "Sottotipo (B2B, B2C, Sample)"
   Formato: 'Formato',
-  Contenuto: 'Contenuto Colli',                   // <— prima “Contenuto”
+  Contenuto: 'Contenuto Colli',
   RitiroData: 'Ritiro – Data',
   RitiroNote: 'Ritiro – Note',
-  CreatoDaEmail: 'Creato da',                     // <— prima “Creato da (email)”
+  CreatoDaEmail: 'Creato da',
   Corriere: 'Corriere',
   Tracking: 'Tracking Number',
 
@@ -77,18 +77,17 @@ export const FCOLLO = {
   W: 'Larghezza (cm)',
   H: 'Altezza (cm)',
   Peso: 'Peso (kg)',
-  // NB: nessun campo "Formato" in questa tabella
 } as const;
 
 // --- Campi tabella figlia: SPED_PL (packing list vino) ----------------------
 export const FPL = {
   LinkSped: 'Spedizione',
   Etichetta: 'Etichetta',
-  Bottiglie: 'Bottiglie',                         // <— prima “Quantità bottiglie”
+  Bottiglie: 'Bottiglie',
   FormatoL: 'Formato (L)',
-  Grad: 'Gradazione (% vol)',                      // <— prima “Grad. %”
+  Grad: 'Gradazione (% vol)',
   Prezzo: 'Prezzo',
-  Valuta: 'Valuta',                                // presente: salviamo comunque
+  Valuta: 'Valuta',
   PesoNettoBott: 'Peso netto bott. (kg)',
   PesoLordoBott: 'Peso lordo bott. (kg)',
 } as const;
