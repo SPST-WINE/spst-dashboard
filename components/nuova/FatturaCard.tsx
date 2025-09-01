@@ -20,16 +20,16 @@ type Props = {
   delega: boolean;
   setDelega: (v: boolean) => void;
 
-  // dati fatturazione
+  // dati fatturazione (sempre salvati nello stato spedizione)
   fatturazione: Party;
   setFatturazione: (p: Party) => void;
 
-  // sorgente per "uguale al mittente"
-  mittente: Party;
-  sameAsMitt: boolean;
-  setSameAsMitt: (v: boolean) => void;
+  // sorgente per "uguale al destinatario"
+  destinatario: Party;
+  sameAsDest: boolean;
+  setSameAsDest: (v: boolean) => void;
 
-  // allegato fattura
+  // allegato fattura (opzionale, disabilitato se delega = true)
   fatturaFile?: File;
   setFatturaFile?: (f?: File) => void;
 };
@@ -49,16 +49,16 @@ export default function FatturaCard({
   setDelega,
   fatturazione,
   setFatturazione,
-  mittente,
-  sameAsMitt,
-  setSameAsMitt,
+  destinatario,
+  sameAsDest,
+  setSameAsDest,
   fatturaFile,
   setFatturaFile,
 }: Props) {
-  // sincronizza quando "uguale al mittente" è attivo
+  // Quando "uguale al destinatario" è attivo, copia i dati del destinatario
   React.useEffect(() => {
-    if (sameAsMitt) setFatturazione(mittente);
-  }, [sameAsMitt, mittente, setFatturazione]);
+    if (sameAsDest) setFatturazione(destinatario);
+  }, [sameAsDest, destinatario, setFatturazione]);
 
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!setFatturaFile) return;
@@ -78,9 +78,9 @@ export default function FatturaCard({
 
         <div className="flex items-center gap-3">
           <Switch
-            checked={sameAsMitt}
-            onChange={setSameAsMitt}
-            label="Dati fatturazione uguali ai dati del mittente"
+            checked={sameAsDest}
+            onChange={setSameAsDest}
+            label="Dati fatturazione uguali ai dati del destinatario"
           />
         </div>
       </div>
@@ -92,56 +92,56 @@ export default function FatturaCard({
           placeholder="Ragione sociale"
           value={fatturazione.ragioneSociale}
           onChange={(e) => set('ragioneSociale', e.target.value)}
-          disabled={sameAsMitt}
+          disabled={sameAsDest}
         />
         <input
           className={inputCls}
           placeholder="Persona di riferimento"
           value={fatturazione.referente}
           onChange={(e) => set('referente', e.target.value)}
-          disabled={sameAsMitt}
+          disabled={sameAsDest}
         />
         <input
           className={inputCls}
           placeholder="Paese"
           value={fatturazione.paese}
           onChange={(e) => set('paese', e.target.value)}
-          disabled={sameAsMitt}
+          disabled={sameAsDest}
         />
         <input
           className={inputCls}
           placeholder="Città"
           value={fatturazione.citta}
           onChange={(e) => set('citta', e.target.value)}
-          disabled={sameAsMitt}
+          disabled={sameAsDest}
         />
         <input
           className={inputCls}
           placeholder="CAP"
           value={fatturazione.cap}
           onChange={(e) => set('cap', e.target.value)}
-          disabled={sameAsMitt}
+          disabled={sameAsDest}
         />
         <input
           className={inputCls}
           placeholder="Telefono"
           value={fatturazione.telefono}
           onChange={(e) => set('telefono', e.target.value)}
-          disabled={sameAsMitt}
+          disabled={sameAsDest}
         />
         <input
           className={'md:col-span-2 ' + inputCls}
           placeholder="Indirizzo"
           value={fatturazione.indirizzo}
           onChange={(e) => set('indirizzo', e.target.value)}
-          disabled={sameAsMitt}
+          disabled={sameAsDest}
         />
         <input
           className={'md:col-span-2 ' + inputCls}
           placeholder="Partita IVA / Codice Fiscale"
           value={fatturazione.piva}
           onChange={(e) => set('piva', e.target.value)}
-          disabled={sameAsMitt}
+          disabled={sameAsDest}
         />
       </div>
 
@@ -152,7 +152,9 @@ export default function FatturaCard({
           value={incoterm}
           onChange={(e) => setIncoterm(e.target.value as Incoterm)}
         >
-          <option value="DAP">DAP - Spedizione a carico del mittente - dazi, oneri e accise a carico del destinatario</option>
+          <option value="DAP">
+            DAP - Spedizione a carico del mittente - dazi, oneri e accise a carico del destinatario
+          </option>
           <option value="DDP">DDP - Tutto a carico del mittente</option>
           <option value="EXW">EXW - Tutto a carico del destinatario</option>
         </select>
@@ -185,8 +187,7 @@ export default function FatturaCard({
             onChange={(e) => setDelega(e.target.checked)}
           />
           <span>
-            <span className="font-medium">Non ho la fattura</span>, delego a SPST la
-            creazione del documento
+            <span className="font-medium">Non ho la fattura</span>, delego a SPST la creazione del documento
           </span>
         </label>
 
