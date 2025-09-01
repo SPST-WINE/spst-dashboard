@@ -1,33 +1,34 @@
 // app/api/utenti/route.ts
 import { NextResponse } from 'next/server';
-import { upsertUtente, getUtenteByEmail } from '@/lib/airtable';
+import { getUtenteByEmail, upsertUtente } from '@/lib/airtable';
 
 export const runtime = 'nodejs';
 
-// GET /api/utenti?email=foo@bar.com
+// GET /api/utenti?email=foo@bar.com  ->  { exists, record }
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const email = searchParams.get('email');
-  if (!email) return NextResponse.json({ error: 'email required' }, { status: 400 });
-
   try {
+    const { searchParams } = new URL(req.url);
+    const email = searchParams.get('email')?.trim();
+    if (!email) return NextResponse.json({ error: 'email required' }, { status: 400 });
+
     const record = await getUtenteByEmail(email);
-    return NextResponse.json(record || null);
+    return NextResponse.json({ exists: !!record, record });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'unknown error' }, { status: 500 });
+    return NextResponse.json({ error: e?.message || 'SERVER_ERROR' }, { status: 500 });
   }
 }
 
-// POST /api/utenti  body: { email, ...fields }
+// POST /api/utenti  { email, fields? }  -> upsert + return record
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { email, ...fields } = body || {};
+    const body = await req.json().catch(() => ({}));
+    const email: string | undefined = body?.email?.trim();
+    const fields: Record<string, any> = body?.fields || {};
     if (!email) return NextResponse.json({ error: 'email required' }, { status: 400 });
 
-    const result = await upsertUtente(email, fields);
-    return NextResponse.json(result);
+    const record = await upsertUtente({ email, fields });
+    return NextResponse.json({ record });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'unknown error' }, { status: 500 });
+    return NextResponse.json({ error: e?.message || 'SERVER_ERROR' }, { status: 500 });
   }
 }
