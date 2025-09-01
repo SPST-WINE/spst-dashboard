@@ -29,7 +29,7 @@ export const F = {
   M_CAP: 'Mittente - CAP',
   M_INDIRIZZO: 'Mittente - Indirizzo',
   M_TEL: 'Mittente - Telefono',
-  M_PIVA: 'Mittente - PIVA/CF',
+  M_PIVA: 'Mittente - P.IVA/CF',
 
   // Destinatario (prefisso “Destinatario - …”)
   D_RS: 'Destinatario - Ragione Sociale',
@@ -39,7 +39,7 @@ export const F = {
   D_CAP: 'Destinatario - CAP',
   D_INDIRIZZO: 'Destinatario - Indirizzo',
   D_TEL: 'Destinatario - Telefono',
-  D_PIVA: 'Destinatario - PIVA/CF',
+  D_PIVA: 'Destinatario - P.IVA/CF',
 
   // Fatturazione (prefisso “FATT …”)
   F_RS: 'FATT Ragione sociale',
@@ -55,11 +55,12 @@ export const F = {
   Valuta: 'Valuta',
   NoteFatt: 'Note Fattura',
   F_Delega: 'Fattura – Delega a SPST',
-  F_Att: 'Fattura – Allegato',
+  F_Att: 'Fattura – Allegato Cliente',
 
   // Allegati spedizione
-  LDV: 'Lettera di vettura',
-  DLE: 'Dichiarazione libera esportazione',
+  LDV: 'Allegato LDV',
+  DLE: 'Allegato DLE',
+  Fattura: 'Allegato Fattura',
   ATT1: 'Allegato 1',
   ATT2: 'Allegato 2',
   ATT3: 'Allegato 3',
