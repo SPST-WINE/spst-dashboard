@@ -8,7 +8,10 @@ export const dynamic = 'force-dynamic';
 
 export async function OPTIONS(req: NextRequest) {
   const origin = req.headers.get('origin') || '*';
-  return new NextResponse(null, { status: 204, headers: buildCorsHeaders(origin) });
+  return new NextResponse(null, {
+    status: 204,
+    headers: buildCorsHeaders(origin),
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -26,8 +29,10 @@ export async function POST(req: NextRequest) {
     }
 
     const record = await getUtenteByEmail(email);
-    const exists = !!record;
-    return NextResponse.json({ ok: true, exists, recordId: record?.id ?? null }, { headers: cors });
+    return NextResponse.json(
+      { ok: true, exists: !!record, recordId: record?.id ?? null },
+      { headers: cors },
+    );
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
