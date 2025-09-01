@@ -4,7 +4,6 @@ import { getUtenteByEmail, upsertUtente } from '@/lib/airtable';
 
 export const runtime = 'nodejs';
 
-// GET /api/utenti?email=foo@bar.com  ->  { exists, record }
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -18,7 +17,6 @@ export async function GET(req: Request) {
   }
 }
 
-// POST /api/utenti  { email, fields? }  -> upsert + return record
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
