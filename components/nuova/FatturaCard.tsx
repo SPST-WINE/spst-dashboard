@@ -20,7 +20,7 @@ type Props = {
   delega: boolean;
   setDelega: (v: boolean) => void;
 
-  // dati fatturazione (sempre salvati nello stato spedizione)
+  // dati fatturazione (editable/snapshot)
   fatturazione: Party;
   setFatturazione: (p: Party) => void;
 
@@ -29,7 +29,7 @@ type Props = {
   sameAsDest: boolean;
   setSameAsDest: (v: boolean) => void;
 
-  // allegato fattura (opzionale, disabilitato se delega = true)
+  // allegato fattura
   fatturaFile?: File;
   setFatturaFile?: (f?: File) => void;
 };
@@ -55,7 +55,7 @@ export default function FatturaCard({
   fatturaFile,
   setFatturaFile,
 }: Props) {
-  // Quando "uguale al destinatario" è attivo, copia i dati del destinatario
+  // sincronizza quando "uguale al destinatario" è attivo
   React.useEffect(() => {
     if (sameAsDest) setFatturazione(destinatario);
   }, [sameAsDest, destinatario, setFatturazione]);
@@ -152,9 +152,7 @@ export default function FatturaCard({
           value={incoterm}
           onChange={(e) => setIncoterm(e.target.value as Incoterm)}
         >
-          <option value="DAP">
-            DAP - Spedizione a carico del mittente - dazi, oneri e accise a carico del destinatario
-          </option>
+          <option value="DAP">DAP - Spedizione a carico del mittente - dazi, oneri e accise a carico del destinatario</option>
           <option value="DDP">DDP - Tutto a carico del mittente</option>
           <option value="EXW">EXW - Tutto a carico del destinatario</option>
         </select>
