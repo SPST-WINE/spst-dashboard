@@ -2,22 +2,30 @@
 
 import { useMemo, useState } from 'react';
 import {
-  ShieldCheck, AlertTriangle, FileText, Upload, Globe, Building2, User2,
+  ShieldCheck, AlertTriangle, FileText, Upload, Globe, Building2,
   CheckCircle2, XCircle, Download, PackageSearch, ClipboardList
 } from 'lucide-react';
 
 type Tipo = 'B2B' | 'B2C' | 'Sample';
 type Status = 'ok' | 'warn' | 'bad';
 
-const SPST_ORANGE = 'text-spst-orange'; // esiste già nei tuoi styles
+type CountryRule = {
+  code: 'DE' | 'FR' | 'US';
+  name: string;
+  b2c: boolean;
+  note: string;
+  /** limite indicativo in litri (opzionale) */
+  maxLitri?: number;
+};
+
+const SPST_ORANGE = 'text-spst-orange';
 const BRAND_BLUE = '#1c3e5e';
 
-// Regole (mock) per alcuni Paesi: poi le portiamo su DB
-const PAESI = [
+const PAESI: CountryRule[] = [
   { code: 'DE', name: 'Germania', b2c: true,  note: 'B2C consentito con accisa assolta o schema OSS (se applicabile).', maxLitri: 90 },
-  { code: 'FR', name: 'Francia',  b2c: true,  note: 'Obbligo accisa assolta per B2C; e-DAS se in sospensione.',       maxLitri: 90 },
+  { code: 'FR', name: 'Francia',  b2c: true,  note: 'Obbligo accisa assolta per B2C; e-DAS se in sospensione.',        maxLitri: 90 },
   { code: 'US', name: 'Stati Uniti', b2c: false, note: 'Solo B2B con importatore autorizzato (licenza TTB necessaria).' },
-] as const;
+];
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -33,7 +41,7 @@ function Badge({ status, children }: { status: Status; children: React.ReactNode
     ok:   'bg-emerald-50 text-emerald-700 ring-emerald-200',
     warn: 'bg-amber-50 text-amber-700 ring-amber-200',
     bad:  'bg-rose-50 text-rose-700 ring-rose-200',
-  };
+  } as const;
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs ring-1 ${map[status]}`}>
       {status === 'ok' && <CheckCircle2 size={14} />}
@@ -73,7 +81,7 @@ function ComplianceScore({ score }: { score: number }) {
 export default function CompliancePage() {
   // Wizard preliminare
   const [tipo, setTipo] = useState<Tipo>('B2B');
-  const [dest, setDest] = useState<typeof PAESI[number]['code']>('DE');
+  const [dest, setDest] = useState<CountryRule['code']>('DE');
   const [abv, setAbv] = useState<number>(12);
   const [litri, setLitri] = useState<number>(9);
 
@@ -84,7 +92,7 @@ export default function CompliancePage() {
   const [docAccisaAssolta, setDocAccisaAssolta] = useState(false);
   const [docLicenzaImp, setDocLicenzaImp] = useState(false);
 
-  // Verifica destinatario
+  // Verifica destinatario (mock)
   const [piva, setPiva] = useState('');
   const [eori, setEori] = useState('');
   const [importerOk, setImporterOk] = useState(false);
@@ -92,40 +100,36 @@ export default function CompliancePage() {
   const paese = useMemo(() => PAESI.find(p => p.code === dest)!, [dest]);
 
   const esito = useMemo(() => {
-    // regole ultra semplificate solo per UI demo
     if (tipo === 'B2C' && !paese.b2c) {
       return { status: 'bad' as Status, msg: 'B2C non consentito verso questo Paese.' };
     }
     if (tipo !== 'B2C' && paese.code === 'US' && !importerOk) {
       return { status: 'warn' as Status, msg: 'Serve importatore abilitato; verifica i dati.' };
     }
-    if (paese.maxLitri && litri > paese.maxLitri) {
+    if (typeof paese.maxLitri === 'number' && litri > paese.maxLitri) {
       return { status: 'warn' as Status, msg: `Quantità oltre la soglia suggerita (${paese.maxLitri} L).` };
     }
     return { status: 'ok' as Status, msg: 'Nessun blocco preliminare rilevato.' };
   }, [tipo, paese, litri, importerOk]);
 
-  // Documenti consigliati in base alla selezione (regole demo)
   const docObbligatori = useMemo(() => {
     const arr = [
       { id: 'proforma', label: 'Fattura commerciale / proforma', checked: docProforma, set: setDocProforma },
-      { id: 'libera', label: 'Dichiarazione di libera esportazione (extra-UE)', checked: docLiberaExp, set: setDocLiberaExp },
-      { id: 'edas', label: 'e-DAS/EMCS (sospensione accisa)', checked: docEDAS, set: setDocEDAS },
-      { id: 'accisa', label: 'Prova accisa assolta (B2C UE)', checked: docAccisaAssolta, set: setDocAccisaAssolta },
-      { id: 'licenza', label: 'Licenza importatore / TTB (alcuni Paesi)', checked: docLicenzaImp, set: setDocLicenzaImp },
+      { id: 'libera',   label: 'Dichiarazione di libera esportazione (extra-UE)', checked: docLiberaExp, set: setDocLiberaExp },
+      { id: 'edas',     label: 'e-DAS/EMCS (sospensione accisa)', checked: docEDAS, set: setDocEDAS },
+      { id: 'accisa',   label: 'Prova accisa assolta (B2C UE)', checked: docAccisaAssolta, set: setDocAccisaAssolta },
+      { id: 'licenza',  label: 'Licenza importatore / TTB (alcuni Paesi)', checked: docLicenzaImp, set: setDocLicenzaImp },
     ] as const;
 
-    // filtra base su scelte
     return arr.filter(d => {
-      if (d.id === 'libera') return paese.code === 'US';                // extra-UE
-      if (d.id === 'accisa') return tipo === 'B2C' && paese.b2c;        // B2C UE
-      if (d.id === 'edas')   return tipo === 'B2B' && paese.code !== 'US';
-      if (d.id === 'licenza')return paese.code === 'US' || (!paese.b2c && tipo !== 'B2C');
+      if (d.id === 'libera')  return paese.code === 'US';                 // extra-UE (esempio)
+      if (d.id === 'accisa')  return tipo === 'B2C' && paese.b2c;         // B2C UE
+      if (d.id === 'edas')    return tipo === 'B2B' && paese.code !== 'US';
+      if (d.id === 'licenza') return paese.code === 'US' || (!paese.b2c && tipo !== 'B2C');
       return true; // proforma
     });
   }, [tipo, paese, docProforma, docLiberaExp, docEDAS, docAccisaAssolta, docLicenzaImp]);
 
-  // Punteggio molto semplice: 40% base + 60% dai documenti spuntati
   const score = useMemo(() => {
     const base = esito.status === 'ok' ? 40 : esito.status === 'warn' ? 20 : 10;
     const done = docObbligatori.filter(d => d.checked).length;
@@ -134,7 +138,6 @@ export default function CompliancePage() {
   }, [esito.status, docObbligatori]);
 
   function simulaVerifica() {
-    // Mock: P.IVA valida se lunga >= 10, EORI valido se inizia con 2 lettere
     const ivaOk = piva.replace(/\W/g, '').length >= 10;
     const eoriOk = /^[A-Z]{2}/i.test(eori);
     setImporterOk(ivaOk && eoriOk);
@@ -144,7 +147,7 @@ export default function CompliancePage() {
     <div className="space-y-4">
       <h2 className="text-lg font-semibold" style={{ color: BRAND_BLUE }}>Compliance</h2>
 
-      {/* Riga top: score + wizard */}
+      {/* score + wizard */}
       <div className="grid gap-4 md:grid-cols-[360px_1fr]">
         <ComplianceScore score={score} />
 
@@ -166,7 +169,7 @@ export default function CompliancePage() {
               <label className="mb-1 block text-xs font-medium text-slate-600">Destinazione</label>
               <select
                 value={dest}
-                onChange={e => setDest(e.target.value as any)}
+                onChange={e => setDest(e.target.value as CountryRule['code'])}
                 className="w-full rounded-lg border px-3 py-2 text-sm"
               >
                 {PAESI.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
@@ -289,7 +292,7 @@ export default function CompliancePage() {
             </Badge>
           </div>
           <ul className="mt-2 list-disc pl-5 text-sm text-slate-700">
-            {paese.maxLitri && <li>Limite indicativo: {paese.maxLitri} L totali</li>}
+            {typeof paese.maxLitri === 'number' && <li>Limite indicativo: {paese.maxLitri} L totali</li>}
             <li>{paese.note}</li>
             <li>Weekend: ritiro non disponibile (Sa/Do)</li>
           </ul>
