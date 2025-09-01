@@ -1,30 +1,32 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+// middleware.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { adminAuth } from '@/lib/firebase-admin';
 
-export function middleware(req: NextRequest) {
+const COOKIE_NAME = process.env.FIREBASE_SESSION_COOKIE_NAME || 'spst_session';
+
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  // proteggi tutte le pagine dashboard
-  if (pathname.startsWith('/dashboard')) {
-    const session = req.cookies.get('spst_session')?.value;
-    if (!session) {
-      const url = req.nextUrl.clone();
-      url.pathname = '/login';
-      url.searchParams.set('next', pathname);
-      return NextResponse.redirect(url);
-    }
+
+  // proteggi solo l'area /dashboard
+  if (!pathname.startsWith('/dashboard')) {
+    return NextResponse.next();
   }
-  // se già loggato e prova ad andare su /login, riportalo su /dashboard
-  if (pathname === '/login') {
-    const session = req.cookies.get('spst_session')?.value;
-    if (session) {
-      const url = req.nextUrl.clone();
-      url.pathname = '/dashboard';
-      return NextResponse.redirect(url);
-    }
+
+  const cookie = req.cookies.get(COOKIE_NAME)?.value;
+  if (!cookie) {
+    const url = new URL(`/login?next=${encodeURIComponent(req.nextUrl.pathname)}`, req.url);
+    return NextResponse.redirect(url);
   }
-  return NextResponse.next();
+
+  try {
+    await adminAuth.verifySessionCookie(cookie, true);
+    return NextResponse.next();
+  } catch {
+    const url = new URL(`/login?next=${encodeURIComponent(req.nextUrl.pathname)}`, req.url);
+    return NextResponse.redirect(url);
+  }
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/login'],
+  matcher: ['/dashboard/:path*'],
 };
