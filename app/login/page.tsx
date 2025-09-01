@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { Suspense, useState, useTransition } from 'react';
+import { Suspense, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { authClient } from '@/lib/firebase-client';
@@ -9,10 +9,9 @@ import { authClient } from '@/lib/firebase-client';
 const LOGO =
   'https://cdn.prod.website-files.com/6800cc3b5f399f3e2b7f2ffa/68079e968300482f70a36a4a_output-onlinepngtools%20(1).png';
 
-// Wrapper: mette la parte che usa useSearchParams in un Suspense boundary
-export default function LoginPage() {
+export default function Page() {
   return (
-    <Suspense fallback={<LoginSkeleton />}>
+    <Suspense fallback={<Skeleton />}>
       <LoginForm />
     </Suspense>
   );
@@ -20,63 +19,83 @@ export default function LoginPage() {
 
 function LoginForm() {
   const router = useRouter();
-  const params = useSearchParams(); // <-- ora è dentro <Suspense/>
+  const params = useSearchParams();
   const next = params.get('next') || '/dashboard';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    setLoading(true);
 
     try {
-      // 1) check utente su Airtable
-      const res = await fetch('/api/check-user', {
+      // 1) check su Airtable (abilitazione)
+      const check = await fetch('/api/check-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
 
-      if (res.status === 404) {
-        setErr('Email non trovata. Contatta il supporto SPST per ottenere l’accesso.');
+      if (check.status === 404) {
+        setErr('Email non trovata. Contatta il supporto SPST.');
+        setLoading(false);
         return;
       }
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({} as any));
+      if (!check.ok) {
+        const data = await check.json().catch(() => ({}));
         setErr(data?.detail || 'SERVER_ERROR');
+        setLoading(false);
         return;
       }
 
-      const data = await res.json();
-      const enabled: boolean =
-        typeof data?.enabled === 'boolean' ? data.enabled : true; // default: abilitato
+      const data = await check.json();
+      const enabled = typeof data?.enabled === 'boolean' ? data.enabled : true;
       if (!enabled) {
         setErr('Account non abilitato. Contatta il supporto SPST per l’accesso.');
+        setLoading(false);
         return;
       }
 
-      // 2) login Firebase
-      await signInWithEmailAndPassword(authClient(), email, password);
+      // 2) login Firebase (client)
+      const auth = authClient();
+      await signInWithEmailAndPassword(auth, email, password);
 
-      // 3) redirect
-      startTransition(() => {
-        router.replace(next);
+      // 3) crea cookie di sessione (server) per la middleware
+      const idToken = await auth.currentUser?.getIdToken(true);
+      if (!idToken) {
+        setErr('Impossibile creare la sessione.');
+        setLoading(false);
+        return;
+      }
+      const sessionRes = await fetch('/api/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ idToken }),
       });
+      if (!sessionRes.ok) {
+        const d = await sessionRes.json().catch(() => ({}));
+        setErr(d?.error || 'Errore di sessione.');
+        setLoading(false);
+        return;
+      }
+
+      // 4) redirect alla pagina desiderata (ora la middleware ti lascia passare)
+      router.replace(next);
     } catch (e: any) {
-      const msg = e?.code || e?.message || 'Errore imprevisto';
-      setErr(msg);
+      setErr(e?.code || e?.message || 'Errore imprevisto');
+    } finally {
+      setLoading(false);
     }
   }
 
   return (
     <div className="min-h-screen grid place-items-center bg-slate-50 px-4 py-10">
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-sm space-y-4 rounded-2xl border bg-white p-6 shadow-sm"
-      >
+      <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-2xl border bg-white p-6 shadow-sm">
         <div className="flex flex-col items-center gap-1">
           <Image src={LOGO} alt="SPST" width={44} height={44} priority />
           <h1 className="text-lg font-semibold mt-2">Benvenuto in SPST</h1>
@@ -105,17 +124,17 @@ function LoginForm() {
 
         <button
           type="submit"
-          disabled={pending}
+          disabled={loading}
           className="w-full rounded-lg bg-[#1c3e5e] px-3 py-2 text-sm font-medium text-white hover:opacity-95 disabled:opacity-60"
         >
-          {pending ? 'Accesso…' : 'Entra'}
+          {loading ? 'Accesso…' : 'Entra'}
         </button>
       </form>
     </div>
   );
 }
 
-function LoginSkeleton() {
+function Skeleton() {
   return (
     <div className="min-h-screen grid place-items-center bg-slate-50 px-4 py-10">
       <div className="w-full max-w-sm rounded-2xl border bg-white p-6 shadow-sm">
