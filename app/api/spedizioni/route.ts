@@ -1,59 +1,70 @@
-import { NextRequest, NextResponse } from "next/server";
-import Airtable from "airtable";
-import { adminAuth } from "@/lib/firebase-admin";
+// app/api/spedizioni/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { adminAuth } from '@/lib/firebase-admin';
 
-export const runtime = "nodejs";
+export const runtime = 'nodejs';
 
-const base = new Airtable({ apiKey: process.env.AIRTABLE_API_TOKEN as string })
-  .base(process.env.AIRTABLE_BASE_ID_SPST as string);
+// ---- CORS helpers -----------------------------------------------------------
+const ALLOWED = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
 
-const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || "https://www.spst.it,https://spst.it")
-  .split(",").map(s => s.trim());
+function buildCorsHeaders(origin: string | null) {
+  const isAllowed = origin && (ALLOWED.length === 0 || ALLOWED.includes(origin));
+  return {
+    'Access-Control-Allow-Origin': isAllowed ? origin! : '*',
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+  };
+}
 
-function applyCors(req: NextRequest, res: NextResponse) {
-  const origin = req.headers.get("origin") || "";
-  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-  res.headers.set("Access-Control-Allow-Origin", allowed);
-  res.headers.set("Vary", "Origin");
-  res.headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
-  res.headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+function withCors(req: NextRequest, res: NextResponse) {
+  const headers = buildCorsHeaders(req.headers.get('origin'));
+  Object.entries(headers).forEach(([k, v]) => res.headers.set(k, v));
   return res;
 }
 
 export async function OPTIONS(req: NextRequest) {
-  return applyCors(req, new NextResponse(null, { status: 204 }));
+  return withCors(req, new NextResponse(null, { status: 204 }));
 }
 
-async function listByEmail(table: string, email: string) {
-  const records = await base(table)
-    .select({ filterByFormula: `{Mail Cliente} = '${email}'`, maxRecords: 200 })
-    .all();
-  return records.map(r => ({ id: r.id, ...r.fields }));
-}
-
-export async function GET(req: NextRequest) {
+// ---- POST /api/spedizioni ---------------------------------------------------
+export async function POST(req: NextRequest) {
   try {
-    const authHeader = req.headers.get("authorization") ?? "";
-    const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
-    if (!idToken) return applyCors(req, NextResponse.json({ error: "No token" }, { status: 401 }));
+    const { idToken, payload } = await req.json();
 
-    const decoded = await adminAuth().verifyIdToken(idToken);
+    if (!idToken) {
+      return withCors(req, NextResponse.json({ error: 'No token' }, { status: 401 }));
+    }
+
+    // 👇 FIX: adminAuth è un oggetto, NON va chiamato come funzione
+    const decoded = await adminAuth.verifyIdToken(idToken);
     const email = decoded.email;
-    if (!email) return applyCors(req, NextResponse.json({ error: "No email" }, { status: 403 }));
+    if (!email) {
+      return withCors(req, NextResponse.json({ error: 'No email on token' }, { status: 403 }));
+    }
 
-    const [a, b] = await Promise.all([
-      listByEmail(process.env.AIRTABLE_TABLE_SPEDIZIONI as string, email),
-      listByEmail(process.env.AIRTABLE_TABLE_SPEDIZIONI_RIV as string, email),
-    ]);
+    if (!payload) {
+      return withCors(req, NextResponse.json({ error: 'Missing payload' }, { status: 400 }));
+    }
 
-    const all = [...a, ...b].sort((x: any, y: any) => {
-      const dx = new Date(x["Data Ritiro"] || x["Data"] || 0).getTime();
-      const dy = new Date(y["Data Ritiro"] || y["Data"] || 0).getTime();
-      return dy - dx;
-    });
+    // TODO: scrittura su Airtable (collega qui la tua createSpedizione(payload, email))
+    // const record = await createSpedizione(payload, email);
 
-    return applyCors(req, NextResponse.json(all));
+    return withCors(
+      req,
+      NextResponse.json({
+        ok: true,
+        by: email,
+        // record,
+      })
+    );
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return withCors(
+      req,
+      NextResponse.json({ error: e?.message || 'server error' }, { status: 500 })
+    );
   }
 }
