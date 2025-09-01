@@ -1,18 +1,17 @@
 // lib/cors.ts
-export function buildCorsHeaders(origin?: string): HeadersInit {
-  const allowed = (process.env.CORS_ORIGINS || '*')
+export function buildCorsHeaders(origin?: string) {
+  const allowList = (process.env.CORS_ORIGINS || '')
     .split(',')
-    .map((s) => s.trim())
+    .map(s => s.trim())
     .filter(Boolean);
 
-  const allowAny = allowed.includes('*');
-  const allowOrigin = origin && (allowAny || allowed.includes(origin)) ? origin : allowed[0] || '*';
+  const isAllowed = origin && (allowList.length === 0 || allowList.includes(origin));
 
-  return {
-    'Access-Control-Allow-Origin': allowOrigin,
+  return new Headers({
+    'Access-Control-Allow-Origin': isAllowed ? origin! : '*',
     'Access-Control-Allow-Credentials': 'true',
-    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     Vary: 'Origin',
-  };
+  });
 }
