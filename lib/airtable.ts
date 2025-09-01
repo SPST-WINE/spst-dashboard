@@ -1,20 +1,26 @@
 // lib/airtable.ts
-// Wrapper Airtable + funzioni di dominio per SPST
+// Fix data (YYYY-MM-DD) + log dettagliati (DEBUG_AIRTABLE=1 / DEBUG_SPEDIZIONI=1)
 
 import { TABLE, F, FCOLLO, FPL } from './airtable.schema';
 
-// === ENV ===================================================================
 const AIRTABLE_TOKEN =
   process.env.AIRTABLE_API_TOKEN || process.env.AIRTABLE_PAT || '';
 const AIRTABLE_BASE =
   process.env.AIRTABLE_BASE_ID_SPST || process.env.AIRTABLE_BASE_ID || '';
 
+const DEBUG_AT =
+  String(process.env.DEBUG_AIRTABLE || '').toLowerCase() === '1' ||
+  String(process.env.DEBUG_AIRTABLE || '').toLowerCase() === 'true';
+
+function dlog(...a: any[]) {
+  if (DEBUG_AT) console.log('[airtable]', ...a);
+}
+
 if (!AIRTABLE_TOKEN || !AIRTABLE_BASE) {
-  // Non interrompo il build: l’API restituirà 500 se chiamata senza env corretti
   console.warn('[airtable] Missing AIRTABLE_API_TOKEN or AIRTABLE_BASE_ID_SPST');
 }
 
-// === TIPI condivisi con le page “vino/altro” ===============================
+// ===== Tipi =====
 export type Party = {
   ragioneSociale: string;
   referente: string;
@@ -45,75 +51,35 @@ export type RigaPL = {
 };
 
 export type SpedizionePayload = {
-  // “Tipo” in Airtable (Vino / Altro)
   sorgente: 'vino' | 'altro';
-  // “Sottotipo” (B2B / B2C / Sample)
   tipoSped: 'B2B' | 'B2C' | 'Sample';
-  // “Formato” (Pacco / Pallet)
   formato: 'Pacco' | 'Pallet';
-  // “Contenuto Colli”
   contenuto?: string;
 
-  // Ritiro
-  ritiroData?: string; // ISO string
+  ritiroData?: string; // ISO string dal client
   ritiroNote?: string;
 
-  // Parti
   mittente: Party;
   destinatario: Party;
 
-  // Fatturazione
   incoterm: 'DAP' | 'DDP' | 'EXW';
   valuta: 'EUR' | 'USD' | 'GBP';
   noteFatt?: string;
   fatturazione: Party;
   fattSameAsDest?: boolean;
   fattDelega?: boolean;
-  fatturaFileUrl?: string | null; // opzionale (se già caricato altrove)
+  fatturaFileUrl?: string | null;
 
-  // Colli e PL
   colli: Collo[];
   packingList?: RigaPL[];
 
-  // Audit
   createdByEmail?: string;
 };
 
-// === HTTP helpers ==========================================================
+// ===== Helpers HTTP =====
 const API_ROOT = 'https://api.airtable.com/v0';
 
-async function atFetch<T = any>(
-  path: string,
-  init: RequestInit = {}
-): Promise<T> {
-  const res = await fetch(`${API_ROOT}/${AIRTABLE_BASE}/${encodePath(path)}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-      'Content-Type': 'application/json',
-      ...(init.headers || {}),
-    },
-    // forziamo no-caching lato server
-    cache: 'no-store',
-  });
-
-  const text = await res.text();
-  let json: any;
-  try {
-    json = text ? JSON.parse(text) : {};
-  } catch {
-    json = { error: { type: 'INVALID_JSON', message: text } };
-  }
-
-  if (!res.ok) {
-    const err = json?.error || { message: `HTTP_${res.status}` };
-    throw new Error(`AT_${res.status}: ${JSON.stringify({ error: err })}`);
-  }
-  return json as T;
-}
-
 function encodePath(p: string) {
-  // Airtable vuole il nome tabella URI-encoded (spazi -> %20, slash mantenuti)
   return p
     .split('/')
     .map((seg, i) => (i === 0 ? encodeURIComponent(seg) : seg))
@@ -134,11 +100,69 @@ function esc(str: string) {
   return (str || '').replace(/"/g, '\\"');
 }
 
-// === MAPPING: record principale ============================================
-function isoOrNull(d?: string) {
-  return d ? new Date(d).toISOString() : null;
+async function atFetch<T = any>(
+  path: string,
+  init: RequestInit = {}
+): Promise<T> {
+  const url = `${API_ROOT}/${AIRTABLE_BASE}/${encodePath(path)}`;
+
+  // logging (richiesta)
+  const logBodyReq =
+    init.body && typeof init.body === 'string'
+      ? (() => {
+          try {
+            const parsed = JSON.parse(init.body as string);
+            return JSON.stringify(parsed).slice(0, 2_000); // evitare log troppo lunghi
+          } catch {
+            return String(init.body).slice(0, 2_000);
+          }
+        })()
+      : undefined;
+
+  dlog('REQUEST', { url, method: init.method || 'GET', body: logBodyReq });
+
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+      'Content-Type': 'application/json',
+      ...(init.headers || {}),
+    },
+    cache: 'no-store',
+  });
+
+  const text = await res.text();
+  let json: any;
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    json = { error: { type: 'INVALID_JSON', message: text } };
+  }
+
+  // logging (risposta)
+  dlog('RESPONSE', {
+    url,
+    status: res.status,
+    ok: res.ok,
+    body: typeof json === 'string' ? json.slice(0, 2000) : json,
+  });
+
+  if (!res.ok) {
+    const err = json?.error || { message: `HTTP_${res.status}` };
+    throw new Error(`AT_${res.status}: ${JSON.stringify({ error: err })}`);
+  }
+  return json as T;
 }
 
+// ===== Date helper: Airtable (Date only) vuole "YYYY-MM-DD" =====
+function dateOnlyOrNull(d?: string) {
+  if (!d) return null;
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return null;
+  return dt.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+// ===== MAPPING principale =====
 function buildMainFields(payload: SpedizionePayload): Record<string, any> {
   const p = payload;
 
@@ -148,7 +172,7 @@ function buildMainFields(payload: SpedizionePayload): Record<string, any> {
     [F.Tipo]: p.tipoSped,
     [F.Formato]: p.formato,
     [F.Contenuto]: p.contenuto || '',
-    [F.RitiroData]: isoOrNull(p.ritiroData),
+    [F.RitiroData]: dateOnlyOrNull(p.ritiroData), // <<— FIX formato data
     [F.RitiroNote]: p.ritiroNote || '',
     [F.CreatoDaEmail]: p.createdByEmail || '',
 
@@ -195,13 +219,17 @@ function buildMainFields(payload: SpedizionePayload): Record<string, any> {
   return fields;
 }
 
-// === CREATE: Spedizione + Colli + PL =======================================
+// ===== CREATE: Spedizione + Colli + PL =====
 export async function createSpedizioneWebApp(payload: SpedizionePayload): Promise<{
   id: string;
   colliCreated: number;
   plCreated: number;
 }> {
-  // 1) record principale
+  dlog('createSpedizioneWebApp.payload', {
+    ...payload,
+    fatturaFileUrl: payload.fatturaFileUrl ? '[URL]' : null,
+  });
+
   const main = await atFetch<{ id: string; fields: any }>(`${TABLE.SPED}`, {
     method: 'POST',
     body: JSON.stringify({ fields: buildMainFields(payload) }),
@@ -209,7 +237,6 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload): Promis
 
   const parentId = main.id;
 
-  // 2) colli (se presenti)
   const validColli = (payload.colli || []).filter((c) =>
     [c.lunghezza_cm, c.larghezza_cm, c.altezza_cm, c.peso_kg].some(
       (v) => v !== null && v !== undefined
@@ -238,7 +265,6 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload): Promis
     }
   }
 
-  // 3) packing list (solo se “vino” e righe presenti)
   const rows = (payload.packingList || []).filter(
     (r) =>
       r &&
@@ -275,16 +301,18 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload): Promis
     }
   }
 
+  dlog('createSpedizioneWebApp.result', {
+    parentId,
+    colliCreated,
+    plCreated,
+  });
+
   return { id: parentId, colliCreated, plCreated };
 }
 
-// === LIST: spedizioni per dashboard ========================================
-export async function listSpedizioni(opts?: {
-  email?: string;
-}): Promise<any[]> {
+// ===== LIST dashboard =====
+export async function listSpedizioni(opts?: { email?: string }): Promise<any[]> {
   const params = new URLSearchParams();
-
-  // Limita i campi per performance (puoi allargarli se servono)
   const fieldsToSelect = [
     F.Stato,
     F.Sorgente,
@@ -306,7 +334,6 @@ export async function listSpedizioni(opts?: {
     params.set('filterByFormula', formula);
   }
 
-  // paginazione
   let offset: string | undefined = undefined;
   const out: any[] = [];
 
@@ -325,7 +352,6 @@ export async function listSpedizioni(opts?: {
       const f = rec.fields || {};
       out.push({
         id: rec.id,
-        // campi “comodi” per il client attuale
         'ID Spedizione': rec.id,
         'Destinatario': f[F.D_RS] || '',
         'Città Destinatario': f[F.D_CITTA] || '',
@@ -333,7 +359,6 @@ export async function listSpedizioni(opts?: {
         'Stato': f[F.Stato] || '',
         'Corriere': f[F.Corriere] || '',
         'Tracking Number': f[F.Tracking] || '',
-        // extra utili
         sorgente: f[F.Sorgente] || '',
         sottotipo: f[F.Tipo] || '',
         formato: f[F.Formato] || '',
@@ -347,13 +372,11 @@ export async function listSpedizioni(opts?: {
   return out;
 }
 
-// retro-compat, se il tuo /api/spedizioni prova questa firma
 export async function listSpedizioniByEmail(email?: string) {
   return listSpedizioni({ email });
 }
 
-// === UTENTI (per /api/check-user o /api/utenti) ============================
-// Se non li usi più, puoi ignorare questi export. Li lasciamo per evitare errori di build.
+// ===== Utenti (compat) =====
 const USERS_TABLE =
   process.env.AIRTABLE_TABLE_UTENTI || process.env.AIRTABLE_TABLE_USERS || 'Utenti';
 const USERS_EMAIL_F =
@@ -363,10 +386,7 @@ const USERS_EMAIL_F =
 const USERS_ENABLED_F =
   process.env.AIRTABLE_USERS_ENABLED_FIELD || 'Enabled';
 
-export async function getUtenteByEmail(email: string): Promise<{
-  id: string;
-  fields: Record<string, any>;
-} | null> {
+export async function getUtenteByEmail(email: string) {
   if (!email) return null;
   const params = new URLSearchParams();
   const formula = `LOWER({${USERS_EMAIL_F}}) = "${esc(email.toLowerCase())}"`;
@@ -383,7 +403,7 @@ export async function getUtenteByEmail(email: string): Promise<{
 export async function upsertUtente(
   emailOrObj: string | { email: string; fields?: Record<string, any> },
   maybeFields?: Record<string, any>
-): Promise<{ id: string; fields: Record<string, any> }> {
+) {
   const email =
     typeof emailOrObj === 'string' ? emailOrObj : emailOrObj.email;
   const extra =
@@ -395,27 +415,20 @@ export async function upsertUtente(
   if (existing) {
     const id = existing.id;
     const fields = { ...existing.fields, ...extra };
-    const patched = await atFetch<{ id: string; fields: Record<string, any> }>(
+    return atFetch<{ id: string; fields: Record<string, any> }>(
       `${USERS_TABLE}/${id}`,
       { method: 'PATCH', body: JSON.stringify({ fields }) }
     );
-    return patched;
   } else {
     const fields = { [USERS_EMAIL_F]: email, ...extra };
-    const created = await atFetch<{ id: string; fields: Record<string, any> }>(
+    return atFetch<{ id: string; fields: Record<string, any> }>(
       `${USERS_TABLE}`,
       { method: 'POST', body: JSON.stringify({ fields }) }
     );
-    return created;
   }
 }
 
-// Facoltativo: esporto anche un helper per check-user più “parlante”
-export async function getAirtableUserByEmail(email: string): Promise<{
-  exists: boolean;
-  enabled: boolean;
-  record?: { id: string; fields: Record<string, any> };
-}> {
+export async function getAirtableUserByEmail(email: string) {
   const rec = await getUtenteByEmail(email);
   if (!rec) return { exists: false, enabled: false };
   const enabledValue = rec.fields?.[USERS_ENABLED_F];
