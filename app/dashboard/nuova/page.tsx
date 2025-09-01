@@ -1,15 +1,34 @@
 'use client';
 
 import Link from 'next/link';
-import { Package, FileText } from 'lucide-react';
+import { FileText } from 'lucide-react';
+
+// Icona bottiglia (SVG inline, stile Lucide)
+function WineBottleIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      {/* collo */}
+      <path d="M10 2h4v3a2 2 0 0 1-.3 1.1l-1.2 2.1v13a2 2 0 0 1-2 2h0a2 2 0 0 1-2-2V8.2l-1.2-2.1A2 2 0 0 1 10 5V2z" />
+      {/* etichetta */}
+      <rect x="9" y="12" width="6" height="5" rx="1" />
+    </svg>
+  );
+}
 
 export default function NuovaSpedizioneSelettore() {
   return (
     <div className="mx-auto max-w-5xl">
-      <h2 className="text-lg font-semibold"></h2>
-
       {/* wrapper centrale */}
-      <div className="mt-8 flex min-h-[55vh] items-center justify-center">
+      <div className="mt-2 flex min-h-[55vh] items-center justify-center">
         <div className="flex w-full flex-col items-center md:flex-row md:justify-center md:gap-12">
           {/* CARD: VINO */}
           <Link
@@ -19,7 +38,7 @@ export default function NuovaSpedizioneSelettore() {
           >
             <div className="flex items-start gap-4">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#f7911e]/30 bg-[#fef7ee] text-[#f7911e]">
-                <Package size={22} />
+                <WineBottleIcon width={22} height={22} />
               </div>
               <div>
                 <h3 className="text-base font-semibold text-slate-900">
