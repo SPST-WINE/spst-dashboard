@@ -3,8 +3,8 @@
 import Link from 'next/link';
 import { FileText } from 'lucide-react';
 
-// Icona bottiglia (SVG inline, stile Lucide)
-function WineBottleIcon(props: React.SVGProps<SVGSVGElement>) {
+// Icona bicchiere di vino (SVG inline, stile lucide-like)
+function WineGlassIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -16,18 +16,23 @@ function WineBottleIcon(props: React.SVGProps<SVGSVGElement>) {
       aria-hidden="true"
       {...props}
     >
-      {/* collo */}
-      <path d="M10 2h4v3a2 2 0 0 1-.3 1.1l-1.2 2.1v13a2 2 0 0 1-2 2h0a2 2 0 0 1-2-2V8.2l-1.2-2.1A2 2 0 0 1 10 5V2z" />
-      {/* etichetta */}
-      <rect x="9" y="12" width="6" height="5" rx="1" />
+      {/* coppa */}
+      <path d="M7 3h10v2a5 5 0 0 1-5 5h0a5 5 0 0 1-5-5V3z" />
+      {/* stelo */}
+      <path d="M12 10v7" />
+      {/* base */}
+      <path d="M8 21h8" />
+      {/* livello vino (leggera curva interna) */}
+      <path d="M8 6.5c1.2.8 2.8 1.3 4 1.3s2.8-.5 4-1.3" />
     </svg>
   );
 }
 
+const SPST_BLUE = '#1c3e5e';
+
 export default function NuovaSpedizioneSelettore() {
   return (
     <div className="mx-auto max-w-5xl">
-      {/* wrapper centrale */}
       <div className="mt-2 flex min-h-[55vh] items-center justify-center">
         <div className="flex w-full flex-col items-center md:flex-row md:justify-center md:gap-12">
           {/* CARD: VINO */}
@@ -37,8 +42,15 @@ export default function NuovaSpedizioneSelettore() {
             className="group w-full max-w-md rounded-2xl border bg-white p-7 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#1c3e5e]/30"
           >
             <div className="flex items-start gap-4">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#f7911e]/30 bg-[#fef7ee] text-[#f7911e]">
-                <WineBottleIcon width={22} height={22} />
+              <div
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border"
+                style={{
+                  color: SPST_BLUE,
+                  backgroundColor: '#eef4f9',
+                  borderColor: `${SPST_BLUE}4D`, // ~30% alpha
+                }}
+              >
+                <WineGlassIcon width={22} height={22} />
               </div>
               <div>
                 <h3 className="text-base font-semibold text-slate-900">
@@ -51,7 +63,7 @@ export default function NuovaSpedizioneSelettore() {
             </div>
           </Link>
 
-          {/* divisore: orizzontale su mobile, verticale su desktop */}
+          {/* divisore */}
           <div className="my-6 h-px w-full bg-slate-200 md:my-0 md:h-72 md:w-px md:rounded-full" />
 
           {/* CARD: ALTRE SPEDIZIONI */}
@@ -61,7 +73,14 @@ export default function NuovaSpedizioneSelettore() {
             className="group w-full max-w-md rounded-2xl border bg-white p-7 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#1c3e5e]/30"
           >
             <div className="flex items-start gap-4">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#f7911e]/30 bg-[#fef7ee] text-[#f7911e]">
+              <div
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border"
+                style={{
+                  color: SPST_BLUE,
+                  backgroundColor: '#eef4f9',
+                  borderColor: `${SPST_BLUE}4D`,
+                }}
+              >
                 <FileText size={22} />
               </div>
               <div>
