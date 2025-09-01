@@ -1,45 +1,36 @@
 // app/api/check-user/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getAirtableUserByEmail } from '@/lib/airtable';
 
-export const runtime = 'nodejs';        // evita Edge (env + logging affidabili)
-export const dynamic = 'force-dynamic'; // disattiva cache
+export const runtime = 'nodejs';
 
-type Body = { email?: string };
-
-export async function POST(req: NextRequest) {
+// Convenience GET: /api/check-user?email=...
+export async function GET(req: Request) {
   try {
-    const body = (await req.json()) as Body;
-    const email = body.email?.trim().toLowerCase();
+    const { searchParams } = new URL(req.url);
+    const email = searchParams.get('email')?.trim();
+    if (!email) return NextResponse.json({ error: 'email required' }, { status: 400 });
 
-    if (!email) {
-      return NextResponse.json({ error: 'MISSING_EMAIL' }, { status: 400 });
-    }
+    const user = await getAirtableUserByEmail(email);
+    if (!user) return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 });
 
-    const rec = await getAirtableUserByEmail(email);
+    return NextResponse.json({ ok: true, id: user.id, fields: user.fields });
+  } catch (e: any) {
+    return NextResponse.json({ error: 'SERVER_ERROR', detail: e?.message }, { status: 500 });
+  }
+}
 
-    if (!rec) {
-      return NextResponse.json({ exists: false }, { status: 200 });
-    }
+// Primary POST used by the login form: { email }
+export async function POST(req: Request) {
+  try {
+    const { email } = await req.json();
+    if (!email) return NextResponse.json({ error: 'email required' }, { status: 400 });
 
-    // restituisci solo campi non sensibili
-    return NextResponse.json(
-      {
-        exists: true,
-        id: rec.id,
-        fields: {
-          email,
-          ragioneSociale: rec.fields['A_Mittente'] ?? rec.fields['Ragione sociale'] ?? null,
-          paese: rec.fields['A_Paese Mittente'] ?? rec.fields['Paese'] ?? null,
-        },
-      },
-      { status: 200 },
-    );
-  } catch (err: any) {
-    console.error('[check-user] ERROR', err?.message || err);
-    return NextResponse.json(
-      { error: 'SERVER_ERROR', message: err?.message ?? 'Unknown error' },
-      { status: 500 },
-    );
+    const user = await getAirtableUserByEmail(email.trim());
+    if (!user) return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 });
+
+    return NextResponse.json({ ok: true, id: user.id, fields: user.fields });
+  } catch (e: any) {
+    return NextResponse.json({ error: 'SERVER_ERROR', detail: e?.message }, { status: 500 });
   }
 }
