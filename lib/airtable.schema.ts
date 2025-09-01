@@ -1,27 +1,26 @@
 // lib/airtable.schema.ts
+// Mappa *esatta* dei nomi campo Airtable (usa il trattino ASCII "-")
 
-// --- Tabelle ---------------------------------------------------------------
 export const TABLE = {
   SPED: process.env.AIRTABLE_TABLE_SPEDIZIONI_WEBAPP || 'SpedizioniWebApp',
   COLLI: process.env.AIRTABLE_TABLE_SPED_COLLI || 'SPED_COLLI',
   PL: process.env.AIRTABLE_TABLE_SPED_PL || 'SPED_PL',
 } as const;
 
-// --- Campi tabella principale: SpedizioniWebApp ----------------------------
 export const F = {
   // Generali
   Stato: 'Stato',
-  Sorgente: 'Tipo',                 // (Vino | Altro)
-  Tipo: 'Sottotipo',                // (B2B | B2C | Sample)
+  Sorgente: 'Tipo (Vino, Altro)',
+  Tipo: 'Sottotipo (B2B, B2C, Sample)',
   Formato: 'Formato',
   Contenuto: 'Contenuto Colli',
-  RitiroData: 'Ritiro - Data',      // ⬅️ usa il trattino normale "-"
-  RitiroNote: 'Ritiro - Note',      // ⬅️ idem
+  RitiroData: 'Ritiro - Data',      // <<— TRATTINO ASCII
+  RitiroNote: 'Ritiro - Note',      // <<— TRATTINO ASCII
   CreatoDaEmail: 'Creato da',
   Corriere: 'Corriere',
   Tracking: 'Tracking Number',
 
-  // Mittente (prefisso “Mittente - …”)
+  // Mittente
   M_RS: 'Mittente - Ragione Sociale',
   M_REF: 'Mittente - Referente',
   M_PAESE: 'Mittente - Paese',
@@ -31,7 +30,7 @@ export const F = {
   M_TEL: 'Mittente - Telefono',
   M_PIVA: 'Mittente - P.IVA/CF',
 
-  // Destinatario (prefisso “Destinatario - …”)
+  // Destinatario
   D_RS: 'Destinatario - Ragione Sociale',
   D_REF: 'Destinatario - Referente',
   D_PAESE: 'Destinatario - Paese',
@@ -41,7 +40,7 @@ export const F = {
   D_TEL: 'Destinatario - Telefono',
   D_PIVA: 'Destinatario - P.IVA/CF',
 
-  // Fatturazione (prefisso “FATT …”)
+  // Fatturazione
   F_RS: 'FATT Ragione sociale',
   F_REF: 'FATT Referente',
   F_PAESE: 'FATT Paese',
@@ -70,7 +69,6 @@ export const F = {
   LinkPL: 'PL (link)',
 } as const;
 
-// --- Campi tabella figlia: SPED_COLLI --------------------------------------
 export const FCOLLO = {
   LinkSped: 'Spedizione',
   L: 'Lunghezza (cm)',
@@ -79,7 +77,6 @@ export const FCOLLO = {
   Peso: 'Peso (kg)',
 } as const;
 
-// --- Campi tabella figlia: SPED_PL (packing list vino) ----------------------
 export const FPL = {
   LinkSped: 'Spedizione',
   Etichetta: 'Etichetta',
