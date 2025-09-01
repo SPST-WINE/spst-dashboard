@@ -56,7 +56,7 @@ export async function DELETE(req: NextRequest) {
         const decoded = await adminAuth().verifySessionCookie(cookie);
         await adminAuth().revokeRefreshTokens(decoded.sub);
       } catch {
-        // ignora errori di verifica/revoca
+        // ignoriamo errori di verifica/revoca: vogliamo comunque pulire il cookie
       }
     }
 
