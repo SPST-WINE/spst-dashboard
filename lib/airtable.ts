@@ -114,14 +114,14 @@ function escFormula(str: string) {
 
 export async function createSpedizioneWebApp(payload: SpedizionePayload) {
   const fields: Record<string, any> = {
-    [F.Stato]: 'Nuova',
-    [F.Sorgente]: payload.sorgente === 'vino' ? 'Vino' : 'Altro',
-    [F.Tipo]: payload.tipoSped,
-    [F.Formato]: payload.formato,
-    [F.Contenuto]: payload.contenuto || '',
-    [F.RitiroData]: payload.ritiroData || null,
-    [F.RitiroNote]: payload.ritiroNote || '',
-    [F.CreatoDaEmail]: payload.createdByEmail || '',
+  [F.Stato]: 'Nuova',
+  [F.Sorgente]: payload.sorgente === 'vino' ? 'Vino' : 'Altro',  // ⬅️ usa 'Tipo'
+  [F.Tipo]: payload.tipoSped,                                     // ⬅️ usa 'Sottotipo'
+  [F.Formato]: payload.formato,
+  [F.Contenuto]: payload.contenuto || '',
+  [F.RitiroData]: payload.ritiroData || null,
+  [F.RitiroNote]: payload.ritiroNote || '',
+  [F.CreatoDaEmail]: payload.createdByEmail || '',
 
     // Mittente
     [F.M_RS]: payload.mittente.ragioneSociale,
