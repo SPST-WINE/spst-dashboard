@@ -1,3 +1,4 @@
+// app/dashboard/nuova/vino/page.tsx
 'use client';
 
 import { useState } from 'react';
@@ -21,43 +22,45 @@ const blankParty: Party = {
 };
 
 export default function NuovaVinoPage() {
+  // Tipologia + flag destinatario abilitato (solo su VINO)
   const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
   const [destAbilitato, setDestAbilitato] = useState<boolean>(false);
 
+  // Parti
   const [mittente, setMittente] = useState<Party>(blankParty);
   const [destinatario, setDestinatario] = useState<Party>(blankParty);
 
-  // Colli: campi numerici nullable (niente "0" bloccante)
+  // Colli
   const [colli, setColli] = useState<Collo[]>([
-    { lunghezza_cm: null, larghezza_cm: null, altezza_cm: null, peso_kg: null },
+    { lunghezza_cm: 0, larghezza_cm: 0, altezza_cm: 0, peso_kg: 0 },
   ]);
   const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
-  const [contenuto, setContenuto] = useState<string>('');
+  const [contenuto, setContenuto] = useState<string>(''); // testo libero contenuto colli
 
+  // Ritiro
   const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
   const [ritiroNote, setRitiroNote] = useState('');
 
+  // Fattura (commerciali + anagrafica fatturazione)
   const [incoterm, setIncoterm] = useState<'DAP' | 'DDP' | 'EXW'>('DAP');
   const [valuta, setValuta] = useState<'EUR' | 'USD' | 'GBP'>('EUR');
   const [noteFatt, setNoteFatt] = useState('');
   const [delega, setDelega] = useState(false);
 
-  const [fatturazione, setFatturazione] = useState<Party>({
-  ragioneSociale: '', referente: '', paese: '', citta: '',
-  cap: '', indirizzo: '', telefono: '', piva: '',
-});
-  const [sameAsDest, setSameAsDest] = useState<boolean>(false);
+  const [fatturazione, setFatturazione] = useState<Party>(blankParty);
   const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined);
 
-  // ⬇️ ALLINEATO al tipo RigaPL: prezzo + valuta (non costo_unit)
+  // Fatturazione uguale a DESTINATARIO (correzione refuso)
+  const [sameAsDest, setSameAsDest] = useState(false);
+
+  // Packing list vino
   const [pl, setPl] = useState<RigaPL[]>([
     {
       etichetta: '',
       bottiglie: 1,
       formato_litri: 0.75,
       gradazione: 12,
-      prezzo: 0,
-      valuta: 'EUR',
+      prezzo: 0, // (ex costo_unit)
       peso_netto_bott: 0.75,
       peso_lordo_bott: 1.3,
     },
@@ -79,7 +82,7 @@ export default function NuovaVinoPage() {
       noteFatt,
       delega,
       fatturazione,
-      sameAsMitt,
+      sameAsDest,
       fatturaFileName: fatturaFile?.name,
       packingList: pl,
     });
@@ -88,14 +91,10 @@ export default function NuovaVinoPage() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Nuova spedizione — vino</h2>
-
-      {/* Tipologia spedizione */}
+      {/* Tipologia spedizione — stessa larghezza delle card mittente/destinatario */}
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-2xl border bg-white p-4">
-          <h3 className="mb-3 text-sm font-semibold text-spst-orange">
-            Tipologia spedizione
-          </h3>
+          <h3 className="mb-3 text-sm font-semibold text-spst-orange">Tipologia spedizione</h3>
 
           <div className="space-y-3">
             <Select
@@ -103,14 +102,10 @@ export default function NuovaVinoPage() {
               value={tipoSped}
               onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Sample')}
               options={[
-                {
-                  label: 'B2C — Sto spedendo ad un privato / cliente',
-                  value: 'B2C',
-                },
+                { label: 'B2C — Sto spedendo ad un privato / cliente', value: 'B2C' },
                 { label: 'B2B — Sto spedendo ad una azienda', value: 'B2B' },
                 {
-                  label:
-                    'Sample — Sto spedendo una campionatura ad una azienda / importatore',
+                  label: 'Sample — Sto spedendo una campionatura ad una azienda / importatore',
                   value: 'Sample',
                 },
               ]}
@@ -123,18 +118,18 @@ export default function NuovaVinoPage() {
             />
           </div>
         </div>
+
+        {/* colonna destra vuota per simmetria su desktop */}
         <div className="hidden md:block" />
       </div>
 
+      {/* Mittente / Destinatario */}
       <div className="grid gap-4 md:grid-cols-2">
         <PartyCard title="Mittente" value={mittente} onChange={setMittente} />
-        <PartyCard
-          title="Destinatario"
-          value={destinatario}
-          onChange={setDestinatario}
-        />
+        <PartyCard title="Destinatario" value={destinatario} onChange={setDestinatario} />
       </div>
 
+      {/* Colli */}
       <ColliCard
         colli={colli}
         onChange={setColli}
@@ -144,30 +139,30 @@ export default function NuovaVinoPage() {
         setContenuto={setContenuto}
       />
 
-      <RitiroCard
-        date={ritiroData}
-        setDate={setRitiroData}
-        note={ritiroNote}
-        setNote={setRitiroNote}
-      />
+      {/* Ritiro */}
+      <RitiroCard date={ritiroData} setDate={setRitiroData} note={ritiroNote} setNote={setRitiroNote} />
 
+      {/* Packing list vino */}
       <PackingListVino righe={pl} onChange={setPl} />
 
+      {/* Fattura */}
       <FatturaCard
-  incoterm={incoterm}
-  setIncoterm={setIncoterm}
-  valuta={valuta}
-  setValuta={setValuta}
-  note={noteFatt}
-  setNote={setNoteFatt}
-  delega={delega}
-  setDelega={setDelega}
-  fatturazione={fatturazione}
-  setFatturazione={setFatturazione}
-  destinatario={destinatario}          // <— ORA passa il destinatario come sorgente
-  sameAsDest={sameAsDest}              // <— stato rinominato
-  setSameAsDest={setSameAsDest}
-/> 
+        incoterm={incoterm}
+        setIncoterm={setIncoterm}
+        valuta={valuta}
+        setValuta={setValuta}
+        note={noteFatt}
+        setNote={setNoteFatt}
+        delega={delega}
+        setDelega={setDelega}
+        fatturazione={fatturazione}
+        setFatturazione={setFatturazione}
+        destinatario={destinatario}   // copia dai dati del destinatario quando attivo
+        sameAsDest={sameAsDest}
+        setSameAsDest={setSameAsDest}
+        fatturaFile={fatturaFile}
+        setFatturaFile={setFatturaFile}
+      />
 
       <div className="flex justify-end">
         <button
