@@ -1,3 +1,4 @@
+// app/dashboard/nuova/altro/page.tsx
 'use client';
 
 import { useState } from 'react';
@@ -6,8 +7,6 @@ import ColliCard, { Collo } from '@/components/nuova/ColliCard';
 import RitiroCard from '@/components/nuova/RitiroCard';
 import FatturaCard from '@/components/nuova/FatturaCard';
 import { Select } from '@/components/nuova/Field';
-
-const [sameAsDest, setSameAsDest] = useState(false);
 
 const blankParty: Party = {
   ragioneSociale: '',
@@ -30,8 +29,8 @@ export default function NuovaAltroPage() {
 
   // Colli
   const [colli, setColli] = useState<Collo[]>([
-  { lunghezza_cm: null, larghezza_cm: null, altezza_cm: null, peso_kg: null },
-]);
+    { lunghezza_cm: 0, larghezza_cm: 0, altezza_cm: 0, peso_kg: 0 },
+  ]);
   const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
   const [contenuto, setContenuto] = useState<string>('');
 
@@ -48,6 +47,9 @@ export default function NuovaAltroPage() {
   const [fatturazione, setFatturazione] = useState<Party>(blankParty);
   const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined);
 
+  // Fatturazione uguale a DESTINATARIO
+  const [sameAsDest, setSameAsDest] = useState(false);
+
   const salva = () => {
     console.log({
       tipoSped,
@@ -63,7 +65,7 @@ export default function NuovaAltroPage() {
       noteFatt,
       delega,
       fatturazione,
-      sameAsMitt,
+      sameAsDest,
       fatturaFileName: fatturaFile?.name,
     });
     alert('Dati raccolti (placeholder).');
@@ -75,9 +77,7 @@ export default function NuovaAltroPage() {
 
       {/* Tipologia spedizione */}
       <div className="rounded-2xl border bg-white p-4">
-        <h3 className="mb-3 text-sm font-semibold text-spst-orange">
-          Tipologia spedizione
-        </h3>
+        <h3 className="mb-3 text-sm font-semibold text-spst-orange">Tipologia spedizione</h3>
         <Select
           label="Stai spedendo ad un privato? O ad una azienda?"
           value={tipoSped}
@@ -85,10 +85,7 @@ export default function NuovaAltroPage() {
           options={[
             { label: 'B2C — Sto spedendo ad un privato / cliente', value: 'B2C' },
             { label: 'B2B — Sto spedendo ad una azienda', value: 'B2B' },
-            {
-              label: 'Sample — Sto spedendo una campionatura ad una azienda / importatore',
-              value: 'Sample',
-            },
+            { label: 'Sample — Sto spedendo una campionatura ad una azienda / importatore', value: 'Sample' },
           ]}
         />
       </div>
@@ -117,24 +114,24 @@ export default function NuovaAltroPage() {
         setNote={setRitiroNote}
       />
 
+      {/* Fattura */}
       <FatturaCard
-  incoterm={incoterm}
-  setIncoterm={setIncoterm}
-  valuta={valuta}
-  setValuta={setValuta}
-  note={noteFatt}
-  setNote={setNoteFatt}
-  delega={delega}
-  setDelega={setDelega}
-  fatturazione={fatturazione}
-  setFatturazione={setFatturazione}
-  destinatario={destinatario}       // <-- nuovo prop
-  sameAsDest={sameAsDest}           // <-- nuovo state
-  setSameAsDest={setSameAsDest}     // <-- nuovo setter
-  fatturaFile={fatturaFile}
-  setFatturaFile={setFatturaFile}
-/>
-
+        incoterm={incoterm}
+        setIncoterm={setIncoterm}
+        valuta={valuta}
+        setValuta={setValuta}
+        note={noteFatt}
+        setNote={setNoteFatt}
+        delega={delega}
+        setDelega={setDelega}
+        fatturazione={fatturazione}
+        setFatturazione={setFatturazione}
+        destinatario={destinatario}       // copia da Destinatario quando attivo
+        sameAsDest={sameAsDest}
+        setSameAsDest={setSameAsDest}
+        fatturaFile={fatturaFile}
+        setFatturaFile={setFatturaFile}
+      />
 
       <div className="flex justify-end">
         <button
