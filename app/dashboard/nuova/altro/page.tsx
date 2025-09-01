@@ -7,6 +7,8 @@ import RitiroCard from '@/components/nuova/RitiroCard';
 import FatturaCard from '@/components/nuova/FatturaCard';
 import { Select } from '@/components/nuova/Field';
 
+const [sameAsDest, setSameAsDest] = useState(false);
+
 const blankParty: Party = {
   ragioneSociale: '',
   referente: '',
@@ -44,7 +46,6 @@ export default function NuovaAltroPage() {
   const [delega, setDelega] = useState(false);
 
   const [fatturazione, setFatturazione] = useState<Party>(blankParty);
-  const [sameAsMitt, setSameAsMitt] = useState(false);
   const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined);
 
   const salva = () => {
@@ -116,27 +117,24 @@ export default function NuovaAltroPage() {
         setNote={setRitiroNote}
       />
 
-      {/* Fattura con anagrafica + flusso delega/allegato */}
       <FatturaCard
-        incoterm={incoterm}
-        setIncoterm={setIncoterm}
-        valuta={valuta}
-        setValuta={setValuta}
-        note={noteFatt}
-        setNote={setNoteFatt}
-        delega={(delega)}
-        setDelega={(v) => {
-          setDelega(v);
-          if (v) setFatturaFile(undefined); // se delega, rimuovi eventuale allegato
-        }}
-        fatturazione={fatturazione}
-        setFatturazione={setFatturazione}
-        mittente={mittente}
-        sameAsMitt={sameAsMitt}
-        setSameAsMitt={setSameAsMitt}
-        fatturaFile={fatturaFile}
-        setFatturaFile={setFatturaFile}
-      />
+  incoterm={incoterm}
+  setIncoterm={setIncoterm}
+  valuta={valuta}
+  setValuta={setValuta}
+  note={noteFatt}
+  setNote={setNoteFatt}
+  delega={delega}
+  setDelega={setDelega}
+  fatturazione={fatturazione}
+  setFatturazione={setFatturazione}
+  destinatario={destinatario}       // <-- nuovo prop
+  sameAsDest={sameAsDest}           // <-- nuovo state
+  setSameAsDest={setSameAsDest}     // <-- nuovo setter
+  fatturaFile={fatturaFile}
+  setFatturaFile={setFatturaFile}
+/>
+
 
       <div className="flex justify-end">
         <button
