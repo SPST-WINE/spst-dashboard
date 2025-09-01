@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+export const dynamic = 'force-dynamic';
+
+import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { authClient } from '@/lib/firebase-client';
@@ -8,7 +10,31 @@ import { authClient } from '@/lib/firebase-client';
 const LOGO =
   'https://cdn.prod.website-files.com/6800cc3b5f399f3e2b7f2ffa/68079e968300482f70a36a4a_output-onlinepngtools%20(1).png';
 
-export default function LoginPage() {
+export default function Page() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen grid place-items-center bg-slate-50 px-4">
+          <div className="w-full max-w-sm rounded-2xl border bg-white p-6 shadow-sm">
+            <div className="mb-4 flex flex-col items-center gap-2">
+              <img src={LOGO} alt="SPST" className="h-9" />
+              <div className="h-5 w-40 animate-pulse rounded bg-slate-200" />
+            </div>
+            <div className="space-y-3">
+              <div className="h-10 w-full animate-pulse rounded bg-slate-200" />
+              <div className="h-10 w-full animate-pulse rounded bg-slate-200" />
+              <div className="h-10 w-full animate-pulse rounded bg-slate-200" />
+            </div>
+          </div>
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
   const next = params.get('next') || '/dashboard';
@@ -26,7 +52,7 @@ export default function LoginPage() {
       // 1) Firebase auth
       await signInWithEmailAndPassword(authClient(), email, password);
 
-      // 2) Verifica che l'utente esista su Airtable (tabella UTENTI)
+      // 2) Verifica esistenza su Airtable (tabella UTENTI) via API server-side
       const r = await fetch('/api/check-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -34,7 +60,6 @@ export default function LoginPage() {
       });
       const j = await r.json();
       if (!r.ok || !j?.exists) {
-        // non autorizzato su Airtable -> signout e errore
         await signOut(authClient());
         throw new Error(
           j?.error ||
@@ -42,7 +67,7 @@ export default function LoginPage() {
         );
       }
 
-      // 3) Ok -> dentro
+      // 3) Ok -> redirect
       router.replace(next);
     } catch (e: any) {
       setErr(e?.message || 'Errore di accesso');
@@ -58,7 +83,6 @@ export default function LoginPage() {
         className="w-full max-w-sm rounded-2xl border bg-white p-6 shadow-sm"
       >
         <div className="mb-4 flex flex-col items-center gap-2">
-          {/* usa <img> per evitare config immagini; se preferisci next/image aggiungi remotePatterns */}
           <img src={LOGO} alt="SPST" className="h-9" />
           <h1 className="text-lg font-semibold text-slate-900">
             Benvenuto in SPST
@@ -82,10 +106,7 @@ export default function LoginPage() {
           onChange={(e) => setEmail(e.target.value)}
         />
 
-        <label
-          className="mb-1 mt-1 block text-sm text-slate-600"
-          htmlFor="password"
-        >
+        <label className="mb-1 block text-sm text-slate-600" htmlFor="password">
           Password
         </label>
         <input
@@ -108,13 +129,6 @@ export default function LoginPage() {
         >
           {loading ? 'Accesso…' : 'Entra'}
         </button>
-
-        {/* eventuale link recupero password in futuro */}
-        {/* <div className="mt-3 text-center">
-          <a href="/reset" className="text-sm text-[#1c3e5e] hover:underline">
-            Hai dimenticato la password?
-          </a>
-        </div> */}
       </form>
     </div>
   );
