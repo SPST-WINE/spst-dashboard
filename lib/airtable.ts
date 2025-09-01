@@ -3,11 +3,20 @@ import { TABLE, F, FCOLLO, FPL } from './airtable.schema';
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_API_TOKEN!;
 const AIRTABLE_BASE = process.env.AIRTABLE_BASE_ID_SPST!;
-
 if (!AIRTABLE_TOKEN) throw new Error('Missing AIRTABLE_API_TOKEN');
 if (!AIRTABLE_BASE) throw new Error('Missing AIRTABLE_BASE_ID_SPST');
 
 const API = `https://api.airtable.com/v0/${AIRTABLE_BASE}`;
+
+// ---- opzionale: tabella UTENTI per check-login / abilitazioni -------------
+const TABLE_USERS =
+  process.env.AIRTABLE_TABLE_UTENTI || 'Utenti';
+const FIELD_USER_EMAIL =
+  process.env.AIRTABLE_USERS_EMAIL_FIELD || 'Email';
+const FIELD_USER_ENABLED =
+  process.env.AIRTABLE_USERS_ENABLED_FIELD || 'Abilitato';
+
+// ---------------------------------------------------------------------------
 
 type SingleSelect = string;
 
@@ -41,46 +50,34 @@ export type RigaPL = {
 };
 
 export type SpedizionePayload = {
-  // “Tipo (Vino, Altro)”
   sorgente: 'vino' | 'altro';
-  // “Sottotipo (B2B, B2C, Sample)”
   tipoSped: 'B2B' | 'B2C' | 'Sample';
-  // “Formato”
   formato: 'Pacco' | 'Pallet';
-  // “Contenuto Colli”
   contenuto?: string;
 
-  // Ritiro
   ritiroData?: string; // ISO
   ritiroNote?: string;
 
-  // Parti
   mittente: Party;
   destinatario: Party;
 
-  // Fattura
   incoterm: 'DAP' | 'DDP' | 'EXW';
   valuta: 'EUR' | 'USD' | 'GBP';
   noteFatt?: string;
   fatturazione: Party;
   fattSameAsDest?: boolean;
   fattDelega?: boolean;
-  fatturaFileName?: string | null; // solo nome; nessun upload via API in questo step
+  fatturaFileName?: string | null;
 
-  // Colli
   colli: Collo[];
-
-  // PL vino
   packingList?: RigaPL[];
 
-  // Server-side derivato dal token
   createdByEmail?: string;
 };
 
-async function at<T = any>(
-  path: string,
-  init?: RequestInit
-): Promise<T> {
+// ------------------ helpers -------------------------------------------------
+
+async function at<T = any>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}/${path}`, {
     ...init,
     headers: {
@@ -88,18 +85,16 @@ async function at<T = any>(
       'Content-Type': 'application/json',
       ...(init?.headers || {}),
     },
-    // ATTENZIONE: niente cache—siamo in API route
     cache: 'no-store',
   });
-
   if (!res.ok) {
     const text = await res.text();
-    let detail = text;
     try {
       const j = JSON.parse(text);
-      detail = j?.error?.message || j?.message || text;
-    } catch {}
-    throw new Error(`AT_${res.status}: ${detail}`);
+      throw new Error(`AT_${res.status}: ${j?.error?.message || j?.message || text}`);
+    } catch {
+      throw new Error(`AT_${res.status}: ${text}`);
+    }
   }
   return res.json() as Promise<T>;
 }
@@ -110,10 +105,14 @@ function chunk<T>(arr: T[], size = 10): T[][] {
   return out;
 }
 
-// ------------------------ CREATE -------------------------------------------
+function escFormula(str: string) {
+  // escape singoli apici per formula Airtable
+  return String(str).replace(/'/g, "\\'");
+}
+
+// ------------------------ CREATE SPEDIZIONE --------------------------------
 
 export async function createSpedizioneWebApp(payload: SpedizionePayload) {
-  // 1) crea record principale
   const fields: Record<string, any> = {
     [F.Stato]: 'Nuova',
     [F.Sorgente]: payload.sorgente === 'vino' ? 'Vino' : 'Altro',
@@ -158,7 +157,7 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload) {
     [F.Valuta]: payload.valuta as SingleSelect,
     [F.NoteFatt]: payload.noteFatt || '',
     [F.F_Delega]: !!payload.fattDelega,
-    // [F.F_Att]: allegati: omessi (non abbiamo URL da caricare ora)
+    // Allegati (F.F_Att / LDV / DLE / etc.) non gestiti in questo endpoint
   };
 
   const main = await at<{ id: string }>(`${TABLE.SPED}`, {
@@ -168,11 +167,10 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload) {
 
   const parentId = main.id;
 
-  // 2) crea COLLI
+  // COLLI
   const colli = (payload.colli || []).filter(
     (c) => c.lunghezza_cm || c.larghezza_cm || c.altezza_cm || c.peso_kg
   );
-
   if (colli.length) {
     const recs = colli.map((c) => ({
       fields: {
@@ -183,7 +181,6 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload) {
         [FCOLLO.Peso]: c.peso_kg ?? null,
       },
     }));
-
     for (const group of chunk(recs, 10)) {
       await at(`${TABLE.COLLI}`, {
         method: 'POST',
@@ -192,7 +189,7 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload) {
     }
   }
 
-  // 3) crea PL (solo se sorgente = vino)
+  // PL (solo vino)
   if (payload.sorgente === 'vino' && payload.packingList?.length) {
     const recsPL = payload.packingList.map((r) => ({
       fields: {
@@ -207,7 +204,6 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload) {
         [FPL.PesoLordoBott]: r.peso_lordo_bott,
       },
     }));
-
     for (const group of chunk(recsPL, 10)) {
       await at(`${TABLE.PL}`, {
         method: 'POST',
@@ -219,39 +215,36 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload) {
   return { id: parentId };
 }
 
-// ------------------------ LIST ---------------------------------------------
+// ------------------------ LIST SPEDIZIONI ----------------------------------
 
 type ListOpts = { email?: string };
 
 export async function listSpedizioni(opts: ListOpts = {}) {
-  const params = new URLSearchParams();
-
-  // Filtro per email se presente
+  const params: string[] = [];
   if (opts.email) {
-    // formula: {Creato da} = 'email'
-    params.set(
-      'filterByFormula',
-      encodeURIComponent(`{${F.CreatoDaEmail}}='${opts.email.replace(/'/g, "\\'")}'`)
-    );
+    const formula = `{${FIELD_USER_EMAIL || F.CreatoDaEmail}}='${escFormula(
+      opts.email.toLowerCase()
+    )}'`;
+    // proviamo prima sul campo "Creato da" se esiste; fallback al campo email utente
+    const formulaOR = `OR({${F.CreatoDaEmail}}='${escFormula(
+      opts.email
+    )}', LOWER({${F.CreatoDaEmail}})='${escFormula(
+      opts.email.toLowerCase()
+    )}', LOWER({${FIELD_USER_EMAIL}})='${escFormula(opts.email.toLowerCase())}')`;
+    params.push(`filterByFormula=${encodeURIComponent(formulaOR)}`);
   }
-
-  // ordina per createdTime desc (visuale più comoda)
-  params.set(
-    'sort[0][field]',
-    'Created'
-  ); // se non hai un campo "Created", commenta; in alternativa Airtable usa createdTime()
-  params.set('sort[0][direction]', 'desc');
-
-  // NB: se non hai un campo “Created”, rimuovi il sort qui sopra
+  // rimuovi se non hai un campo creato/adatto
+  // params.push(`sort[0][field]=Created`);
+  // params.push(`sort[0][direction]=desc`);
 
   const out: any[] = [];
-  let offset: string | undefined = undefined;
+  let offset: string | undefined;
 
   do {
     const url =
       `${TABLE.SPED}?pageSize=100` +
       (offset ? `&offset=${offset}` : '') +
-      (params.toString() ? `&${params.toString()}` : '');
+      (params.length ? `&${params.join('&')}` : '');
 
     const page = await at<{
       records: { id: string; createdTime: string; fields: Record<string, any> }[];
@@ -260,20 +253,16 @@ export async function listSpedizioni(opts: ListOpts = {}) {
 
     for (const r of page.records) {
       const f = r.fields;
-
-      // Oggetto “arricchito” per la UI attuale (con fallback chiavi legacy)
       out.push({
         id: r.id,
         createdTime: r.createdTime,
 
-        // per ricerca/compat con UI
         ['ID Spedizione']: r.id,
         ['Destinatario']: f[F.D_RS] || '',
         ['Città Destinatario']: f[F.D_CITTA] || '',
         ['Paese Destinatario']: f[F.D_PAESE] || '',
         ['Stato']: f[F.Stato] || '',
 
-        // altri dati utili in dettaglio
         mittente: {
           ragioneSociale: f[F.M_RS] || '',
           paese: f[F.M_PAESE] || '',
@@ -302,4 +291,72 @@ export async function listSpedizioni(opts: ListOpts = {}) {
   } while (offset);
 
   return out;
+}
+
+// ------------------------ UTENTI (per /api/check-user & /api/utenti) -------
+
+export async function getUtenteByEmail(email: string) {
+  const formula = `LOWER({${FIELD_USER_EMAIL}})='${escFormula(
+    email.toLowerCase()
+  )}'`;
+  const url = `${TABLE_USERS}?maxRecords=1&filterByFormula=${encodeURIComponent(
+    formula
+  )}`;
+
+  const res = await at<{
+    records: { id: string; fields: Record<string, any> }[];
+  }>(url);
+
+  if (!res.records.length) return null;
+
+  const rec = res.records[0];
+  const f = rec.fields;
+  const rawEnabled = f[FIELD_USER_ENABLED] ?? f['Enabled'] ?? f['Abilitato'];
+  const enabled =
+    typeof rawEnabled === 'boolean'
+      ? rawEnabled
+      : typeof rawEnabled === 'string'
+      ? ['true', 'si', 'sì', 'yes', '1'].includes(rawEnabled.toLowerCase())
+      : !!rawEnabled;
+
+  return {
+    id: rec.id,
+    email: f[FIELD_USER_EMAIL] || email,
+    enabled,
+    fields: f,
+  };
+}
+
+type UpsertArgs =
+  | { email: string; fields?: Record<string, any> }
+  | string;
+
+export async function upsertUtente(arg1: UpsertArgs, fields?: Record<string, any>) {
+  const email = typeof arg1 === 'string' ? arg1 : arg1.email;
+  const extra = typeof arg1 === 'string' ? fields || {} : arg1.fields || {};
+
+  // cerca esistente
+  const existing = await getUtenteByEmail(email);
+
+  const bodyFields = {
+    [FIELD_USER_EMAIL]: email,
+    ...extra,
+  };
+
+  if (existing?.id) {
+    // PATCH
+    const recId = existing.id;
+    const res = await at<{ id: string }>(`${TABLE_USERS}/${recId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ fields: bodyFields }),
+    });
+    return { id: res.id, updated: true };
+  } else {
+    // CREATE
+    const res = await at<{ id: string }>(`${TABLE_USERS}`, {
+      method: 'POST',
+      body: JSON.stringify({ fields: bodyFields }),
+    });
+    return { id: res.id, created: true };
+  }
 }
