@@ -45,15 +45,28 @@ export function postSpedizione(
   payload: any,
   getIdToken?: GetIdToken
 ): Promise<{ ok: true; id: string }> {
-  return request('/api/spedizioni', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  }, getIdToken);
+  return request(
+    '/api/spedizioni',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+    getIdToken
+  );
 }
 
-export function getSpedizioni(
+/** Restituisce SEMPRE un array (normalizzato) */
+export async function getSpedizioni(
   getIdToken?: GetIdToken
-): Promise<{ ok: true; data: any[] }> {
-  return request('/api/spedizioni', { method: 'GET' }, getIdToken);
+): Promise<any[]> {
+  const json = await request<any>(
+    '/api/spedizioni',
+    { method: 'GET' },
+    getIdToken
+  );
+  if (Array.isArray(json)) return json;
+  if (Array.isArray(json?.data)) return json.data;
+  if (Array.isArray(json?.results)) return json.results;
+  return [];
 }
