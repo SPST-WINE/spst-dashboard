@@ -1,77 +1,44 @@
 // app/api/spedizioni/route.ts
-import { NextResponse } from 'next/server';
-import { getAdminAuth } from '@/lib/firebase-admin';
-import { createSpedizioneWebApp, NewSpedizionePayload } from '@/lib/airtable';
+import { NextResponse, type NextRequest } from 'next/server';
+import { buildCorsHeaders } from '@/lib/cors';
+import { createSpedizioneWebApp, type SpedizionePayload } from '@/lib/airtable';
+import { adminAuth } from '@/lib/firebase-admin';
 
-export const runtime = 'nodejs'; // evita Edge (firebase-admin non supportato in Edge)
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-function corsHeaders(origin?: string) {
-  const allowed = (process.env.CORS_ORIGINS || '')
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean);
-  const isAllowed = origin && allowed.includes(origin);
-
-  return {
-    'Access-Control-Allow-Origin': isAllowed ? origin! : allowed[0] || '*',
-    'Access-Control-Allow-Credentials': 'true',
-    'Access-Control-Allow-Methods': 'POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-  };
+export async function OPTIONS(req: NextRequest) {
+  const origin = req.headers.get('origin') || '*';
+  return new NextResponse(null, { status: 204, headers: buildCorsHeaders(origin) });
 }
 
-export async function OPTIONS(req: Request) {
-  const origin = req.headers.get('origin') || undefined;
-  return new NextResponse(null, { headers: corsHeaders(origin) });
-}
-
-export async function POST(req: Request) {
-  const origin = req.headers.get('origin') || undefined;
+export async function POST(req: NextRequest) {
+  const origin = req.headers.get('origin') || '*';
+  const cors = buildCorsHeaders(origin);
 
   try {
-    // Auth Firebase (Bearer idToken)
-    const authz = req.headers.get('authorization') || '';
-    const token = authz.startsWith('Bearer ') ? authz.slice(7) : null;
-    if (!token) {
-      return new NextResponse(
-        JSON.stringify({ error: 'No token' }),
-        { status: 401, headers: corsHeaders(origin) },
-      );
+    // auth: idToken via Authorization: Bearer ... oppure cookie sessione già validata a monte
+    const authz = req.headers.get('authorization');
+    const idToken = authz?.startsWith('Bearer ') ? authz.slice(7) : undefined;
+    let email: string | undefined;
+
+    if (idToken) {
+      const decoded = await adminAuth().verifyIdToken(idToken);
+      email = decoded?.email || undefined;
     }
 
-    const auth = getAdminAuth();
-    const decoded = await auth.verifyIdToken(token);
-    const email = decoded.email;
-    if (!email) {
-      return new NextResponse(
-        JSON.stringify({ error: 'No email in token' }),
-        { status: 403, headers: corsHeaders(origin) },
-      );
-    }
+    const body = (await req.json()) as SpedizionePayload;
+    const payload: SpedizionePayload = {
+      ...body,
+      createdByEmail: email,
+    };
 
-    // Body
-    const body = (await req.json()) as NewSpedizionePayload;
-
-    // Validazioni minime
-    if (!body || !body.tipoSped || !body.mittente || !body.destinatario) {
-      return new NextResponse(
-        JSON.stringify({ error: 'Missing required fields' }),
-        { status: 400, headers: corsHeaders(origin) },
-      );
-    }
-
-    // Crea record principale + figli (colli/PL)
-    const created = await createSpedizioneWebApp(body);
-
-    return new NextResponse(
-      JSON.stringify({ ok: true, id: created.id }),
-      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) } },
-    );
+    const result = await createSpedizioneWebApp(payload);
+    return NextResponse.json({ ok: true, id: result.id }, { headers: cors });
   } catch (e: any) {
-    console.error('POST /api/spedizioni error:', e);
-    return new NextResponse(
-      JSON.stringify({ error: e?.message || 'unknown error' }),
-      { status: 500, headers: corsHeaders(origin) },
+    return NextResponse.json(
+      { ok: false, error: e?.message || 'SERVER_ERROR' },
+      { status: 500, headers: cors },
     );
   }
 }
