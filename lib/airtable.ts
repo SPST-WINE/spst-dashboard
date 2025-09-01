@@ -1,4 +1,6 @@
 // lib/airtable.ts
+// Complete module: utenti helpers + creazione spedizione/collo/PL
+
 const AIRTABLE_API = 'https://api.airtable.com/v0';
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID_SPST!;
@@ -7,6 +9,9 @@ const TOKEN = process.env.AIRTABLE_API_TOKEN!;
 const T_SPED = process.env.AIRTABLE_TABLE_SPED_WEBAPP || 'SpedizioniWebApp';
 const T_COLLI = process.env.AIRTABLE_TABLE_SPED_COLLI || 'SPED_COLLI';
 const T_PL = process.env.AIRTABLE_TABLE_SPED_PL || 'SPED_PL';
+
+const T_UTENTI = process.env.AIRTABLE_TABLE_UTENTI || 'UTENTI';
+const USERS_EMAIL_FIELD = process.env.AIRTABLE_USERS_EMAIL_FIELD || 'Mail Cliente';
 
 if (!BASE_ID || !TOKEN) {
   throw new Error('Missing AIRTABLE_BASE_ID_SPST or AIRTABLE_API_TOKEN');
@@ -36,7 +41,6 @@ type RigaPL = {
   formato_litri: number;
   gradazione: number;
   prezzo: number;
-  // In Airtable NON c'è più il campo valuta per PL (lo abbiamo omesso).
   peso_netto_bott: number;
   peso_lordo_bott: number;
 };
@@ -49,7 +53,7 @@ export type NewSpedizionePayload = {
   mittente: Party;
   destinatario: Party;
 
-  contenuto: string; // contenuto complessivo (non per singolo collo)
+  contenuto: string;
   formato: 'Pacco' | 'Pallet';
 
   colli: Collo[];
@@ -62,10 +66,10 @@ export type NewSpedizionePayload = {
   noteFatt?: string;
 
   fatturazione: Party;
-  sameAsDest: boolean; // "FATT Uguale a Destinatario"
+  sameAsDest: boolean;
   delegaFattura: boolean;
 
-  fatturaUrl?: string; // URL pubblico opzionale
+  fatturaUrl?: string;
 
   packingList?: RigaPL[];
 
@@ -76,7 +80,7 @@ export type NewSpedizionePayload = {
 
 function headers() {
   return {
-    'Authorization': `Bearer ${TOKEN}`,
+    Authorization: `Bearer ${TOKEN}`,
     'Content-Type': 'application/json',
   };
 }
@@ -107,19 +111,67 @@ function partyToFields(prefix: string, p: Party) {
   };
 }
 
+/* =========================
+   UTENTI: get/upsert helpers
+   ========================= */
+
+type AirtableListResponse<T = any> = { records: Array<{ id: string; fields: T }> };
+type AirtableRecord<T = any> = { id: string; fields: T };
+
+function encodeFormula(formula: string) {
+  return encodeURIComponent(formula);
+}
+
+export async function getAirtableUserByEmail(email: string): Promise<AirtableRecord | null> {
+  const emailLower = (email || '').trim().toLowerCase();
+  const formula = `LOWER({${USERS_EMAIL_FIELD}})='${emailLower.replace(/'/g, "\\'")}'`;
+  const url = `${T_UTENTI}?maxRecords=1&filterByFormula=${encodeFormula(formula)}`;
+  const data = await airtableFetch<AirtableListResponse>(url);
+  return data.records?.[0] || null;
+}
+
+// Alias per compatibilità con import esistenti
+export const getUtenteByEmail = getAirtableUserByEmail;
+
+export async function upsertUtente(email: string, extra?: Record<string, any>) {
+  const found = await getAirtableUserByEmail(email);
+  if (found) {
+    const updated = await airtableFetch<AirtableRecord>(`${T_UTENTI}/${found.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ fields: { ...(extra || {}) } }),
+    });
+    return updated;
+  }
+
+  const created = await airtableFetch<AirtableRecord>(T_UTENTI, {
+    method: 'POST',
+    body: JSON.stringify({
+      fields: {
+        [USERS_EMAIL_FIELD]: email,
+        ...(extra || {}),
+      },
+      typecast: true,
+    }),
+  });
+  return created;
+}
+
+/* ======================================
+   SPEDIZIONI: main + colli + packing list
+   ====================================== */
+
 export async function createSpedizioneWebApp(payload: NewSpedizionePayload) {
-  // Mappa i campi del record principale
   const fields: Record<string, any> = {
     'Tipo spedizione': payload.tipoSped,
     'Contenuto': payload.contenuto || '',
     'Formato': payload.formato,
 
-    // Mittente/Destinatario
     ...partyToFields('Mitt', payload.mittente),
     ...partyToFields('Dest', payload.destinatario),
 
-    // Solo vino: abil. import (se inviato)
-    ...(typeof payload.destAbilitato === 'boolean' ? { 'Destinatario abil. import': payload.destAbilitato } : {}),
+    ...(typeof payload.destAbilitato === 'boolean'
+      ? { 'Destinatario abil. import': payload.destAbilitato }
+      : {}),
 
     'Data ritiro': payload.ritiroData || null,
     'Note ritiro': payload.ritiroNote || '',
@@ -128,22 +180,18 @@ export async function createSpedizioneWebApp(payload: NewSpedizionePayload) {
     'Valuta': payload.valuta,
     'Note Fattura': payload.noteFatt || '',
 
-    // Fatturazione
-    ...{
-      'FATT Ragione sociale': payload.fatturazione.ragioneSociale || '',
-      'FATT Referente': payload.fatturazione.referente || '',
-      'FATT Paese': payload.fatturazione.paese || '',
-      'FATT Città': payload.fatturazione.citta || '',
-      'FATT CAP': payload.fatturazione.cap || '',
-      'FATT Indirizzo': payload.fatturazione.indirizzo || '',
-      'FATT Telefono': payload.fatturazione.telefono || '',
-      'FATT PIVA/CF': payload.fatturazione.piva || '',
-      'FATT Uguale a Destinatario': !!payload.sameAsDest,
-    },
+    'FATT Ragione sociale': payload.fatturazione.ragioneSociale || '',
+    'FATT Referente': payload.fatturazione.referente || '',
+    'FATT Paese': payload.fatturazione.paese || '',
+    'FATT Città': payload.fatturazione.citta || '',
+    'FATT CAP': payload.fatturazione.cap || '',
+    'FATT Indirizzo': payload.fatturazione.indirizzo || '',
+    'FATT Telefono': payload.fatturazione.telefono || '',
+    'FATT PIVA/CF': payload.fatturazione.piva || '',
+    'FATT Uguale a Destinatario': !!payload.sameAsDest,
 
     'Fattura – Delega a SPST': !!payload.delegaFattura,
 
-    // Stato/Corriere/Tracking
     'Stato': payload.stato || 'Nuova',
     ...(payload.corriere ? { 'Corriere': payload.corriere } : {}),
     ...(payload.tracking ? { 'Tracking Number': payload.tracking } : {}),
@@ -153,18 +201,16 @@ export async function createSpedizioneWebApp(payload: NewSpedizionePayload) {
     fields['Fattura – Allegato'] = [{ url: payload.fatturaUrl }];
   }
 
-  // Crea il record principale
-  const created = await airtableFetch<{ id: string; fields: any }>(T_SPED, {
+  const created = await airtableFetch<AirtableRecord>(T_SPED, {
     method: 'POST',
     body: JSON.stringify({
       fields,
-      typecast: true, // importantissimo per Single select
+      typecast: true,
     }),
   });
 
   const spedId = created.id;
 
-  // Crea colli in batch (max 10 per request)
   if (payload.colli && payload.colli.length > 0) {
     const recs = payload.colli.map((c) => ({
       fields: {
@@ -175,18 +221,14 @@ export async function createSpedizioneWebApp(payload: NewSpedizionePayload) {
         'Peso kg': c.peso_kg ?? null,
       },
     }));
-
-    // batch di 10
     for (let i = 0; i < recs.length; i += 10) {
-      const chunk = recs.slice(i, i + 10);
       await airtableFetch<any>(`${T_COLLI}`, {
         method: 'POST',
-        body: JSON.stringify({ records: chunk }),
+        body: JSON.stringify({ records: recs.slice(i, i + 10) }),
       });
     }
   }
 
-  // Crea righe PL in batch
   if (payload.packingList && payload.packingList.length > 0) {
     const recs = payload.packingList.map((r) => ({
       fields: {
@@ -200,12 +242,10 @@ export async function createSpedizioneWebApp(payload: NewSpedizionePayload) {
         'Peso lordo bottiglia kg': r.peso_lordo_bott ?? null,
       },
     }));
-
     for (let i = 0; i < recs.length; i += 10) {
-      const chunk = recs.slice(i, i + 10);
       await airtableFetch<any>(`${T_PL}`, {
         method: 'POST',
-        body: JSON.stringify({ records: chunk }),
+        body: JSON.stringify({ records: recs.slice(i, i + 10) }),
       });
     }
   }
