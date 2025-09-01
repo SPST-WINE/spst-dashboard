@@ -1,25 +1,19 @@
-// lib/api.ts
-import { authClient } from '@/lib/firebase-client';
-import type { NewSpedizionePayload } from '@/lib/airtable';
-
-export async function createSpedizione(payload: NewSpedizionePayload) {
-  const user = authClient().currentUser;
-  if (!user) throw new Error('Not authenticated');
-
-  const idToken = await user.getIdToken();
+// lib/api.ts (client helper: chiamata dal pulsante "Salva")
+export async function postSpedizione(payload: any, getIdToken?: () => Promise<string | undefined>) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (getIdToken) {
+    const token = await getIdToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
 
   const res = await fetch('/api/spedizioni', {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${idToken}`,
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(payload),
   });
-
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`API error ${res.status}: ${text}`);
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error || `HTTP_${res.status}`);
   }
-  return res.json() as Promise<{ ok: true; id: string }>;
+  return res.json();
 }
