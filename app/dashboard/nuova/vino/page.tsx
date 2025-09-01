@@ -42,8 +42,11 @@ export default function NuovaVinoPage() {
   const [noteFatt, setNoteFatt] = useState('');
   const [delega, setDelega] = useState(false);
 
-  const [fatturazione, setFatturazione] = useState<Party>(blankParty);
-  const [sameAsMitt, setSameAsMitt] = useState(false);
+  const [fatturazione, setFatturazione] = useState<Party>({
+  ragioneSociale: '', referente: '', paese: '', citta: '',
+  cap: '', indirizzo: '', telefono: '', piva: '',
+});
+  const [sameAsDest, setSameAsDest] = useState<boolean>(false);
   const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined);
 
   // ⬇️ ALLINEATO al tipo RigaPL: prezzo + valuta (non costo_unit)
@@ -151,25 +154,20 @@ export default function NuovaVinoPage() {
       <PackingListVino righe={pl} onChange={setPl} />
 
       <FatturaCard
-        incoterm={incoterm}
-        setIncoterm={setIncoterm}
-        valuta={valuta}
-        setValuta={setValuta}
-        note={noteFatt}
-        setNote={setNoteFatt}
-        delega={delega}
-        setDelega={(v) => {
-          setDelega(v);
-          if (v) setFatturaFile(undefined);
-        }}
-        fatturazione={fatturazione}
-        setFatturazione={setFatturazione}
-        mittente={mittente}
-        sameAsMitt={sameAsMitt}
-        setSameAsMitt={setSameAsMitt}
-        fatturaFile={fatturaFile}
-        setFatturaFile={setFatturaFile}
-      />
+  incoterm={incoterm}
+  setIncoterm={setIncoterm}
+  valuta={valuta}
+  setValuta={setValuta}
+  note={noteFatt}
+  setNote={setNoteFatt}
+  delega={delega}
+  setDelega={setDelega}
+  fatturazione={fatturazione}
+  setFatturazione={setFatturazione}
+  destinatario={destinatario}          // <— ORA passa il destinatario come sorgente
+  sameAsDest={sameAsDest}              // <— stato rinominato
+  setSameAsDest={setSameAsDest}
+/> 
 
       <div className="flex justify-end">
         <button
