@@ -1,23 +1,30 @@
-// app/login/page.tsx
 'use client';
 
 import Image from 'next/image';
-import { useState, useTransition } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useState, useTransition } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { authClient } from '@/lib/firebase-client';
 
 const LOGO =
   'https://cdn.prod.website-files.com/6800cc3b5f399f3e2b7f2ffa/68079e968300482f70a36a4a_output-onlinepngtools%20(1).png';
 
+// Wrapper: mette la parte che usa useSearchParams in un Suspense boundary
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginSkeleton />}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
-  const params = useSearchParams();
+  const params = useSearchParams(); // <-- ora è dentro <Suspense/>
   const next = params.get('next') || '/dashboard';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
   const [err, setErr] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -26,7 +33,7 @@ export default function LoginPage() {
     setErr(null);
 
     try {
-      // 1) Check su Airtable
+      // 1) check utente su Airtable
       const res = await fetch('/api/check-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -38,7 +45,7 @@ export default function LoginPage() {
         return;
       }
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+        const data = await res.json().catch(() => ({} as any));
         setErr(data?.detail || 'SERVER_ERROR');
         return;
       }
@@ -46,16 +53,15 @@ export default function LoginPage() {
       const data = await res.json();
       const enabled: boolean =
         typeof data?.enabled === 'boolean' ? data.enabled : true; // default: abilitato
-
       if (!enabled) {
         setErr('Account non abilitato. Contatta il supporto SPST per l’accesso.');
         return;
       }
 
-      // 2) Login Firebase
+      // 2) login Firebase
       await signInWithEmailAndPassword(authClient(), email, password);
 
-      // 3) Redirect
+      // 3) redirect
       startTransition(() => {
         router.replace(next);
       });
@@ -105,6 +111,23 @@ export default function LoginPage() {
           {pending ? 'Accesso…' : 'Entra'}
         </button>
       </form>
+    </div>
+  );
+}
+
+function LoginSkeleton() {
+  return (
+    <div className="min-h-screen grid place-items-center bg-slate-50 px-4 py-10">
+      <div className="w-full max-w-sm rounded-2xl border bg-white p-6 shadow-sm">
+        <div className="animate-pulse space-y-3">
+          <div className="mx-auto h-11 w-11 rounded-full bg-slate-200" />
+          <div className="h-4 w-2/3 mx-auto bg-slate-200 rounded" />
+          <div className="h-3 w-1/2 mx-auto bg-slate-200 rounded" />
+          <div className="h-9 w-full bg-slate-200 rounded mt-4" />
+          <div className="h-9 w-full bg-slate-200 rounded" />
+          <div className="h-9 w-full bg-slate-200 rounded" />
+        </div>
+      </div>
     </div>
   );
 }
