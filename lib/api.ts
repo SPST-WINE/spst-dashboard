@@ -88,3 +88,16 @@ export function postSpedizioneAttachments(
   }, getIdToken);
 }
 
+export async function postSpedizioneNotify(id: string, getToken: () => Promise<string>) {
+  const token = await getToken();
+  const r = await fetch(`/api/spedizioni/${id}/notify`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+  if (!r.ok) throw new Error('notify failed');
+  return r.json();
+}
+
+
