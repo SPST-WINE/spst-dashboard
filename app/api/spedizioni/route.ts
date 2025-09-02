@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     const idToken = authz?.startsWith('Bearer ') ? authz.slice(7) : undefined;
     let email: string | undefined;
     if (idToken) {
-      const decoded = await adminAuth().verifyIdToken(idToken);
+      const decoded = await adminAuth.verifyIdToken(idToken);
       email = decoded?.email || undefined;
     }
 
