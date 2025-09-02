@@ -143,7 +143,6 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload): Promis
 
   // Generali (⚠️ NON scrivo Sorgente qui; lo faccio post-create in modo tollerante)
   // fields[F.Sorgente] = payload.sorgente === 'vino' ? 'Vino' : 'Altro';
-  fields[F.Tipo] = payload.tipoSped; // 'B2B' | 'B2C' | 'Sample'
   if (F.Formato) fields[F.Formato] = payload.formato;
   if (payload.contenuto) fields[F.Contenuto] = payload.contenuto;
   if (payload.ritiroNote) fields[F.RitiroNote] = payload.ritiroNote;
@@ -212,6 +211,22 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload): Promis
       if (ok) break;
     }
   }
+
+  // Sottotipo (B2B, B2C, Sample) — update tollerante post-create
+{
+  const sottotipoVal = payload.tipoSped; // 'B2B' | 'B2C' | 'Sample'
+  const candidates = [
+    'Sottotipo',                        // ✅ nome reale nel tuo base
+    'Tipo spedizione',
+    'Sottotipo (B2B, B2C, Sample)',
+    'Tipo',                             // eventuali vecchi alias
+  ];
+  for (const name of candidates) {
+    const ok = await tryUpdateField(name, sottotipoVal);
+    if (ok) break;
+  }
+}
+
 
   // 1b) Destinatario abilitato import — post-create
   if (typeof payload.destAbilitato === 'boolean') {
