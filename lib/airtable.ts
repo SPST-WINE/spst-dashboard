@@ -1,35 +1,32 @@
 // lib/airtable.ts
+// ⚠️ NIENTE INIZIALIZZAZIONI A TOP-LEVEL CHE TOCCANO AIRTABLE
+//     (così Next non rompe in “Collecting page data” durante il build)
+
 import Airtable from 'airtable';
 import { TABLE, F, FCOLLO, FPL } from './airtable.schema';
 
-// ----------- Setup client ---------------------------------------------------
-const apiKey = process.env.AIRTABLE_API_KEY!;
-const baseId = process.env.AIRTABLE_BASE_ID!;
-const base = new Airtable({ apiKey }).base(baseId);
+let __base: Airtable.Base | null = null;
+function getBase(): Airtable.Base {
+  if (__base) return __base;
+  const key = process.env.AIRTABLE_API_KEY;
+  const baseId = process.env.AIRTABLE_BASE_ID;
+  if (!key) throw new Error('AIRTABLE_API_KEY is missing');
+  if (!baseId) throw new Error('AIRTABLE_BASE_ID is missing');
+  __base = new Airtable({ apiKey: key }).base(baseId);
+  return __base;
+}
 
-// Abilita log verbose via env: AIRTABLE_DEBUG=true
-const DEBUG = process.env.AIRTABLE_DEBUG === 'true';
-const log = (...args: any[]) => { if (DEBUG) console.log('[AT]', ...args); };
-
-// ----------- Tipi payload ---------------------------------------------------
+// --- TIPI (semplificati) ---------------------------------------------------
 export type Party = {
-  ragioneSociale: string;
-  referente: string;
-  paese: string;
-  citta: string;
-  cap: string;
-  indirizzo: string;
-  telefono: string;
-  piva: string;
+  ragioneSociale?: string; referente?: string; paese?: string; citta?: string;
+  cap?: string; indirizzo?: string; telefono?: string; piva?: string;
 };
-
 export type Collo = {
   lunghezza_cm: number | null;
   larghezza_cm: number | null;
   altezza_cm: number | null;
   peso_kg: number | null;
 };
-
 export type RigaPL = {
   etichetta: string;
   bottiglie: number;
@@ -42,160 +39,120 @@ export type RigaPL = {
 };
 
 export type SpedizionePayload = {
-  // sorgente e selezioni
-  sorgente: 'vino' | 'altro';
+  // sorgente non la persistiamo: la deduci dalla pagina
   tipoSped: 'B2B' | 'B2C' | 'Sample';
-  formato: 'Pacco' | 'Pallet';
-
-  // info generali
   contenuto?: string;
-  ritiroData?: string;             // ISO string
+  formato?: 'Pacco' | 'Pallet';
+  ritiroData?: string; // ISO
   ritiroNote?: string;
-
-  // parti
   mittente: Party;
   destinatario: Party;
 
-  // fattura
+  // fatturazione
   incoterm: 'DAP' | 'DDP' | 'EXW';
   valuta: 'EUR' | 'USD' | 'GBP';
   noteFatt?: string;
   fatturazione: Party;
-  fattSameAsDest: boolean;
-  fattDelega: boolean;
-
-  // altri flag
-  destAbilitato?: boolean;
-
-  // allegati (solo nome client-side — l’upload arriverà dopo)
+  fattSameAsDest?: boolean;
+  fattDelega?: boolean;
   fatturaFileName?: string | null;
 
-  // colli e PL
-  colli: Collo[];
+  // vino
+  destAbilitato?: boolean;
   packingList?: RigaPL[];
 
-  // impostato server-side dal route (email dell’utente)
+  // colli
+  colli: Collo[];
+
+  // meta
   createdByEmail?: string;
 };
 
-// ----------- Helpers --------------------------------------------------------
-function dateOnly(iso?: string) {
-  if (!iso) return undefined;
-  // Airtable (campo "Date" senza time) accetta "YYYY-MM-DD"
-  return new Date(iso).toISOString().slice(0, 10);
+// --- HELPERS ---------------------------------------------------------------
+function nonEmpty(s?: string | null) {
+  return (s ?? '').trim() || undefined;
+}
+function bool(v?: boolean) {
+  return !!v;
+}
+function mapParty(prefix: 'Mittente' | 'Destinatario' | 'FATT', p: Party) {
+  const P = (k: string) => {
+    if (prefix === 'Mittente') return (F as any)[`M_${k}`];
+    if (prefix === 'Destinatario') return (F as any)[`D_${k}`];
+    return (F as any)[`F_${k}`];
+  };
+  return {
+    [P('RS')]: nonEmpty(p.ragioneSociale),
+    [P('REF')]: nonEmpty(p.referente),
+    [P('PAESE')]: nonEmpty(p.paese),
+    [P('CITTA')]: nonEmpty(p.citta),
+    [P('CAP')]: nonEmpty(p.cap),
+    [P('INDIRIZZO')]: nonEmpty(p.indirizzo),
+    [P('TEL')]: nonEmpty(p.telefono),
+    [P('PIVA')]: nonEmpty(p.piva),
+  };
 }
 
-function defined<T extends object>(obj: T) {
-  const out: any = {};
-  Object.entries(obj).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== '') out[k] = v;
-  });
-  return out;
-}
+// --- CREATE ---------------------------------------------------------------
+export async function createSpedizioneWebApp(payload: SpedizionePayload) {
+  const base = getBase();
 
-function idUmano() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const rnd = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
-  return `SP-${y}${m}${day}-${rnd}`;
-}
-
-// ----------- Create ---------------------------------------------------------
-export async function createSpedizioneWebApp(payload: SpedizionePayload): Promise<{ id: string; airtableId: string; }> {
-  log('createSpedizioneWebApp: payload', JSON.stringify(payload, null, 2));
-
-  const idSped = idUmano();
-
-  const fieldsMain = defined({
-    // selezioni
-    [F.Sorgente]: payload.sorgente === 'vino' ? 'Vino' : 'Altro',
+  // record principale
+  const fields: any = {
     [F.Tipo]: payload.tipoSped,
     [F.Formato]: payload.formato,
+    [F.Contenuto]: nonEmpty(payload.contenuto),
+    [F.RitiroData]: payload.ritiroData ? new Date(payload.ritiroData) : undefined,
+    [F.RitiroNote]: nonEmpty(payload.ritiroNote),
+    [F.CreatoDaEmail]: nonEmpty(payload.createdByEmail),
 
-    // generali
-    [F.Contenuto]: payload.contenuto,
-    [F.RitiroData]: dateOnly(payload.ritiroData),
-    [F.RitiroNote]: payload.ritiroNote,
-    [F.CreatoDaEmail]: payload.createdByEmail,
-    [F.DestAbilitato]: !!payload.destAbilitato,
+    ...mapParty('Mittente', payload.mittente),
+    ...mapParty('Destinatario', payload.destinatario),
 
-    // ID umano
-    [F.IdSpedizione]: idSped,
-
-    // mittente
-    [F.M_RS]: payload.mittente.ragioneSociale,
-    [F.M_REF]: payload.mittente.referente,
-    [F.M_PAESE]: payload.mittente.paese,
-    [F.M_CITTA]: payload.mittente.citta,
-    [F.M_CAP]: payload.mittente.cap,
-    [F.M_INDIRIZZO]: payload.mittente.indirizzo,
-    [F.M_TEL]: payload.mittente.telefono,
-    [F.M_PIVA]: payload.mittente.piva,
-
-    // destinatario
-    [F.D_RS]: payload.destinatario.ragioneSociale,
-    [F.D_REF]: payload.destinatario.referente,
-    [F.D_PAESE]: payload.destinatario.paese,
-    [F.D_CITTA]: payload.destinatario.citta,
-    [F.D_CAP]: payload.destinatario.cap,
-    [F.D_INDIRIZZO]: payload.destinatario.indirizzo,
-    [F.D_TEL]: payload.destinatario.telefono,
-    [F.D_PIVA]: payload.destinatario.piva,
-
-    // fatturazione
-    [F.F_RS]: payload.fatturazione.ragioneSociale,
-    [F.F_REF]: payload.fatturazione.referente,
-    [F.F_PAESE]: payload.fatturazione.paese,
-    [F.F_CITTA]: payload.fatturazione.citta,
-    [F.F_CAP]: payload.fatturazione.cap,
-    [F.F_INDIRIZZO]: payload.fatturazione.indirizzo,
-    [F.F_TEL]: payload.fatturazione.telefono,
-    [F.F_PIVA]: payload.fatturazione.piva,
-    [F.F_SAME_DEST]: !!payload.fattSameAsDest,
     [F.Incoterm]: payload.incoterm,
     [F.Valuta]: payload.valuta,
-    [F.NoteFatt]: payload.noteFatt,
-    [F.F_Delega]: !!payload.fattDelega,
-    // [F.F_Att]:  // upload allegati — arriverà in una fase successiva
-  });
+    [F.NoteFatt]: nonEmpty(payload.noteFatt),
+    ...mapParty('FATT', payload.fatturazione),
+    [F.F_SAME_DEST]: bool(payload.fattSameAsDest),
+    [F.F_Delega]: bool(payload.fattDelega),
+    [F.F_Att]: payload.fatturaFileName ? [{ url: `https://dummy.local/${payload.fatturaFileName}` }] : undefined,
+  };
 
-  log('MAIN.fields', fieldsMain);
+  // flag “destinatario abilitato import” se esiste in base (ignorato se non presente)
+  if ((F as any).DestAbilitato) {
+    fields[(F as any).DestAbilitato] = bool(payload.destAbilitato);
+  }
 
-  // 1) crea record principale
-  const main = await base(TABLE.SPED).create([{ fields: fieldsMain }]);
-  const mainId = main[0].getId();
-  log('MAIN.created', mainId);
+  const rec = await base(TABLE.SPED).create([{ fields }]).then((r) => r[0]);
 
-  // 2) crea colli (con enumerazione #)
-  if (payload.colli?.length) {
-    const rows = payload.colli.map((c, idx) =>
-      defined({
-        [FCOLLO.LinkSped]: [mainId],
-        [FCOLLO.N]: idx + 1,
+  // colli
+  const colli = (payload.colli || []).filter(
+    (c) => c.lunghezza_cm || c.larghezza_cm || c.altezza_cm || c.peso_kg
+  );
+  if (colli.length) {
+    const rows = colli.map((c, i) => ({
+      fields: {
+        [FCOLLO.LinkSped]: [rec.id],
+        '#': i + 1,
         [FCOLLO.L]: c.lunghezza_cm ?? undefined,
         [FCOLLO.W]: c.larghezza_cm ?? undefined,
         [FCOLLO.H]: c.altezza_cm ?? undefined,
         [FCOLLO.Peso]: c.peso_kg ?? undefined,
-      })
-    );
-
-    // batch in chunk da 10 (limite Airtable)
-    const chunkSize = 10;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const slice = rows.slice(i, i + chunkSize);
-      log(`COLLI.create batch ${i}-${i + slice.length - 1}`);
-      await base(TABLE.COLLI).create(slice.map((fields) => ({ fields })));
+      },
+    }));
+    // batch in gruppi da 10
+    for (let i = 0; i < rows.length; i += 10) {
+      await base(TABLE.COLLI).create(rows.slice(i, i + 10));
     }
   }
 
-  // 3) se “vino”, crea PL
-  if (payload.sorgente === 'vino' && payload.packingList?.length) {
-    const rows = payload.packingList.map((r) =>
-      defined({
-        [FPL.LinkSped]: [mainId],
-        [FPL.Etichetta]: r.etichetta,
+  // packing list (vino)
+  const pl = payload.packingList || [];
+  if (pl.length) {
+    const rows = pl.map((r) => ({
+      fields: {
+        [FPL.LinkSped]: [rec.id],
+        [FPL.Etichetta]: nonEmpty(r.etichetta),
         [FPL.Bottiglie]: r.bottiglie,
         [FPL.FormatoL]: r.formato_litri,
         [FPL.Grad]: r.gradazione,
@@ -203,16 +160,27 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload): Promis
         [FPL.Valuta]: r.valuta,
         [FPL.PesoNettoBott]: r.peso_netto_bott,
         [FPL.PesoLordoBott]: r.peso_lordo_bott,
-      })
-    );
-
-    const chunkSize = 10;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const slice = rows.slice(i, i + chunkSize);
-      log(`PL.create batch ${i}-${i + slice.length - 1}`);
-      await base(TABLE.PL).create(slice.map((fields) => ({ fields })));
+      },
+    }));
+    for (let i = 0; i < rows.length; i += 10) {
+      await base(TABLE.PL).create(rows.slice(i, i + 10));
     }
   }
 
-  return { id: idSped, airtableId: mainId };
+  return { id: rec.id };
+}
+
+// --- LIST (usata da /api/spedizioni/GET) -----------------------------------
+export async function listSpedizioni(opts?: { email?: string }) {
+  const base = getBase();
+  const filter = opts?.email
+    ? `FIND("${opts.email}", {${F.CreatoDaEmail}})`
+    : '';
+  const res = await base(TABLE.SPED)
+    .select({ filterByFormula: filter || undefined, pageSize: 50 })
+    .all();
+  return res.map((r) => ({ id: r.id, ...r.fields }));
+}
+export async function listSpedizioniByEmail(email?: string) {
+  return listSpedizioni({ email });
 }
