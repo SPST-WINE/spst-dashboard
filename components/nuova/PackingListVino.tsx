@@ -18,17 +18,17 @@ export type RigaPL = {
 type Props = {
   value: RigaPL[];
   onChange: (rows: RigaPL[]) => void;
-  /** ✅ nuovo: multi-file */
+  /** File di Packing List selezionati (multi) */
+  files?: File[];
+  /** Setter per i file di Packing List */
   onFiles?: (files: File[]) => void;
-  /** 🔁 compatibilità: singolo file (usa il primo dei files) */
-  onPickFile?: (file?: File) => void;
 };
 
 const ORANGE = '#f7911e';
 const inputCls =
   'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-[#1c3e5e]';
 
-// stesse colonne/gap per header e righe → allineamento perfetto
+// Stesse colonne/gap per header e righe → allineamento perfetto
 const COLS =
   'md:grid-cols-[minmax(180px,1fr)_96px_110px_100px_110px_110px_130px_130px_90px]';
 const GAP = 'gap-3';
@@ -44,8 +44,9 @@ const emptyRow: RigaPL = {
   peso_lordo_bott: null,
 };
 
-export default function PackingListVino({ value, onChange, onFiles, onPickFile }: Props) {
+export default function PackingListVino({ value, onChange, files, onFiles }: Props) {
   const rows = value ?? [];
+  const fileList = files ?? [];
 
   const toNumOrNull = (s: string): number | null => {
     const t = s.trim();
@@ -63,17 +64,23 @@ export default function PackingListVino({ value, onChange, onFiles, onPickFile }
   const addRow = () => onChange([...rows, { ...emptyRow }]);
   const remove = (i: number) => onChange(rows.filter((_, j) => j !== i));
 
-  const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (files.length) {
-      onFiles?.(files);
-      // retrocompatibilità: se qualcuno passa ancora onPickFile, prendi il primo
-      if (onPickFile) onPickFile(files[0]);
-    } else {
-      onPickFile?.(undefined);
+  const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!onFiles) return;
+    const picked = Array.from(e.target.files || []);
+    // unisci evitando duplicati per nome (semplice euristica)
+    const next = [...fileList];
+    for (const f of picked) {
+      if (!next.some((x) => x.name === f.name && x.size === f.size)) next.push(f);
     }
-    // reset per poter riselezionare gli stessi file in seguito
+    onFiles(next);
+    // reset input per permettere lo stesso file due volte se serve
     e.currentTarget.value = '';
+  };
+
+  const removeFile = (idx: number) => {
+    if (!onFiles) return;
+    const next = fileList.filter((_, i) => i !== idx);
+    onFiles(next);
   };
 
   return (
@@ -92,24 +99,46 @@ export default function PackingListVino({ value, onChange, onFiles, onPickFile }
             + Aggiungi riga
           </button>
 
-          {/* 👇 identico look, ma ora multi-file */}
-          <label className="inline-flex cursor-pointer items-center rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50">
-            Allega packing list
-            <input
-              type="file"
-              accept="application/pdf,image/*"
-              multiple
-              className="hidden"
-              onChange={onPick}
-            />
-          </label>
+          {/* Upload PL integrato nella card */}
+          {onFiles && (
+            <label className="inline-flex cursor-pointer items-center rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50">
+              Allega packing list
+              <input
+                type="file"
+                accept="application/pdf,image/*"
+                multiple
+                className="hidden"
+                onChange={onPickFiles}
+              />
+            </label>
+          )}
         </div>
       </div>
 
-      {/* HEADER */}
-      <div
-        className={`hidden md:grid ${COLS} ${GAP} pb-2 text-[11px] font-medium text-slate-500`}
-      >
+      {/* Lista file caricati (se presenti) */}
+      {fileList.length > 0 && (
+        <div className="mb-3 rounded-lg border bg-slate-50 p-2">
+          <div className="mb-1 text-xs font-medium text-slate-600">File allegati</div>
+          <ul className="text-xs">
+            {fileList.map((f, i) => (
+              <li key={i} className="flex items-center justify-between py-1">
+                <span className="truncate">{f.name}</span>
+                <button
+                  type="button"
+                  onClick={() => removeFile(i)}
+                  className="ml-3 rounded border px-2 py-0.5 hover:bg-white"
+                  title="Rimuovi"
+                >
+                  Rimuovi
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* HEADER — usa stesse colonne e stesso gap delle righe */}
+      <div className={`hidden md:grid ${COLS} ${GAP} pb-2 text-[11px] font-medium text-slate-500`}>
         <div>Etichetta</div>
         <div>Bott.</div>
         <div>Formato (L)</div>
@@ -118,7 +147,7 @@ export default function PackingListVino({ value, onChange, onFiles, onPickFile }
         <div>Valuta</div>
         <div>Peso netto (kg)</div>
         <div>Peso lordo (kg)</div>
-        <div className="text-transparent select-none">Azioni</div>
+        <div className="select-none text-transparent">Azioni</div>
       </div>
 
       {/* RIGHE */}
