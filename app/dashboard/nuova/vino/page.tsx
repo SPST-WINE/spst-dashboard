@@ -50,12 +50,9 @@ export default function NuovaVinoPage() {
   const [delega, setDelega] = useState(false);
   const [fatturazione, setFatturazione] = useState<Party>(blankParty);
   const [sameAsDest, setSameAsDest] = useState(false);
-  const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined); // usato da FatturaCard
+  const [fatturaFile, setFatturaFile] = useState<File | null>(null);
 
-  // Allegati PL (multi-file)
-  const [plFiles, setPlFiles] = useState<File[]>([]);
-
-  // Packing list vino (righe dati)
+  // Packing list (righe + files allegati)
   const [pl, setPl] = useState<RigaPL[]>([
     {
       etichetta: '',
@@ -68,14 +65,15 @@ export default function NuovaVinoPage() {
       peso_lordo_bott: 1.3,
     },
   ]);
+  const [plFiles, setPlFiles] = useState<File[]>([]);
 
-  // Upload su Firebase Storage + attach in Airtable
-  async function uploadAndAttach(spedId: string) {
+  // Upload su Firebase Storage e attach su Airtable
+  const uploadAndAttach = async (spedId: string) => {
     const storage = getStorage();
+
     const fattura: { url: string; filename?: string }[] = [];
     const packing: { url: string; filename?: string }[] = [];
 
-    // fattura singola (se presente dal FatturaCard)
     if (fatturaFile) {
       const r = ref(storage, `spedizioni/${spedId}/fattura/${fatturaFile.name}`);
       await uploadBytes(r, fatturaFile);
@@ -83,7 +81,6 @@ export default function NuovaVinoPage() {
       fattura.push({ url, filename: fatturaFile.name });
     }
 
-    // packing list multipli
     for (const f of plFiles) {
       const r = ref(storage, `spedizioni/${spedId}/packing/${f.name}`);
       await uploadBytes(r, f);
@@ -94,9 +91,9 @@ export default function NuovaVinoPage() {
     if (fattura.length || packing.length) {
       await postSpedizioneAttachments(spedId, { fattura, packing }, getIdToken);
     }
-  }
+  };
 
-  // Salva -> POST /api/spedizioni
+  // Salva -> crea record + (se presenti) allega file
   const salva = async () => {
     const payload = {
       sorgente: 'vino' as const,
@@ -120,6 +117,7 @@ export default function NuovaVinoPage() {
     };
 
     const res = await postSpedizione(payload, getIdToken);
+
     try {
       await uploadAndAttach(res.id);
       alert(`Spedizione creata! ID: ${res.id}`);
@@ -162,8 +160,8 @@ export default function NuovaVinoPage() {
         />
       </div>
 
-      {/* Packing list (righe dati vino) */}
-      <PackingListVino value={pl} onChange={setPl} />
+      {/* Packing list (vino) — con upload plFiles direttamente qui */}
+      <PackingListVino value={pl} onChange={setPl} onFiles={setPlFiles} />
 
       {/* Colli */}
       <ColliCard
@@ -183,7 +181,7 @@ export default function NuovaVinoPage() {
         setNote={setRitiroNote}
       />
 
-      {/* Fattura (contiene anche l'input singolo fatturaFile) */}
+      {/* Fattura (con upload fattura PDF che già funziona) */}
       <FatturaCard
         incoterm={incoterm}
         setIncoterm={setIncoterm}
@@ -198,24 +196,9 @@ export default function NuovaVinoPage() {
         destinatario={destinatario}
         sameAsDest={sameAsDest}
         setSameAsDest={setSameAsDest}
-        fatturaFile={fatturaFile}
-        setFatturaFile={setFatturaFile}
+        fatturaFile={fatturaFile || undefined}
+        setFatturaFile={(f) => setFatturaFile(f ?? null)}
       />
-
-      {/* Allegati (Packing List multipli) */}
-      <div className="rounded-2xl border bg-white p-4">
-        <h3 className="font-medium mb-2">Allegati (opzionali)</h3>
-        <div>
-          <label className="block text-sm mb-1">Packing List (uno o più file)</label>
-          <input
-            type="file"
-            multiple
-            accept="application/pdf,image/*"
-            onChange={(e) => setPlFiles(Array.from(e.target.files || []))}
-            className="block w-full rounded-lg border px-3 py-2 text-sm"
-          />
-        </div>
-      </div>
 
       <div className="flex justify-end">
         <button
