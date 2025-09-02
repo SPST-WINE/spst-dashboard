@@ -8,10 +8,9 @@ import RitiroCard from '@/components/nuova/RitiroCard';
 import FatturaCard from '@/components/nuova/FatturaCard';
 import PackingListVino, { RigaPL } from '@/components/nuova/PackingListVino';
 import { Select } from '@/components/nuova/Field';
-import { postSpedizione } from '@/lib/api';
+import { postSpedizione, postSpedizioneAttachments } from '@/lib/api';
 import { getIdToken } from '@/lib/firebase-client-auth';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { postSpedizioneAttachments } from '@/lib/api';
 
 const blankParty: Party = {
   ragioneSociale: '',
@@ -38,7 +37,7 @@ export default function NuovaVinoPage() {
     { lunghezza_cm: null, larghezza_cm: null, altezza_cm: null, peso_kg: null },
   ]);
   const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
-  const [contenuto, setContenuto] = useState<string>(''); // <-- richiesto da ColliCard
+  const [contenuto, setContenuto] = useState<string>('');
 
   // Ritiro
   const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
@@ -51,14 +50,12 @@ export default function NuovaVinoPage() {
   const [delega, setDelega] = useState(false);
   const [fatturazione, setFatturazione] = useState<Party>(blankParty);
   const [sameAsDest, setSameAsDest] = useState(false);
-  const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined);
+  const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined); // usato da FatturaCard
 
-  // Attachments
-
-  const [fatturaFile, setFatturaFile] = useState<File | null>(null);
+  // Allegati PL (multi-file)
   const [plFiles, setPlFiles] = useState<File[]>([]);
 
-  // Packing list vino
+  // Packing list vino (righe dati)
   const [pl, setPl] = useState<RigaPL[]>([
     {
       etichetta: '',
@@ -72,13 +69,40 @@ export default function NuovaVinoPage() {
     },
   ]);
 
+  // Upload su Firebase Storage + attach in Airtable
+  async function uploadAndAttach(spedId: string) {
+    const storage = getStorage();
+    const fattura: { url: string; filename?: string }[] = [];
+    const packing: { url: string; filename?: string }[] = [];
+
+    // fattura singola (se presente dal FatturaCard)
+    if (fatturaFile) {
+      const r = ref(storage, `spedizioni/${spedId}/fattura/${fatturaFile.name}`);
+      await uploadBytes(r, fatturaFile);
+      const url = await getDownloadURL(r);
+      fattura.push({ url, filename: fatturaFile.name });
+    }
+
+    // packing list multipli
+    for (const f of plFiles) {
+      const r = ref(storage, `spedizioni/${spedId}/packing/${f.name}`);
+      await uploadBytes(r, f);
+      const url = await getDownloadURL(r);
+      packing.push({ url, filename: f.name });
+    }
+
+    if (fattura.length || packing.length) {
+      await postSpedizioneAttachments(spedId, { fattura, packing }, getIdToken);
+    }
+  }
+
   // Salva -> POST /api/spedizioni
   const salva = async () => {
     const payload = {
       sorgente: 'vino' as const,
       tipoSped,
       destAbilitato,
-      contenuto, // ora popolato
+      contenuto,
       formato,
       ritiroData: ritiroData ? ritiroData.toISOString() : undefined,
       ritiroNote,
@@ -96,19 +120,15 @@ export default function NuovaVinoPage() {
     };
 
     const res = await postSpedizione(payload, getIdToken);
-    alert(`Spedizione creata! ID: ${res.id}`);
+    try {
+      await uploadAndAttach(res.id);
+      alert(`Spedizione creata! ID: ${res.id}`);
+    } catch (e) {
+      console.error('Allegati: errore upload/attach', e);
+      alert(`Spedizione creata (ID: ${res.id}) ma upload allegati fallito.`);
+    }
   };
 
-     const res = await postSpedizione(payload, getIdToken);
-try {
-  await uploadAndAttach(res.id);
-  alert(`Spedizione creata! ID: ${res.id}`);
-} catch (e) {
-  console.error('Allegati: errore upload/attach', e);
-  alert(`Spedizione creata (ID: ${res.id}) ma upload allegati fallito.`);
-}
-
-  
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Nuova spedizione — vino</h2>
@@ -142,9 +162,8 @@ try {
         />
       </div>
 
-      {/* Packing list (vino) */}
-<PackingListVino value={pl} onChange={setPl} />
-
+      {/* Packing list (righe dati vino) */}
+      <PackingListVino value={pl} onChange={setPl} />
 
       {/* Colli */}
       <ColliCard
@@ -164,7 +183,7 @@ try {
         setNote={setRitiroNote}
       />
 
-      {/* Fattura */}
+      {/* Fattura (contiene anche l'input singolo fatturaFile) */}
       <FatturaCard
         incoterm={incoterm}
         setIncoterm={setIncoterm}
@@ -183,6 +202,21 @@ try {
         setFatturaFile={setFatturaFile}
       />
 
+      {/* Allegati (Packing List multipli) */}
+      <div className="rounded-2xl border bg-white p-4">
+        <h3 className="font-medium mb-2">Allegati (opzionali)</h3>
+        <div>
+          <label className="block text-sm mb-1">Packing List (uno o più file)</label>
+          <input
+            type="file"
+            multiple
+            accept="application/pdf,image/*"
+            onChange={(e) => setPlFiles(Array.from(e.target.files || []))}
+            className="block w-full rounded-lg border px-3 py-2 text-sm"
+          />
+        </div>
+      </div>
+
       <div className="flex justify-end">
         <button
           type="button"
@@ -194,28 +228,4 @@ try {
       </div>
     </div>
   );
-}
-
-async function uploadAndAttach(spedId: string) {
-  const storage = getStorage();
-  const fattura: { url: string; filename?: string }[] = [];
-  const packing: { url: string; filename?: string }[] = [];
-
-  if (fatturaFile) {
-    const r = ref(storage, `spedizioni/${spedId}/fattura/${fatturaFile.name}`);
-    await uploadBytes(r, fatturaFile);
-    const url = await getDownloadURL(r);
-    fattura.push({ url, filename: fatturaFile.name });
-  }
-
-  for (const f of plFiles) {
-    const r = ref(storage, `spedizioni/${spedId}/packing/${f.name}`);
-    await uploadBytes(r, f);
-    const url = await getDownloadURL(r);
-    packing.push({ url, filename: f.name });
-  }
-
-  if (fattura.length || packing.length) {
-    await postSpedizioneAttachments(spedId, { fattura, packing }, getIdToken);
-  }
 }
