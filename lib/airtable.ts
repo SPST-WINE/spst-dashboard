@@ -1,5 +1,7 @@
 // lib/airtable.ts
-// Fix data (YYYY-MM-DD) + log dettagliati (DEBUG_AIRTABLE=1 / DEBUG_SPEDIZIONI=1)
+// - Conversione data in YYYY-MM-DD
+// - Log dettagliati (DEBUG_AIRTABLE=1)
+// - Retry automatico su 422 UNKNOWN_FIELD_NAME (rinomina/drops campo e ritenta)
 
 import { TABLE, F, FCOLLO, FPL } from './airtable.schema';
 
@@ -100,6 +102,11 @@ function esc(str: string) {
   return (str || '').replace(/"/g, '\\"');
 }
 
+type AirtableError = {
+  type?: string;
+  message?: string;
+};
+
 async function atFetch<T = any>(
   path: string,
   init: RequestInit = {}
@@ -112,13 +119,12 @@ async function atFetch<T = any>(
       ? (() => {
           try {
             const parsed = JSON.parse(init.body as string);
-            return JSON.stringify(parsed).slice(0, 2_000); // evitare log troppo lunghi
+            return JSON.stringify(parsed).slice(0, 2000);
           } catch {
-            return String(init.body).slice(0, 2_000);
+            return String(init.body).slice(0, 2000);
           }
         })()
       : undefined;
-
   dlog('REQUEST', { url, method: init.method || 'GET', body: logBodyReq });
 
   const res = await fetch(url, {
@@ -139,7 +145,6 @@ async function atFetch<T = any>(
     json = { error: { type: 'INVALID_JSON', message: text } };
   }
 
-  // logging (risposta)
   dlog('RESPONSE', {
     url,
     status: res.status,
@@ -148,8 +153,12 @@ async function atFetch<T = any>(
   });
 
   if (!res.ok) {
-    const err = json?.error || { message: `HTTP_${res.status}` };
-    throw new Error(`AT_${res.status}: ${JSON.stringify({ error: err })}`);
+    const errObj: any = new Error(
+      `AT_${res.status}: ${JSON.stringify({ error: json?.error })}`
+    );
+    errObj.status = res.status;
+    errObj.airtable = (json && json.error) as AirtableError;
+    throw errObj;
   }
   return json as T;
 }
@@ -162,17 +171,79 @@ function dateOnlyOrNull(d?: string) {
   return dt.toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
+// ===== Alias/varianti campi incerti =====
+const FIELD_ALIASES: Record<string, string[]> = {
+  // "Tipo (Vino, Altro)" potrebbe essere "Tipo"
+  [F.Sorgente]: [
+    process.env.AIRTABLE_FIELD_SORGENTE_ALT || 'Tipo',
+    'Sorgente',
+    'Tipo (Vino/Altro)',
+  ],
+  // safety: alcune basi hanno EN DASH / EM DASH
+  [F.RitiroData]: ['Ritiro – Data', 'Ritiro — Data'],
+  [F.RitiroNote]: ['Ritiro – Note', 'Ritiro — Note'],
+};
+
+// ===== Retry POST con handling di UNKNOWN_FIELD_NAME =====
+async function safeCreateRecord(
+  table: string,
+  fields: Record<string, any>
+): Promise<{ id: string; fields: Record<string, any> }> {
+  let current = { ...fields };
+
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      const res = await atFetch<{ id: string; fields: Record<string, any> }>(
+        `${table}`,
+        { method: 'POST', body: JSON.stringify({ fields: current }) }
+      );
+      return res;
+    } catch (e: any) {
+      const status = e?.status;
+      const type = e?.airtable?.type as string | undefined;
+      const msg = e?.airtable?.message as string | undefined;
+
+      if (status === 422 && type === 'UNKNOWN_FIELD_NAME' && msg) {
+        const m = msg.match(/Unknown field name:\s*"(.+?)"/);
+        const bad = m?.[1];
+        if (bad && bad in current) {
+          dlog('UNKNOWN_FIELD_NAME ->', bad);
+
+          // prova alias
+          const aliases = FIELD_ALIASES[bad] || [];
+          const alias = aliases.find(Boolean);
+          if (alias) {
+            current[alias] = current[bad];
+            delete current[bad];
+            dlog(`Retry con alias campo: ${bad} -> ${alias}`);
+            continue;
+          }
+
+          // altrimenti droppa il campo e ritenta
+          delete current[bad];
+          dlog(`Retry senza campo sconosciuto: ${bad}`);
+          continue;
+        }
+      }
+      // se non gestibile, rilancia
+      throw e;
+    }
+  }
+  throw new Error('AT_RETRY_EXCEEDED');
+}
+
 // ===== MAPPING principale =====
 function buildMainFields(payload: SpedizionePayload): Record<string, any> {
   const p = payload;
 
-  const fields: Record<string, any> = {
+  const base: Record<string, any> = {
     [F.Stato]: 'Nuova',
+    // F.Sorgente può causare 422 se il campo non esiste -> safeCreateRecord gestirà alias/drop
     [F.Sorgente]: p.sorgente === 'vino' ? 'Vino' : 'Altro',
     [F.Tipo]: p.tipoSped,
     [F.Formato]: p.formato,
     [F.Contenuto]: p.contenuto || '',
-    [F.RitiroData]: dateOnlyOrNull(p.ritiroData), // <<— FIX formato data
+    [F.RitiroData]: dateOnlyOrNull(p.ritiroData),
     [F.RitiroNote]: p.ritiroNote || '',
     [F.CreatoDaEmail]: p.createdByEmail || '',
 
@@ -213,10 +284,15 @@ function buildMainFields(payload: SpedizionePayload): Record<string, any> {
   };
 
   if (p.fatturaFileUrl) {
-    fields[F.F_Att] = [{ url: p.fatturaFileUrl }];
+    base[F.F_Att] = [{ url: p.fatturaFileUrl }];
   }
 
-  return fields;
+  // rimuovi undefined (Airtable non gradisce)
+  for (const k of Object.keys(base)) {
+    if (base[k] === undefined) delete base[k];
+  }
+
+  return base;
 }
 
 // ===== CREATE: Spedizione + Colli + PL =====
@@ -230,13 +306,11 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload): Promis
     fatturaFileUrl: payload.fatturaFileUrl ? '[URL]' : null,
   });
 
-  const main = await atFetch<{ id: string; fields: any }>(`${TABLE.SPED}`, {
-    method: 'POST',
-    body: JSON.stringify({ fields: buildMainFields(payload) }),
-  });
-
+  // record principale (con retry e alias su campi incerti)
+  const main = await safeCreateRecord(`${TABLE.SPED}`, buildMainFields(payload));
   const parentId = main.id;
 
+  // ---- COLLI
   const validColli = (payload.colli || []).filter((c) =>
     [c.lunghezza_cm, c.larghezza_cm, c.altezza_cm, c.peso_kg].some(
       (v) => v !== null && v !== undefined
@@ -254,17 +328,26 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload): Promis
         [FCOLLO.H]: c.altezza_cm ?? null,
         [FCOLLO.Peso]: c.peso_kg ?? null,
       }));
-      const res = await atFetch<{ records: Array<{ id: string }> }>(
-        `${TABLE.COLLI}`,
-        {
-          method: 'POST',
-          body: JSON.stringify(toRecordsPayload(recs)),
+      // anche qui usiamo safeCreate in bulk: proviamo intero batch, se fallisce per campo ignoto, droppa e ritenta
+      const payloadBulk = toRecordsPayload(recs);
+      try {
+        const res = await atFetch<{ records: Array<{ id: string }> }>(
+          `${TABLE.COLLI}`,
+          { method: 'POST', body: JSON.stringify(payloadBulk) }
+        );
+        colliCreated += res.records?.length || 0;
+      } catch (e: any) {
+        // fallback: invia riga per riga con safeCreateRecord per isolare eventuali campi sconosciuti
+        dlog('COLLI bulk failed, fallback per-record...', e?.airtable || e?.message);
+        for (const r of recs) {
+          const one = await safeCreateRecord(`${TABLE.COLLI}`, r);
+          if (one?.id) colliCreated += 1;
         }
-      );
-      colliCreated += res.records?.length || 0;
+      }
     }
   }
 
+  // ---- PACKING LIST
   const rows = (payload.packingList || []).filter(
     (r) =>
       r &&
@@ -290,14 +373,21 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload): Promis
         [FPL.PesoNettoBott]: r.peso_netto_bott ?? null,
         [FPL.PesoLordoBott]: r.peso_lordo_bott ?? null,
       }));
-      const res = await atFetch<{ records: Array<{ id: string }> }>(
-        `${TABLE.PL}`,
-        {
-          method: 'POST',
-          body: JSON.stringify(toRecordsPayload(recs)),
+
+      const payloadBulk = toRecordsPayload(recs);
+      try {
+        const res = await atFetch<{ records: Array<{ id: string }> }>(
+          `${TABLE.PL}`,
+          { method: 'POST', body: JSON.stringify(payloadBulk) }
+        );
+        plCreated += res.records?.length || 0;
+      } catch (e: any) {
+        dlog('PL bulk failed, fallback per-record...', e?.airtable || e?.message);
+        for (const r of recs) {
+          const one = await safeCreateRecord(`${TABLE.PL}`, r);
+          if (one?.id) plCreated += 1;
         }
-      );
-      plCreated += res.records?.length || 0;
+      }
     }
   }
 
@@ -376,7 +466,7 @@ export async function listSpedizioniByEmail(email?: string) {
   return listSpedizioni({ email });
 }
 
-// ===== Utenti (compat) =====
+// ===== Utenti =====
 const USERS_TABLE =
   process.env.AIRTABLE_TABLE_UTENTI || process.env.AIRTABLE_TABLE_USERS || 'Utenti';
 const USERS_EMAIL_F =
