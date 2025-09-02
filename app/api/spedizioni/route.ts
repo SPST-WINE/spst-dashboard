@@ -1,62 +1,42 @@
-// app/api/spedizioni/route.ts
 import { NextResponse, type NextRequest } from 'next/server';
 import { buildCorsHeaders } from '@/lib/cors';
 import { adminAuth } from '@/lib/firebase-admin';
-import { createSpedizioneWebApp, listSpedizioni } from '@/lib/airtable';
+import { createSpedizioneWebApp, getSpedizioneById, extractPublicId } from '@/lib/airtable';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function OPTIONS(req: NextRequest) {
-  const origin = req.headers.get('origin') ?? undefined;
-  return new NextResponse(null, { status: 204, headers: buildCorsHeaders(origin) });
-}
-
-async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
-  const auth = req.headers.get('authorization') || '';
-  const m = auth.match(/^Bearer\s+(.+)$/i);
-  if (m) {
-    try {
-      const decoded = await adminAuth.verifyIdToken(m[1], true);
-      return decoded.email || undefined;
-    } catch { /* ignore and fallback */ }
-  }
-  const session = req.cookies.get('spst_session')?.value;
-  if (session) {
-    try {
-      const decoded = await adminAuth.verifySessionCookie(session, true);
-      return decoded.email || undefined;
-    } catch { /* ignore */ }
-  }
-  return undefined;
-}
-
-export async function GET(req: NextRequest) {
-  const origin = req.headers.get('origin') ?? undefined;
-  const cors = buildCorsHeaders(origin);
-  try {
-    const email = await getEmailFromAuth(req);
-    const rows = await listSpedizioni(email ? { email } : undefined);
-    return NextResponse.json({ ok: true, rows }, { headers: cors });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || 'SERVER_ERROR' },
-      { status: 500, headers: cors }
-    );
-  }
-}
-
 export async function POST(req: NextRequest) {
   const origin = req.headers.get('origin') ?? undefined;
   const cors = buildCorsHeaders(origin);
+
   try {
-    const payload = await req.json();
-    if (!payload.createdByEmail) {
-      const email = await getEmailFromAuth(req);
-      if (email) payload.createdByEmail = email;
+    const body = await req.json();
+    const idToken: string | undefined = body?.idToken;
+
+    // prende email dal token (se presente)
+    let email: string | undefined;
+    if (idToken) {
+      const decoded = await adminAuth.verifyIdToken(idToken, true);
+      email = decoded.email || decoded.firebase?.identities?.email?.[0];
     }
-    const res = await createSpedizioneWebApp(payload);
-    return NextResponse.json({ ok: true, id: res.id }, { headers: cors });
+    if (!email && typeof body?.createdByEmail === 'string') {
+      email = body.createdByEmail;
+    }
+
+    // inoltra al payload per Airtable
+    const payload = { ...body, createdByEmail: email };
+
+    const { id } = await createSpedizioneWebApp(payload);
+
+    // leggo il campo "ID Spedizione" per restituirlo al client
+    let displayId = id;
+    try {
+      const rec = await getSpedizioneById(id);
+      displayId = extractPublicId(rec.fields) || id;
+    } catch {}
+
+    return NextResponse.json({ ok: true, id, displayId }, { headers: cors });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
