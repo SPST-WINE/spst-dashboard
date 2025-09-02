@@ -50,9 +50,9 @@ export default function NuovaVinoPage() {
   const [delega, setDelega] = useState(false);
   const [fatturazione, setFatturazione] = useState<Party>(blankParty);
   const [sameAsDest, setSameAsDest] = useState(false);
-  const [fatturaFile, setFatturaFile] = useState<File | null>(null);
+  const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined); // singolo PDF
 
-  // Packing list (righe + files allegati)
+  // Packing list (righe + files multipli)
   const [pl, setPl] = useState<RigaPL[]>([
     {
       etichetta: '',
@@ -65,12 +65,11 @@ export default function NuovaVinoPage() {
       peso_lordo_bott: 1.3,
     },
   ]);
-  const [plFiles, setPlFiles] = useState<File[]>([]);
+  const [plFiles, setPlFiles] = useState<File[]>([]); // <— file scelti nella card
 
-  // Upload su Firebase Storage e attach su Airtable
-  const uploadAndAttach = async (spedId: string) => {
+  // Upload su Firebase Storage + attach in Airtable
+  async function uploadAndAttach(spedId: string) {
     const storage = getStorage();
-
     const fattura: { url: string; filename?: string }[] = [];
     const packing: { url: string; filename?: string }[] = [];
 
@@ -91,7 +90,7 @@ export default function NuovaVinoPage() {
     if (fattura.length || packing.length) {
       await postSpedizioneAttachments(spedId, { fattura, packing }, getIdToken);
     }
-  };
+  }
 
   // Salva -> crea record + (se presenti) allega file
   const salva = async () => {
@@ -117,7 +116,6 @@ export default function NuovaVinoPage() {
     };
 
     const res = await postSpedizione(payload, getIdToken);
-
     try {
       await uploadAndAttach(res.id);
       alert(`Spedizione creata! ID: ${res.id}`);
@@ -160,8 +158,12 @@ export default function NuovaVinoPage() {
         />
       </div>
 
-      {/* Packing list (vino) — con upload plFiles direttamente qui */}
-      <PackingListVino value={pl} onChange={setPl} onFiles={setPlFiles} />
+      {/* Packing list (vino) — include bottone "Allega packing list" */}
+      <PackingListVino
+        value={pl}
+        onChange={setPl}
+        onFiles={setPlFiles}   // <— i file finiscono qui
+      />
 
       {/* Colli */}
       <ColliCard
@@ -181,7 +183,7 @@ export default function NuovaVinoPage() {
         setNote={setRitiroNote}
       />
 
-      {/* Fattura (con upload fattura PDF che già funziona) */}
+      {/* Fattura (con upload fattura PDF già presente nella card) */}
       <FatturaCard
         incoterm={incoterm}
         setIncoterm={setIncoterm}
@@ -196,8 +198,8 @@ export default function NuovaVinoPage() {
         destinatario={destinatario}
         sameAsDest={sameAsDest}
         setSameAsDest={setSameAsDest}
-        fatturaFile={fatturaFile || undefined}
-        setFatturaFile={(f) => setFatturaFile(f ?? null)}
+        fatturaFile={fatturaFile}
+        setFatturaFile={setFatturaFile}
       />
 
       <div className="flex justify-end">
