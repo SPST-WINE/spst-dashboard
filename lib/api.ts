@@ -70,3 +70,21 @@ export async function getSpedizioni(
   if (Array.isArray(json?.results)) return json.results;
   return [];
 }
+
+// lib/api.ts (append)
+
+export function postSpedizioneAttachments(
+  id: string,
+  payload: {
+    fattura?: { url: string; filename?: string }[];
+    packing?: { url: string; filename?: string }[];
+  },
+  getIdToken?: GetIdToken
+): Promise<{ ok: true }> {
+  return request(`/api/spedizioni/${encodeURIComponent(id)}/attachments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }, getIdToken);
+}
+
