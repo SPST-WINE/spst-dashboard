@@ -18,7 +18,7 @@ async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
   const m = auth.match(/^Bearer\s+(.+)$/i);
   if (m) {
     try {
-      const decoded = await adminAuth.verifyIdToken(m[1], true);
+      const decoded = await adminAuth().verifyIdToken(m[1], true);
       return decoded.email || undefined;
     } catch {
       // continua coi fallback
@@ -29,7 +29,8 @@ async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
   const session = req.cookies.get('spst_session')?.value;
   if (session) {
     try {
-      const decoded = await adminAuth.verifySessionCookie(session, true);
+      // 👇 FIX: aggiunte le parentesi dopo adminAuth
+      const decoded = await adminAuth().verifySessionCookie(session, true);
       return decoded.email || undefined;
     } catch {
       // ignore
@@ -60,7 +61,7 @@ export async function POST(req: NextRequest) {
   const cors = buildCorsHeaders(origin);
 
   try {
-    const payload = await req.json(); // il tuo SpedizionePayload
+    const payload = await req.json(); // SpedizionePayload
     // Se non arriva già dal client, prova a valorizzare createdByEmail dai token
     if (!payload.createdByEmail) {
       const email = await getEmailFromAuth(req);
