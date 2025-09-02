@@ -200,14 +200,31 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload) {
     console.log('[Airtable] Fields resolved:', { names, fields });
   }
 
-  // 1) Crea record principale
+   // 1) Crea record principale
   const main = await base(TABLE.SPED).create([{ fields }]);
   const recId = main[0].id;
 
-  // 1b) Se esiste il campo "ID Spedizione", scrivi il codice custom
+  // 1b) Se esiste un campo testuale per l'ID custom, valorizzalo
+  const fID = pick(CANDIDATES.ID_Sped, names);
   if (fID) {
-    await base(TABLE.SPED).update([{ id: recId, fields: { [fID]: genCustomId() } }]);
+    try {
+      // Per sicurezza: NON scrivere mai nel campo "ID" (quasi sempre formula)
+      if (fID !== 'ID') {
+        await base(TABLE.SPED).update([
+          { id: recId, fields: { [fID]: genCustomId() } }
+        ]);
+      }
+    } catch (e: any) {
+      if (process.env.DEBUG_AIRTABLE === '1') {
+        console.error('[Airtable] ID custom update failed', {
+          field: fID,
+          message: e?.message
+        });
+      }
+      // non rilanciamo: la spedizione è stata comunque creata
+    }
   }
+
 
   // 2) Crea COLLI
   if (payload.colli?.length) {
