@@ -354,3 +354,30 @@ export async function listSpedizioni(opts?: { email?: string }): Promise<any[]> 
 
   return all;
 }
+
+// lib/airtable.ts (append in fondo)
+
+// Tipo comodo per passare URL+filename
+export type Att = { url: string; filename?: string };
+
+/**
+ * Aggiorna gli attachment della spedizione su Airtable.
+ * Passa array di { url, filename } ottenuti da getDownloadURL(Firebase).
+ */
+export async function attachFilesToSpedizione(
+  recId: string,
+  opts: { fattura?: Att[]; packing?: Att[] }
+): Promise<void> {
+  const b = base();
+
+  const asAtt = (arr: Att[]) => arr.map(a => ({ url: a.url, filename: a.filename }));
+
+  const updates: Record<string, any> = {};
+  if (opts.fattura?.length) updates[F.Fattura_Att] = asAtt(opts.fattura);
+  if (opts.packing?.length) updates[F.PL_Att] = asAtt(opts.packing);
+
+  if (Object.keys(updates).length === 0) return;
+
+  await b(TABLE.SPED).update(recId, updates);
+}
+
