@@ -62,7 +62,7 @@ export const CANDIDATES = {
   F_Att: ['Fattura - Allegato Cliente', 'Fattura – Allegato Cliente'],
 
   // Extra
-  ID_Sped: ['ID Spedizione', 'Codice Spedizione', 'ID'],
+  ID_Sped: ['ID Spedizione', 'Codice Spedizione'],
 
   // Link figli
   LinkColli: ['COLLI (link)', 'COLLI', 'Link COLLI'],
