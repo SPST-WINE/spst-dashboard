@@ -1,16 +1,58 @@
-// app/api/session/route.ts
+// app/api/spedizioni/route.ts
 import { NextResponse, type NextRequest } from 'next/server';
 import { buildCorsHeaders } from '@/lib/cors';
 import { adminAuth } from '@/lib/firebase-admin';
+import { createSpedizioneWebApp, listSpedizioni } from '@/lib/airtable';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const COOKIE_NAME = 'spst_session';
-
 export async function OPTIONS(req: NextRequest) {
   const origin = req.headers.get('origin') ?? undefined;
   return new NextResponse(null, { status: 204, headers: buildCorsHeaders(origin) });
+}
+
+async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
+  // 1) Bearer ID token (es. passato dal client con getIdToken)
+  const auth = req.headers.get('authorization') || '';
+  const m = auth.match(/^Bearer\s+(.+)$/i);
+  if (m) {
+    try {
+      const decoded = await adminAuth.verifyIdToken(m[1], true);
+      return decoded.email || undefined;
+    } catch {
+      // continua coi fallback
+    }
+  }
+
+  // 2) Session cookie creato da /api/session
+  const session = req.cookies.get('spst_session')?.value;
+  if (session) {
+    try {
+      const decoded = await adminAuth.verifySessionCookie(session, true);
+      return decoded.email || undefined;
+    } catch {
+      // ignore
+    }
+  }
+
+  return undefined;
+}
+
+export async function GET(req: NextRequest) {
+  const origin = req.headers.get('origin') ?? undefined;
+  const cors = buildCorsHeaders(origin);
+
+  try {
+    const email = await getEmailFromAuth(req);
+    const rows = await listSpedizioni(email ? { email } : undefined);
+    return NextResponse.json({ ok: true, rows }, { headers: cors });
+  } catch (e: any) {
+    return NextResponse.json(
+      { ok: false, error: e?.message || 'SERVER_ERROR' },
+      { status: 500, headers: cors }
+    );
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -18,50 +60,15 @@ export async function POST(req: NextRequest) {
   const cors = buildCorsHeaders(origin);
 
   try {
-    const { idToken, email: emailFromBody } = await req.json();
-
-    if (!idToken) {
-      return NextResponse.json(
-        { ok: false, error: 'TOKEN_REQUIRED' },
-        { status: 400, headers: cors }
-      );
+    const payload = await req.json(); // il tuo SpedizionePayload
+    // Se non arriva già dal client, prova a valorizzare createdByEmail dai token
+    if (!payload.createdByEmail) {
+      const email = await getEmailFromAuth(req);
+      if (email) payload.createdByEmail = email;
     }
 
-    // ✅ usa l'istanza, non una funzione
-    const decoded = await adminAuth.verifyIdToken(idToken, true);
-
-    let email: string | undefined =
-      (decoded as any).email ||
-      (decoded as any).firebase?.identities?.email?.[0] ||
-      emailFromBody;
-
-    // Fallback: se ancora assente, leggi da user record
-    if (!email) {
-      const user = await adminAuth.getUser(decoded.uid);
-      email = user.email || undefined;
-    }
-
-    if (!email) {
-      return NextResponse.json(
-        { ok: false, error: 'EMAIL_REQUIRED' },
-        { status: 400, headers: cors }
-      );
-    }
-
-    // Crea il Firebase Session Cookie (5 giorni)
-    const expiresIn = 1000 * 60 * 60 * 24 * 5;
-    const sessionCookie = await adminAuth.createSessionCookie(idToken, { expiresIn });
-
-    const res = NextResponse.json({ ok: true }, { headers: cors });
-    res.cookies.set(COOKIE_NAME, sessionCookie, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: expiresIn / 1000,
-    });
-
-    return res;
+    const res = await createSpedizioneWebApp(payload);
+    return NextResponse.json({ ok: true, id: res.id }, { headers: cors });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
