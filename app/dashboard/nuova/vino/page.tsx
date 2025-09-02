@@ -23,7 +23,8 @@ const blankParty: Party = {
 };
 
 type SuccessInfo = {
-  id: string;
+  recId: string;        // recordId Airtable (serve per notify/attach)
+  displayId: string;    // "ID Spedizione" leggibile (campo Airtable)
   tipoSped: 'B2B' | 'B2C' | 'Sample';
   incoterm: 'DAP' | 'DDP' | 'EXW';
   dataRitiro?: string;
@@ -188,19 +189,20 @@ export default function NuovaVinoPage() {
         packingList: pl,
       };
 
-      const res = await postSpedizione(payload, getIdToken);
-      await uploadAndAttach(res.id);
+      const res = await postSpedizione(payload, getIdToken); // deve tornare { id, displayId }
+await uploadAndAttach(res.id);
 
-      // schermata conferma
-      setSuccess({
-        id: res.id,
-        tipoSped,
-        incoterm,
-        dataRitiro: ritiroData?.toLocaleDateString(),
-        colli: colli.length,
-        formato,
-        destinatario,
-      });
+setSuccess({
+  recId: res.id,
+  displayId: res.displayId ?? res.id,  // fallback al recordId se manca
+  tipoSped,
+  incoterm,
+  dataRitiro: ritiroData?.toLocaleDateString(),
+  colli: colli.length,
+  formato,
+  destinatario,
+});
+
     } catch (e) {
       console.error('Errore salvataggio/allegati', e);
       setErrors(['Si è verificato un errore durante il salvataggio. Riprova più tardi.']);
@@ -212,15 +214,16 @@ export default function NuovaVinoPage() {
 
   // ------- Invio email -------
   const inviaEmail = async () => {
-    if (!success) return;
-    try {
-      await postSpedizioneNotify(success.id, getIdToken);
-      setEmailSent('ok');
-    } catch (e) {
-      console.error(e);
-      setEmailSent('err');
-    }
-  };
+  if (!success) return;
+  try {
+    await postSpedizioneNotify(success.recId, getIdToken);
+    setEmailSent('ok');
+  } catch (e) {
+    console.error(e);
+    setEmailSent('err');
+  }
+};
+
 
   // ------- UI -------
   if (success) {
@@ -230,8 +233,8 @@ export default function NuovaVinoPage() {
 
         <div className="rounded-2xl border bg-white p-4">
           <div className="mb-3 text-sm">
-            <div className="font-medium">ID spedizione</div>
-            <div className="font-mono">{success.id}</div>
+            <div className="font-medium">ID Spedizione</div>
+            <div className="font-mono">{success.displayId}</div>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 text-sm">
