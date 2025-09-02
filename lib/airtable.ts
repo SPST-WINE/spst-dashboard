@@ -381,3 +381,38 @@ export async function attachFilesToSpedizione(
   await b(TABLE.SPED).update(recId, updates);
 }
 
+// --- Helpers lettura record singolo / meta -------------------
+export async function getSpedizioneById(recId: string): Promise<{ id: string; fields: Record<string, any> }> {
+  const b = base();
+  const r = await b(TABLE.SPED).find(recId);
+  return { id: r.id, fields: r.fields as Record<string, any> };
+}
+
+export function extractPublicId(fields: Record<string, any>): string | undefined {
+  const candidates = [
+    (F as any).ID_Spedizione,   // se nel tuo schema esiste
+    'ID Spedizione',
+    'ID SPST',
+    'ID Spedizione (custom)',
+  ].filter(Boolean) as string[];
+  for (const k of candidates) {
+    const v = fields[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
+export function extractCreatorEmail(fields: Record<string, any>): string | undefined {
+  const candidates = [
+    (F as any).CreatoDaEmail,
+    'Creato da (email)',
+    'Created By Email',
+    'Creato da Email',
+  ].filter(Boolean) as string[];
+  for (const k of candidates) {
+    const v = fields[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
