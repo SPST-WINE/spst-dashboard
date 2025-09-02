@@ -279,3 +279,37 @@ export async function upsertUtente(args: { email: string; fields: Record<string,
   const created = await base(T_UTENTI).create([{ fields: { [USERS_EMAIL_FIELD]: args.email, ...args.fields } }]);
   return { id: created[0].getId(), ...args.fields };
 }
+
+// --- Health helpers ---------------------------------------------------------
+
+/**
+ * Restituisce lo stato (presenza/assenza) delle variabili Airtable senza
+ * toccare la rete né istanziare il client. Non logga valori sensibili.
+ */
+export function airtableEnvStatus() {
+  return {
+    hasToken:
+      !!(process.env.AIRTABLE_API_TOKEN || process.env.AIRTABLE_API_KEY),
+    hasBaseId: !!process.env.AIRTABLE_BASE_ID_SPST,
+    tables: {
+      SPEDIZIONI_WEBAPP: !!process.env.AIRTABLE_TABLE_SPEDIZIONI_WEBAPP,
+      SPED_COLLI: !!process.env.AIRTABLE_TABLE_SPED_COLLI,
+      SPED_PL: !!process.env.AIRTABLE_TABLE_SPED_PL,
+      UTENTI: !!process.env.AIRTABLE_TABLE_UTENTI,
+      USERS_EMAIL_FIELD: !!process.env.AIRTABLE_USERS_EMAIL_FIELD,
+    },
+  };
+}
+
+/**
+ * (opzionale) Ping rapido runtime per verificare accesso al base.
+ * NON usato in build; chiamalo solo da una route API o localmente.
+ */
+export async function airtableQuickPing() {
+  const base = getBase(); // usa le env già validate
+  const table =
+    process.env.AIRTABLE_TABLE_SPEDIZIONI_WEBAPP || TABLE.SPED;
+  const recs = await base(table).select({ maxRecords: 1 }).firstPage();
+  return { ok: true, sampleRecordId: recs[0]?.getId() || null };
+}
+
