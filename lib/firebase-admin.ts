@@ -12,7 +12,17 @@ const app =
     : initializeApp(
         projectId && clientEmail && privateKey
           ? { credential: cert({ projectId, clientEmail, privateKey }) }
-          : undefined // fallback a ADC se configurato
+          : undefined // fallback su ADC se presente
       );
 
-export const auth = getAuth(app);
+const auth = getAuth(app);
+
+// ✅ Alias per retro-compatibilità: alcuni file importano `adminAuth`
+const adminAuth = auth;
+
+export { auth, adminAuth };
+
+// Opzionale ma comodo: helper per verificare il token
+export function verifyIdToken(idToken: string) {
+  return auth.verifyIdToken(idToken);
+}
