@@ -2,52 +2,42 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { buildCorsHeaders } from '@/lib/cors';
 import { adminAuth } from '@/lib/firebase-admin';
-import type { SpedizionePayload } from '@/lib/airtable'; // TYPE-ONLY (no runtime import!)
+import { createSpedizioneWebApp, listSpedizioni } from '@/lib/airtable';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function originOf(req: NextRequest) {
-  return req.headers.get('origin') ?? undefined;
+export async function OPTIONS(req: NextRequest) {
+  const origin = req.headers.get('origin') ?? undefined;
+  return new NextResponse(null, { status: 204, headers: buildCorsHeaders(origin) });
 }
 
-export async function OPTIONS(req: NextRequest) {
-  return new NextResponse(null, {
-    status: 204,
-    headers: buildCorsHeaders(originOf(req)),
-  });
+async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
+  const auth = req.headers.get('authorization') || '';
+  const m = auth.match(/^Bearer\s+(.+)$/i);
+  if (m) {
+    try {
+      const decoded = await adminAuth.verifyIdToken(m[1], true);
+      return decoded.email || undefined;
+    } catch { /* ignore and fallback */ }
+  }
+  const session = req.cookies.get('spst_session')?.value;
+  if (session) {
+    try {
+      const decoded = await adminAuth.verifySessionCookie(session, true);
+      return decoded.email || undefined;
+    } catch { /* ignore */ }
+  }
+  return undefined;
 }
 
 export async function GET(req: NextRequest) {
-  const cors = buildCorsHeaders(originOf(req));
+  const origin = req.headers.get('origin') ?? undefined;
+  const cors = buildCorsHeaders(origin);
   try {
-    // opzionale: auth per filtrare per email
-    const authz = req.headers.get('authorization');
-    const idToken = authz?.startsWith('Bearer ') ? authz.slice(7) : undefined;
-    let email: string | undefined;
-    if (idToken) {
-      const decoded = await adminAuth().verifyIdToken(idToken);
-      email = decoded?.email || undefined;
-    }
-
-    // ⬇️ IMPORT DINAMICO: evita di caricare Airtable in fase di build
-    const airtable: any = await import('@/lib/airtable');
-
-    let data: any[] = [];
-    if (typeof airtable.listSpedizioniByEmail === 'function') {
-      data = await airtable.listSpedizioniByEmail(email);
-    } else if (typeof airtable.listSpedizioni === 'function') {
-      data = await airtable.listSpedizioni({ email });
-    } else if (typeof airtable.getSpedizioni === 'function') {
-      data = await airtable.getSpedizioni(email);
-    } else {
-      throw new Error(
-        'Nessuna funzione di listing trovata in "@/lib/airtable".'
-      );
-    }
-
-    // Lo storico client si aspetta un array “puro”
-    return NextResponse.json(data, { headers: cors });
+    const email = await getEmailFromAuth(req);
+    const rows = await listSpedizioni(email ? { email } : undefined);
+    return NextResponse.json({ ok: true, rows }, { headers: cors });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
@@ -57,32 +47,16 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const cors = buildCorsHeaders(originOf(req));
+  const origin = req.headers.get('origin') ?? undefined;
+  const cors = buildCorsHeaders(origin);
   try {
-    // Auth opzionale per createdByEmail
-    const authz = req.headers.get('authorization');
-    const idToken = authz?.startsWith('Bearer ') ? authz.slice(7) : undefined;
-    let email: string | undefined;
-    if (idToken) {
-      const decoded = await adminAuth.verifyIdToken(idToken);
-      email = decoded?.email || undefined;
+    const payload = await req.json();
+    if (!payload.createdByEmail) {
+      const email = await getEmailFromAuth(req);
+      if (email) payload.createdByEmail = email;
     }
-
-    const body = (await req.json()) as SpedizionePayload;
-
-    // ⬇️ IMPORT DINAMICO: evita inizializzazioni Airtable a build-time
-    const { createSpedizioneWebApp }: any = await import('@/lib/airtable');
-
-    if (typeof createSpedizioneWebApp !== 'function') {
-      throw new Error('createSpedizioneWebApp non è esportata da "@/lib/airtable".');
-    }
-
-    const result = await createSpedizioneWebApp({
-      ...body,
-      createdByEmail: email,
-    });
-
-    return NextResponse.json({ ok: true, id: result.id }, { headers: cors });
+    const res = await createSpedizioneWebApp(payload);
+    return NextResponse.json({ ok: true, id: res.id }, { headers: cors });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
