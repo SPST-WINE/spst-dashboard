@@ -117,15 +117,17 @@ function optional<T>(value: T | undefined | null) {
   return value === undefined || value === null ? undefined : value;
 }
 
-function formatDateISO(d?: string) {
+// sostituisci la tua formatDateISO con questa
+function formatAirtableDateOnly(d?: string) {
   if (!d) return undefined;
   try {
-    const iso = new Date(d).toISOString();
-    return iso.split('.')[0] + 'Z'; // niente ms
+    // toISOString è sempre UTC -> prendiamo solo AAAA-MM-GG
+    return new Date(d).toISOString().slice(0, 10); // es. "2025-09-02"
   } catch {
     return undefined;
   }
 }
+
 
 function buildIdCustom() {
   const n = Math.floor(Math.random() * 10000);
@@ -146,7 +148,7 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload): Promis
   if (F.Formato) fields[F.Formato] = payload.formato;
   if (payload.contenuto) fields[F.Contenuto] = payload.contenuto;
   if (payload.ritiroNote) fields[F.RitiroNote] = payload.ritiroNote;
-  const dt = formatDateISO(payload.ritiroData);
+  const dt = formatAirtableDateOnly(payload.ritiroData);
   if (dt) fields[F.RitiroData] = dt;
   fields[F.Incoterm] = payload.incoterm;
   fields[F.Valuta] = payload.valuta;
