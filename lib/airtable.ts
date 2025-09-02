@@ -1,22 +1,47 @@
 // lib/airtable.ts
-// ⚠️ NIENTE INIZIALIZZAZIONI A TOP-LEVEL CHE TOCCANO AIRTABLE
-//     (così Next non rompe in “Collecting page data” durante il build)
-
 import Airtable from 'airtable';
 import { TABLE, F, FCOLLO, FPL } from './airtable.schema';
+
+// ---------- ENV SAFE HELPERS (no top-level failures) ----------
+function requireAirtableEnv() {
+  const apiKey =
+    process.env.AIRTABLE_API_KEY ||
+    process.env.AIRTABLE_API_TOKEN || // <-- supporto al tuo nome variabile
+    '';
+
+  const baseId = process.env.AIRTABLE_BASE_ID || '';
+
+  const missing: string[] = [];
+  if (!apiKey) missing.push('AIRTABLE_API_KEY or AIRTABLE_API_TOKEN');
+  if (!baseId) missing.push('AIRTABLE_BASE_ID');
+
+  if (missing.length) {
+    const vercelEnv = process.env.VERCEL_ENV || 'unknown';
+    const onVercel = process.env.VERCEL ? 'yes' : 'no';
+    throw new Error(
+      `AIRTABLE_ENV_MISSING: ${missing.join(', ')} (VERCEL_ENV=${vercelEnv}, ON_VERCEL=${onVercel})`
+    );
+  }
+
+  // identifica quale chiave stiamo usando (solo per debug)
+  const keySource = process.env.AIRTABLE_API_KEY
+    ? 'AIRTABLE_API_KEY'
+    : process.env.AIRTABLE_API_TOKEN
+    ? 'AIRTABLE_API_TOKEN'
+    : 'unknown';
+
+  return { apiKey, baseId, keySource };
+}
 
 let __base: Airtable.Base | null = null;
 function getBase(): Airtable.Base {
   if (__base) return __base;
-  const key = process.env.AIRTABLE_API_KEY;
-  const baseId = process.env.AIRTABLE_BASE_ID;
-  if (!key) throw new Error('AIRTABLE_API_KEY is missing');
-  if (!baseId) throw new Error('AIRTABLE_BASE_ID is missing');
-  __base = new Airtable({ apiKey: key }).base(baseId);
-  return __base;
+  const { apiKey, baseId } = requireAirtableEnv();
+  __base = new Airtable({ apiKey }).base(baseId);
+  return __base!;
 }
 
-// --- TIPI (semplificati) ---------------------------------------------------
+// ---------- Tipi ----------
 export type Party = {
   ragioneSociale?: string; referente?: string; paese?: string; citta?: string;
   cap?: string; indirizzo?: string; telefono?: string; piva?: string;
@@ -37,9 +62,7 @@ export type RigaPL = {
   peso_netto_bott: number;
   peso_lordo_bott: number;
 };
-
 export type SpedizionePayload = {
-  // sorgente non la persistiamo: la deduci dalla pagina
   tipoSped: 'B2B' | 'B2C' | 'Sample';
   contenuto?: string;
   formato?: 'Pacco' | 'Pallet';
@@ -47,8 +70,6 @@ export type SpedizionePayload = {
   ritiroNote?: string;
   mittente: Party;
   destinatario: Party;
-
-  // fatturazione
   incoterm: 'DAP' | 'DDP' | 'EXW';
   valuta: 'EUR' | 'USD' | 'GBP';
   noteFatt?: string;
@@ -56,19 +77,13 @@ export type SpedizionePayload = {
   fattSameAsDest?: boolean;
   fattDelega?: boolean;
   fatturaFileName?: string | null;
-
-  // vino
   destAbilitato?: boolean;
   packingList?: RigaPL[];
-
-  // colli
   colli: Collo[];
-
-  // meta
   createdByEmail?: string;
 };
 
-// --- HELPERS ---------------------------------------------------------------
+// ---------- Utils ----------
 function nonEmpty(s?: string | null) {
   return (s ?? '').trim() || undefined;
 }
@@ -93,11 +108,10 @@ function mapParty(prefix: 'Mittente' | 'Destinatario' | 'FATT', p: Party) {
   };
 }
 
-// --- CREATE ---------------------------------------------------------------
+// ---------- CREATE ----------
 export async function createSpedizioneWebApp(payload: SpedizionePayload) {
   const base = getBase();
 
-  // record principale
   const fields: any = {
     [F.Tipo]: payload.tipoSped,
     [F.Formato]: payload.formato,
@@ -118,16 +132,14 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload) {
     [F.F_Att]: payload.fatturaFileName ? [{ url: `https://dummy.local/${payload.fatturaFileName}` }] : undefined,
   };
 
-  // flag “destinatario abilitato import” se esiste in base (ignorato se non presente)
   if ((F as any).DestAbilitato) {
     fields[(F as any).DestAbilitato] = bool(payload.destAbilitato);
   }
 
-  const rec = await base(TABLE.SPED).create([{ fields }]).then((r) => r[0]);
+  const rec = await base(TABLE.SPED).create([{ fields }]).then(r => r[0]);
 
-  // colli
   const colli = (payload.colli || []).filter(
-    (c) => c.lunghezza_cm || c.larghezza_cm || c.altezza_cm || c.peso_kg
+    c => c.lunghezza_cm || c.larghezza_cm || c.altezza_cm || c.peso_kg
   );
   if (colli.length) {
     const rows = colli.map((c, i) => ({
@@ -140,16 +152,14 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload) {
         [FCOLLO.Peso]: c.peso_kg ?? undefined,
       },
     }));
-    // batch in gruppi da 10
     for (let i = 0; i < rows.length; i += 10) {
       await base(TABLE.COLLI).create(rows.slice(i, i + 10));
     }
   }
 
-  // packing list (vino)
   const pl = payload.packingList || [];
   if (pl.length) {
-    const rows = pl.map((r) => ({
+    const rows = pl.map(r => ({
       fields: {
         [FPL.LinkSped]: [rec.id],
         [FPL.Etichetta]: nonEmpty(r.etichetta),
@@ -170,17 +180,30 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload) {
   return { id: rec.id };
 }
 
-// --- LIST (usata da /api/spedizioni/GET) -----------------------------------
+// ---------- LIST ----------
 export async function listSpedizioni(opts?: { email?: string }) {
   const base = getBase();
-  const filter = opts?.email
-    ? `FIND("${opts.email}", {${F.CreatoDaEmail}})`
-    : '';
+  const filter = opts?.email ? `FIND("${opts.email}", {${F.CreatoDaEmail}})` : '';
   const res = await base(TABLE.SPED)
     .select({ filterByFormula: filter || undefined, pageSize: 50 })
     .all();
-  return res.map((r) => ({ id: r.id, ...r.fields }));
+  return res.map(r => ({ id: r.id, ...r.fields }));
 }
 export async function listSpedizioniByEmail(email?: string) {
   return listSpedizioni({ email });
+}
+
+// ---------- HEALTH ----------
+export function airtableEnvStatus() {
+  const using =
+    process.env.AIRTABLE_API_KEY ? 'AIRTABLE_API_KEY'
+    : process.env.AIRTABLE_API_TOKEN ? 'AIRTABLE_API_TOKEN'
+    : 'none';
+  return {
+    hasKey: !!process.env.AIRTABLE_API_KEY,
+    hasToken: !!process.env.AIRTABLE_API_TOKEN,
+    hasBaseId: !!process.env.AIRTABLE_BASE_ID,
+    using,
+    vercelEnv: process.env.VERCEL_ENV || 'unknown',
+  };
 }
