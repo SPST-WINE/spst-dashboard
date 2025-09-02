@@ -74,7 +74,7 @@ export interface SpedizionePayload {
 // -------------------------------------------------------------
 const API_TOKEN =
   process.env.AIRTABLE_API_TOKEN || process.env.AIRTABLE_API_KEY || '';
-const BASE_ID = process.env.AIRTABLE_BASE_ID || '';
+const BASE_ID = process.env.AIRTABLE_BASE_ID_SPST || '';
 
 function assertEnv() {
   if (!API_TOKEN) throw new Error('AIRTABLE_API_TOKEN (o AIRTABLE_API_KEY) mancante');
