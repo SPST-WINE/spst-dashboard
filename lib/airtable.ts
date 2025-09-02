@@ -37,7 +37,7 @@ export type RigaPL = {
 };
 
 // -------------------------------------------------------------
-// Payload creazione spedizione (deduplicato createdBy*)
+// Payload creazione spedizione
 // -------------------------------------------------------------
 export interface SpedizionePayload {
   sorgente: 'vino' | 'altro';
@@ -65,10 +65,9 @@ export interface SpedizionePayload {
   colli: Collo[];
   packingList?: RigaPL[];
 
-  // opzionale: verrà usata se presente, altrimenti la POST /api prende l’email dal token
+  // opzionale: se non arriva, la POST /api valorizza da idToken
   createdByEmail?: string;
 }
-
 
 // -------------------------------------------------------------
 // ENV & init client
@@ -114,24 +113,15 @@ export async function airtableEnvStatus(): Promise<{
 // -------------------------------------------------------------
 // Utils
 // -------------------------------------------------------------
-function pick<T extends string>(
-  candidate: T | undefined,
-  fields: Record<string, any>
-): T | undefined {
-  if (!candidate) return undefined;
-  return Object.prototype.hasOwnProperty.call(fields, candidate) ? candidate : undefined;
-}
-
 function optional<T>(value: T | undefined | null) {
   return value === undefined || value === null ? undefined : value;
 }
 
 function formatDateISO(d?: string) {
   if (!d) return undefined;
-  // Airtable "date" accetta ISO senza millisecondi
   try {
     const iso = new Date(d).toISOString();
-    return iso.split('.')[0] + 'Z';
+    return iso.split('.')[0] + 'Z'; // niente ms
   } catch {
     return undefined;
   }
@@ -165,8 +155,7 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload): Promis
   if (payload.noteFatt) fields[F.NoteFatt] = payload.noteFatt;
 
   // Created by (email)
-  const createdBy = payload.createdByEmail;
-  if (createdBy) fields[F.CreatoDaEmail] = createdBy;
+  if (payload.createdByEmail) fields[F.CreatoDaEmail] = payload.createdByEmail;
 
   // Mittente
   fields[F.M_RS] = optional(payload.mittente.ragioneSociale);
@@ -199,78 +188,86 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload): Promis
   fields[F.F_PIVA] = optional(payload.fatturazione.piva);
   if (typeof payload.fattSameAsDest === 'boolean') fields[F.F_SAME_DEST] = payload.fattSameAsDest;
   if (typeof payload.fattDelega === 'boolean') fields[F.F_Delega] = payload.fattDelega;
-  if (payload.fatturaFileName) fields[F.F_Att] = payload.fatturaFileName;
+  // NIENTE F.F_Att qui: lo gestiamo dopo “tollerante” per evitare errori di tipo/nome campo
 
-  // Crea record principale
+  // 1) Crea record principale
   const created = await b(TABLE.SPED).create([{ fields }]);
   const recId = created[0].id;
 
-  // Aggiornamenti "tolleranti" a nomi diversi dei campi checkbox
-async function tryUpdateField(fieldName: string, value: any) {
-  try { await b(TABLE.SPED).update(recId, { [fieldName]: value }); return true; }
-  catch { return false; }
-}
-
-// Destinatario abilitato import (prova varianti nome campo)
-if (typeof payload.destAbilitato === 'boolean') {
-  const candidates = [
-    'Destinatario abilitato import',
-    "Destinatario abilitato all’import",
-    "Destinatario abilitato all'import",
-  ];
-  for (const name of candidates) {
-    const ok = await tryUpdateField(name, payload.destAbilitato);
-    if (ok) break;
-  }
-}
-
-// Delega Fattura (oltre a F.F_Delega, prova anche varianti)
-if (typeof payload.fattDelega === 'boolean') {
-  const candidates = [
-    // quello del tuo schema, se esiste
-    // (se non esiste, il catch lo ignora)
-    // @ts-ignore
-    F.F_Delega,
-    'Fattura - Delega a SPST',
-    'Fattura – Delega a SPST',
-  ].filter(Boolean) as string[];
-
-  for (const name of candidates) {
-    const ok = await tryUpdateField(name, payload.fattDelega);
-    if (ok) break;
-  }
-}
-
-  // Prova a valorizzare l’ID custom se hai creato un campo testuale per l’ID
-  const idCustomFieldCandidates = [
-    'ID Spedizione',
-    'ID Spedizione (custom)',
-    'ID SPST',
-  ];
-  for (const name of idCustomFieldCandidates) {
+  // Helper “tollerante” per update di campi che potrebbero avere nomi diversi
+  async function tryUpdateField(fieldName: string, value: any) {
     try {
-      await b(TABLE.SPED).update(recId, { [name]: buildIdCustom() });
-      break;
+      await b(TABLE.SPED).update(recId, { [fieldName]: value });
+      return true;
     } catch {
-      // se il campo non esiste o è formula, passa al prossimo
+      return false;
     }
   }
 
-  // COLLI
+  // 1b) Checkbox: Destinatario abilitato import
+  if (typeof payload.destAbilitato === 'boolean') {
+    const candidates = [
+      'Destinatario abilitato import',
+      "Destinatario abilitato all’import",
+      "Destinatario abilitato all'import",
+    ];
+    for (const name of candidates) {
+      const ok = await tryUpdateField(name, payload.destAbilitato);
+      if (ok) break;
+    }
+  }
+
+  // 1c) Checkbox: Delega Fattura (oltre a F.F_Delega prova varianti)
+  if (typeof payload.fattDelega === 'boolean') {
+    const candidates = [
+      'Fattura – Delega a SPST',
+      'Fattura - Delega a SPST',
+      'Delega Fattura',
+    ];
+    for (const name of candidates) {
+      const ok = await tryUpdateField(name, payload.fattDelega);
+      if (ok) break;
+    }
+  }
+
+  // 1d) Solo NOME FILE fattura (campo TESTUALE, NON attachment)
+  if (payload.fatturaFileName) {
+    const candidates = [
+      'Fattura – Allegato Cliente',
+      'Fattura - Allegato Cliente',
+      'Nome file fattura',
+      'Allegato Fattura (nome)',
+    ];
+    for (const name of candidates) {
+      const ok = await tryUpdateField(name, payload.fatturaFileName);
+      if (ok) break;
+    }
+  }
+
+  // 1e) ID Spedizione custom (se esiste un campo testuale id)
+  {
+    const idCandidates = ['ID Spedizione', 'ID Spedizione (custom)', 'ID SPST'];
+    for (const name of idCandidates) {
+      const ok = await tryUpdateField(name, buildIdCustom());
+      if (ok) break;
+    }
+  }
+
+  // 2) COLLI
   if (payload.colli?.length) {
     const rows = payload.colli
-      .filter((c) => c)
-      .map((c) => ({
+      .map((c, idx) => ({
         fields: {
           [FCOLLO.LinkSped]: [recId],
           [FCOLLO.L]: optional(c.lunghezza_cm),
           [FCOLLO.W]: optional(c.larghezza_cm),
           [FCOLLO.H]: optional(c.altezza_cm),
           [FCOLLO.Peso]: optional(c.peso_kg),
+          // se in schema hai FCOLLO.Num = '#', verrà scritto l’indice 1..N
+          ...(FCOLLO as any).Num ? { [(FCOLLO as any).Num]: idx + 1 } : {},
         },
       }));
     if (rows.length) {
-      // Airtable limite 10 per batch
       const BATCH = 10;
       for (let i = 0; i < rows.length; i += BATCH) {
         await b(TABLE.COLLI).create(rows.slice(i, i + BATCH));
@@ -278,23 +275,21 @@ if (typeof payload.fattDelega === 'boolean') {
     }
   }
 
-  // PACKING LIST (Vino)
+  // 3) PACKING LIST (Vino)
   if (payload.sorgente === 'vino' && payload.packingList?.length) {
-    const rows = payload.packingList
-      .filter((r) => r)
-      .map((r) => ({
-        fields: {
-          [FPL.LinkSped]: [recId],
-          [FPL.Etichetta]: r.etichetta,
-          [FPL.Bottiglie]: r.bottiglie,
-          [FPL.FormatoL]: r.formato_litri,
-          [FPL.Grad]: r.gradazione,
-          [FPL.Prezzo]: r.prezzo,
-          [FPL.Valuta]: r.valuta,
-          [FPL.PesoNettoBott]: r.peso_netto_bott,
-          [FPL.PesoLordoBott]: r.peso_lordo_bott,
-        },
-      }));
+    const rows = payload.packingList.map((r) => ({
+      fields: {
+        [FPL.LinkSped]: [recId],
+        [FPL.Etichetta]: r.etichetta,
+        [FPL.Bottiglie]: r.bottiglie,
+        [FPL.FormatoL]: r.formato_litri,
+        [FPL.Grad]: r.gradazione,
+        [FPL.Prezzo]: r.prezzo,
+        [FPL.Valuta]: r.valuta,
+        [FPL.PesoNettoBott]: r.peso_netto_bott,
+        [FPL.PesoLordoBott]: r.peso_lordo_bott,
+      },
+    }));
     if (rows.length) {
       const BATCH = 10;
       for (let i = 0; i < rows.length; i += BATCH) {
