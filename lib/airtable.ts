@@ -281,22 +281,27 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload): Promis
   }
 
   // 2) COLLI
-  if (payload.colli?.length) {
-    const rows = payload.colli.map((c, idx) => ({
-      fields: {
-        [FCOLLO.LinkSped]: [recId],
-        [FCOLLO.L]: optional(c.lunghezza_cm),
-        [FCOLLO.W]: optional(c.larghezza_cm),
-        [FCOLLO.H]: optional(c.altezza_cm),
-        [FCOLLO.Peso]: optional(c.peso_kg),
-        ...(FCOLLO as any).Num ? { [(FCOLLO as any).Num]: idx + 1 } : {},
-      },
-    }));
-    const BATCH = 10;
-    for (let i = 0; i < rows.length; i += BATCH) {
-      await b(TABLE.COLLI).create(rows.slice(i, i + BATCH));
-    }
+if (payload.colli?.length) {
+  const tot = payload.colli.length;
+
+  const rows = payload.colli.map((c) => ({
+    fields: {
+      [FCOLLO.LinkSped]: [recId],
+      [FCOLLO.L]: optional(c.lunghezza_cm),
+      [FCOLLO.W]: optional(c.larghezza_cm),
+      [FCOLLO.H]: optional(c.altezza_cm),
+      [FCOLLO.Peso]: optional(c.peso_kg),
+      // se il campo '#' esiste, metto il totale su ogni riga
+      ...(FCOLLO as any).Tot ? { [(FCOLLO as any).Tot]: tot } : {},
+    },
+  }));
+
+  const BATCH = 10;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    await b(TABLE.COLLI).create(rows.slice(i, i + BATCH));
   }
+}
+
 
   // 3) PACKING LIST (Vino)
   if (payload.sorgente === 'vino' && payload.packingList?.length) {
