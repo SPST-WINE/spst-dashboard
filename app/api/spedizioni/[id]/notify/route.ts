@@ -1,87 +1,74 @@
-// app/api/spedizioni/[id]/notify/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { buildCorsHeaders } from '@/lib/cors';
-import { auth } from '@/lib/firebase-admin';
+import { adminAuth } from '@/lib/firebase-admin';
+import { getSpedizioneById, extractPublicId, extractCreatorEmail } from '@/lib/airtable';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// invio via API HTTP di Resend, senza SDK
-async function sendWithResend(apiKey: string, payload: any) {
-  const r = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-  const text = await r.text();
-  if (!r.ok) throw new Error(`Resend ${r.status}: ${text}`);
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { raw: text };
-  }
+export async function OPTIONS(req: NextRequest) {
+  const origin = req.headers.get('origin') ?? undefined;
+  return new NextResponse(null, { status: 204, headers: buildCorsHeaders(origin) });
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    // Auth Firebase
-    const authz = req.headers.get('authorization') || '';
-    const token = authz.startsWith('Bearer ') ? authz.slice(7) : '';
-    if (!token) {
-      return NextResponse.json(
-        { error: 'unauthorized' },
-        { status: 401, headers: buildCorsHeaders() }
-      );
-    }
-    await auth.verifyIdToken(token);
+export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
+  const origin = req.headers.get('origin') ?? undefined;
+  const cors = buildCorsHeaders(origin);
+  const recId = ctx.params.id;
 
-    const body = await req.json().catch(() => ({} as any));
-    const to: string | undefined = body?.to; // destinatario obbligatorio per invio
-    const spedId = params.id;
+  try {
+    const { idToken } = await req.json().catch(() => ({}));
+
+    // verifica token per sicurezza (se c'è)
+    let tokenEmail: string | undefined;
+    if (idToken) {
+      const decoded = await adminAuth.verifyIdToken(idToken, true);
+      tokenEmail = decoded.email || decoded.firebase?.identities?.email?.[0];
+    }
+
+    // leggo dati spedizione da Airtable
+    const rec = await getSpedizioneById(recId);
+    const publicId = extractPublicId(rec.fields) || recId;
+    const creatorEmail = extractCreatorEmail(rec.fields);
 
     const RESEND_API_KEY = process.env.RESEND_API_KEY;
     const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@spst.it';
 
-    // Se mancano le config o il destinatario, non falliamo il flow:
-    if (!RESEND_API_KEY || !to) {
+    const to = creatorEmail || tokenEmail;
+    if (!RESEND_API_KEY || !EMAIL_FROM || !to) {
+      // niente crash: ritorno 200 ma sent:false
       return NextResponse.json(
-        { ok: true, sent: false, reason: 'missing-config-or-recipient' },
-        { headers: buildCorsHeaders() }
+        { ok: true, sent: false, reason: 'missing_config_or_recipient' },
+        { headers: cors }
       );
     }
 
-    const subject =
-      body?.subject || `SPST – Spedizione creata (ID ${spedId})`;
-    const text =
-      body?.text ||
-      `La tua spedizione è stata creata correttamente.\nID: ${spedId}\nTi aggiorneremo sugli stati.`;
-    const html =
-      body?.html ||
-      `<p>La tua spedizione è stata creata correttamente.</p><p><b>ID:</b> ${spedId}</p><p>Ti aggiorneremo sugli stati.</p>`;
+    const { Resend } = await import('resend');
+    const resend = new Resend(RESEND_API_KEY);
 
-    const res = await sendWithResend(RESEND_API_KEY, {
+    const subject = `Conferma richiesta spedizione ${publicId}`;
+    const html = `
+      <div style="font-family:system-ui,Segoe UI,Roboto,Arial">
+        <p>Abbiamo ricevuto la tua richiesta di spedizione <b>${publicId}</b>.</p>
+        <p>Ti contatteremo a breve con i dettagli operativi.</p>
+        <p style="font-size:12px;color:#667">ID record: ${recId}</p>
+      </div>
+    `;
+
+    await resend.emails.send({
       from: EMAIL_FROM,
       to,
       subject,
-      text,
       html,
     });
 
-    return NextResponse.json(
-      { ok: true, sent: true, id: res?.id ?? res?.data?.id ?? null },
-      { headers: buildCorsHeaders() }
-    );
-  } catch (e) {
+    return NextResponse.json({ ok: true, sent: true }, { headers: cors });
+  } catch (e: any) {
+    // non esplodere: log utile e 200 con sent:false
     console.error('notify error', e);
     return NextResponse.json(
-      { error: 'internal' },
-      { status: 500, headers: buildCorsHeaders() }
+      { ok: true, sent: false, error: e?.message ?? 'notify_failed' },
+      { headers: cors }
     );
   }
 }
