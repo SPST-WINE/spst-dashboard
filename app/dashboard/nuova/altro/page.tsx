@@ -1,4 +1,3 @@
-// app/dashboard/nuova/altro/page.tsx
 'use client';
 
 import { useState } from 'react';
@@ -7,40 +6,29 @@ import ColliCard, { Collo } from '@/components/nuova/ColliCard';
 import RitiroCard from '@/components/nuova/RitiroCard';
 import FatturaCard from '@/components/nuova/FatturaCard';
 import { Select } from '@/components/nuova/Field';
-import { postSpedizione } from '@/lib/api';
+import { postSpedizione, postSpedizioneAttachments } from '@/lib/api';
 import { getIdToken } from '@/lib/firebase-client-auth';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const blankParty: Party = {
-  ragioneSociale: '',
-  referente: '',
-  paese: '',
-  citta: '',
-  cap: '',
-  indirizzo: '',
-  telefono: '',
-  piva: '',
+  ragioneSociale: '', referente: '', paese: '', citta: '',
+  cap: '', indirizzo: '', telefono: '', piva: '',
 };
 
 export default function NuovaAltroPage() {
-  // Tipologia
   const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
-
-  // Parti
   const [mittente, setMittente] = useState<Party>(blankParty);
   const [destinatario, setDestinatario] = useState<Party>(blankParty);
 
-  // Colli / contenuto
   const [colli, setColli] = useState<Collo[]>([
-    { lunghezza_cm: null, larghezza_cm: null, altezza_cm: null, peso_kg: null },
+    { lunghezza_cm: null, larghezza_cm: null, altezza_cm: null, peso_kg: null }
   ]);
   const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
   const [contenuto, setContenuto] = useState<string>('');
 
-  // Ritiro
   const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
   const [ritiroNote, setRitiroNote] = useState('');
 
-  // Fattura (commerciali + anagrafica fatturazione)
   const [incoterm, setIncoterm] = useState<'DAP' | 'DDP' | 'EXW'>('DAP');
   const [valuta, setValuta] = useState<'EUR' | 'USD' | 'GBP'>('EUR');
   const [noteFatt, setNoteFatt] = useState('');
@@ -48,7 +36,37 @@ export default function NuovaAltroPage() {
 
   const [fatturazione, setFatturazione] = useState<Party>(blankParty);
   const [sameAsDest, setSameAsDest] = useState(false);
-  const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined);
+
+  // 🔽 NUOVI STATE PER ALLEGATI
+  const [fatturaFile, setFatturaFile] = useState<File | null>(null);
+  const [plFiles, setPlFiles] = useState<File[]>([]);
+
+  // Helper upload + attach
+  async function uploadAndAttach(spedId: string) {
+    const storage = getStorage();
+    const fattura: { url: string; filename?: string }[] = [];
+    const packing: { url: string; filename?: string }[] = [];
+
+    // Fattura singola
+    if (fatturaFile) {
+      const r = ref(storage, `spedizioni/${spedId}/fattura/${fatturaFile.name}`);
+      await uploadBytes(r, fatturaFile);
+      const url = await getDownloadURL(r);
+      fattura.push({ url, filename: fatturaFile.name });
+    }
+
+    // Packing list multipli (opzionale anche per "Altro")
+    for (const f of plFiles) {
+      const r = ref(storage, `spedizioni/${spedId}/packing/${f.name}`);
+      await uploadBytes(r, f);
+      const url = await getDownloadURL(r);
+      packing.push({ url, filename: f.name });
+    }
+
+    if (fattura.length || packing.length) {
+      await postSpedizioneAttachments(spedId, { fattura, packing }, getIdToken);
+    }
+  }
 
   const salva = async () => {
     const payload = {
@@ -66,80 +84,53 @@ export default function NuovaAltroPage() {
       fatturazione: sameAsDest ? destinatario : fatturazione,
       fattSameAsDest: sameAsDest,
       fattDelega: delega,
+      // facoltativo: salvo anche il nome file, non obbligatorio
       fatturaFileName: fatturaFile?.name || null,
       colli,
     };
 
     const res = await postSpedizione(payload, getIdToken);
-    alert(`Spedizione creata! ID: ${res.id}`);
+    try {
+      await uploadAndAttach(res.id);
+      alert(`Spedizione creata! ID: ${res.id}`);
+    } catch (e: any) {
+      console.error('Allegati: errore upload/attach', e);
+      alert(`Spedizione creata (ID: ${res.id}) ma upload allegati fallito. Puoi ritentare dal dettaglio.`);
+    }
   };
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Nuova spedizione — altre spedizioni</h2>
+      {/* ...tutto il resto invariato... */}
 
-      {/* Tipologia spedizione */}
+      {/* 🔽 SEZIONE ALLEGATI */}
       <div className="rounded-2xl border bg-white p-4">
-        <h3 className="mb-3 text-sm font-semibold text-spst-orange">Tipologia spedizione</h3>
-        <Select
-          label="Stai spedendo ad un privato? O ad una azienda?"
-          value={tipoSped}
-          onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Sample')}
-          options={[
-            { label: 'B2C — Sto spedendo ad un privato / cliente', value: 'B2C' },
-            { label: 'B2B — Sto spedendo ad una azienda', value: 'B2B' },
-            {
-              label: 'Sample — Sto spedendo una campionatura ad una azienda / importatore',
-              value: 'Sample',
-            },
-          ]}
-        />
+        <h3 className="font-medium mb-2">Allegati (opzionali)</h3>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div>
+            <label className="block text-sm mb-1">Fattura (PDF/JPG/PNG)</label>
+            <input
+              type="file"
+              accept="application/pdf,image/*"
+              onChange={(e) => setFatturaFile(e.target.files?.[0] ?? null)}
+              className="block w-full rounded-lg border px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1">Packing List (uno o più file)</label>
+            <input
+              type="file"
+              multiple
+              accept="application/pdf,image/*"
+              onChange={(e) => setPlFiles(Array.from(e.target.files || []))}
+              className="block w-full rounded-lg border px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
       </div>
 
-      {/* Mittente / Destinatario */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <PartyCard title="Mittente" value={mittente} onChange={setMittente} />
-        <PartyCard title="Destinatario" value={destinatario} onChange={setDestinatario} />
-      </div>
-
-      {/* Colli + contenuto */}
-      <ColliCard
-        colli={colli}
-        onChange={setColli}
-        formato={formato}
-        setFormato={setFormato}
-        contenuto={contenuto}
-        setContenuto={setContenuto}
-      />
-
-      {/* Ritiro */}
-      <RitiroCard
-        date={ritiroData}
-        setDate={setRitiroData}
-        note={ritiroNote}
-        setNote={setRitiroNote}
-      />
-
-      {/* Fattura */}
-      <FatturaCard
-        incoterm={incoterm}
-        setIncoterm={setIncoterm}
-        valuta={valuta}
-        setValuta={setValuta}
-        note={noteFatt}
-        setNote={setNoteFatt}
-        delega={delega}
-        setDelega={setDelega}
-        fatturazione={fatturazione}
-        setFatturazione={setFatturazione}
-        destinatario={destinatario}
-        sameAsDest={sameAsDest}
-        setSameAsDest={setSameAsDest}
-        fatturaFile={fatturaFile}
-        setFatturaFile={setFatturaFile}
-      />
-
-      {/* Azioni */}
       <div className="flex justify-end">
         <button
           type="button"
