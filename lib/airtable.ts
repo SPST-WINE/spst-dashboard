@@ -145,6 +145,7 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload): Promis
 
   // Generali (⚠️ NON scrivo Sorgente qui; lo faccio post-create in modo tollerante)
   // fields[F.Sorgente] = payload.sorgente === 'vino' ? 'Vino' : 'Altro';
+  fields[F.Stato] = 'Nuova';  
   if (F.Formato) fields[F.Formato] = payload.formato;
   if (payload.contenuto) fields[F.Contenuto] = payload.contenuto;
   if (payload.ritiroNote) fields[F.RitiroNote] = payload.ritiroNote;
