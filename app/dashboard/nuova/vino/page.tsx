@@ -1,14 +1,13 @@
-// app/dashboard/nuova/vino/page.tsx
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import PartyCard, { Party } from '@/components/nuova/PartyCard';
 import ColliCard, { Collo } from '@/components/nuova/ColliCard';
 import RitiroCard from '@/components/nuova/RitiroCard';
 import FatturaCard from '@/components/nuova/FatturaCard';
 import PackingListVino, { RigaPL } from '@/components/nuova/PackingListVino';
 import { Select } from '@/components/nuova/Field';
-import { postSpedizione, postSpedizioneAttachments } from '@/lib/api';
+import { postSpedizione, postSpedizioneAttachments, postSpedizioneNotify } from '@/lib/api';
 import { getIdToken } from '@/lib/firebase-client-auth';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
@@ -21,6 +20,16 @@ const blankParty: Party = {
   indirizzo: '',
   telefono: '',
   piva: '',
+};
+
+type SuccessInfo = {
+  id: string;
+  tipoSped: 'B2B' | 'B2C' | 'Sample';
+  incoterm: 'DAP' | 'DDP' | 'EXW';
+  dataRitiro?: string;
+  colli: number;
+  formato: 'Pacco' | 'Pallet';
+  destinatario: Party;
 };
 
 export default function NuovaVinoPage() {
@@ -50,9 +59,9 @@ export default function NuovaVinoPage() {
   const [delega, setDelega] = useState(false);
   const [fatturazione, setFatturazione] = useState<Party>(blankParty);
   const [sameAsDest, setSameAsDest] = useState(false);
-  const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined); // singolo PDF
+  const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined);
 
-  // Packing list (righe + files multipli)
+  // Packing list (righe + file)
   const [pl, setPl] = useState<RigaPL[]>([
     {
       etichetta: '',
@@ -65,9 +74,22 @@ export default function NuovaVinoPage() {
       peso_lordo_bott: 1.3,
     },
   ]);
-  const [plFiles, setPlFiles] = useState<File[]>([]); // <— file scelti nella card
+  const [plFiles, setPlFiles] = useState<File[]>([]);
 
-  // Upload su Firebase Storage + attach in Airtable
+  // UI state
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [success, setSuccess] = useState<SuccessInfo | null>(null);
+  const [emailSent, setEmailSent] = useState<null | 'ok' | 'err'>(null);
+  const topRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (errors.length && topRef.current) {
+      topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [errors.length]);
+
+  // ------- Upload allegati (Firebase) + attach su Airtable -------
   async function uploadAndAttach(spedId: string) {
     const storage = getStorage();
     const fattura: { url: string; filename?: string }[] = [];
@@ -92,44 +114,174 @@ export default function NuovaVinoPage() {
     }
   }
 
-  // Salva -> crea record + (se presenti) allega file
-  const salva = async () => {
-    const payload = {
-      sorgente: 'vino' as const,
-      tipoSped,
-      destAbilitato,
-      contenuto,
-      formato,
-      ritiroData: ritiroData ? ritiroData.toISOString() : undefined,
-      ritiroNote,
-      mittente,
-      destinatario,
-      incoterm,
-      valuta,
-      noteFatt,
-      fatturazione: sameAsDest ? destinatario : fatturazione,
-      fattSameAsDest: sameAsDest,
-      fattDelega: delega,
-      fatturaFileName: fatturaFile?.name || null,
-      colli,
-      packingList: pl,
-    };
+  // ------- Validazione client -------
+  function validate(): string[] {
+    const errs: string[] = [];
 
-    const res = await postSpedizione(payload, getIdToken);
+    // Mittente: P.IVA obbligatoria
+    if (!mittente.piva?.trim()) errs.push('Partita IVA/Codice Fiscale del mittente mancante.');
+
+    // Colli: per ogni collo servono TUTTE le misure e il peso (>0)
+    colli.forEach((c, i) => {
+      const miss =
+        c.lunghezza_cm == null ||
+        c.larghezza_cm == null ||
+        c.altezza_cm == null ||
+        c.peso_kg == null;
+      const nonPos =
+        (c.lunghezza_cm ?? 0) <= 0 ||
+        (c.larghezza_cm ?? 0) <= 0 ||
+        (c.altezza_cm ?? 0) <= 0 ||
+        (c.peso_kg ?? 0) <= 0;
+      if (miss || nonPos) errs.push(`Collo #${i + 1}: inserire tutte le misure e un peso > 0.`);
+    });
+
+    // Data ritiro
+    if (!ritiroData) errs.push('Seleziona il giorno di ritiro.');
+
+    // Dati fattura: se NON c’è file allegato, applica regole
+    if (!fatturaFile) {
+      const fatt = sameAsDest ? destinatario : fatturazione;
+      if (!fatt.ragioneSociale?.trim()) errs.push('Dati fattura: ragione sociale mancante.');
+      // CF/P.IVA obbligatorio per B2B e Sample, non per B2C
+      if ((tipoSped === 'B2B' || tipoSped === 'Sample') && !fatt.piva?.trim()) {
+        errs.push('Dati fattura: P.IVA/CF obbligatoria per B2B e Campionatura.');
+      }
+    }
+
+    return errs;
+  }
+
+  // ------- Salva -------
+  const salva = async () => {
+    if (saving) return; // blocca doppio click
+
+    const v = validate();
+    if (v.length) {
+      setErrors(v);
+      return;
+    } else {
+      setErrors([]);
+    }
+
+    setSaving(true);
+    setEmailSent(null);
     try {
+      const payload = {
+        sorgente: 'vino' as const,
+        tipoSped,
+        destAbilitato,
+        contenuto,
+        formato,
+        ritiroData: ritiroData ? ritiroData.toISOString() : undefined,
+        ritiroNote,
+        mittente,
+        destinatario,
+        incoterm,
+        valuta,
+        noteFatt,
+        fatturazione: sameAsDest ? destinatario : fatturazione,
+        fattSameAsDest: sameAsDest,
+        fattDelega: delega,
+        fatturaFileName: fatturaFile?.name || null,
+        colli,
+        packingList: pl,
+      };
+
+      const res = await postSpedizione(payload, getIdToken);
       await uploadAndAttach(res.id);
-      alert(`Spedizione creata! ID: ${res.id}`);
+
+      // schermata conferma
+      setSuccess({
+        id: res.id,
+        tipoSped,
+        incoterm,
+        dataRitiro: ritiroData?.toLocaleDateString(),
+        colli: colli.length,
+        formato,
+        destinatario,
+      });
     } catch (e) {
-      console.error('Allegati: errore upload/attach', e);
-      alert(`Spedizione creata (ID: ${res.id}) ma upload allegati fallito.`);
+      console.error('Errore salvataggio/allegati', e);
+      setErrors(['Si è verificato un errore durante il salvataggio. Riprova più tardi.']);
+    } finally {
+      setSaving(false);
+      if (topRef.current) topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
 
-  const [plFiles, setPlFiles] = useState<File[]>([]);
+  // ------- Invio email -------
+  const inviaEmail = async () => {
+    if (!success) return;
+    try {
+      await postSpedizioneNotify(success.id, getIdToken);
+      setEmailSent('ok');
+    } catch (e) {
+      console.error(e);
+      setEmailSent('err');
+    }
+  };
+
+  // ------- UI -------
+  if (success) {
+    return (
+      <div className="space-y-4" ref={topRef}>
+        <h2 className="text-lg font-semibold">Spedizione creata</h2>
+
+        <div className="rounded-2xl border bg-white p-4">
+          <div className="mb-3 text-sm">
+            <div className="font-medium">ID spedizione</div>
+            <div className="font-mono">{success.id}</div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 text-sm">
+            <div><span className="text-slate-500">Tipo:</span> {success.tipoSped}</div>
+            <div><span className="text-slate-500">Incoterm:</span> {success.incoterm}</div>
+            <div><span className="text-slate-500">Data ritiro:</span> {success.dataRitiro ?? '—'}</div>
+            <div><span className="text-slate-500">Colli:</span> {success.colli} ({success.formato})</div>
+            <div className="md:col-span-2">
+              <span className="text-slate-500">Destinatario:</span>{' '}
+              {success.destinatario.ragioneSociale} — {success.destinatario.citta}
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={inviaEmail}
+              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
+            >
+              Invia email al cliente
+            </button>
+            {emailSent === 'ok' && (
+              <span className="text-sm text-green-700">Email inviata ✅</span>
+            )}
+            {emailSent === 'err' && (
+              <span className="text-sm text-red-700">Invio email fallito</span>
+            )}
+          </div>
+
+          <div className="mt-6 text-xs text-slate-500">
+            Suggerimento: conserva l’ID per future comunicazioni. Puoi chiudere questa pagina.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" ref={topRef}>
       <h2 className="text-lg font-semibold">Nuova spedizione — vino</h2>
+
+      {/* blocco errori */}
+      {!!errors.length && (
+        <div className="rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+          <div className="font-medium mb-1">Controlla questi campi:</div>
+          <ul className="list-disc ml-5 space-y-1">
+            {errors.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+        </div>
+      )}
 
       {/* Tipologia spedizione */}
       <div className="rounded-2xl border bg-white p-4">
@@ -160,12 +312,12 @@ export default function NuovaVinoPage() {
         />
       </div>
 
-      {/* Packing list (vino) — include bottone "Allega packing list" */}
+      {/* Packing list (righe) + upload PL */}
       <PackingListVino
         value={pl}
         onChange={setPl}
-        files={plFiles} 
-        onFiles={setPlFiles}   // <— i file finiscono qui
+        files={plFiles}
+        onFiles={setPlFiles}
       />
 
       {/* Colli */}
@@ -186,7 +338,7 @@ export default function NuovaVinoPage() {
         setNote={setRitiroNote}
       />
 
-      {/* Fattura (con upload fattura PDF già presente nella card) */}
+      {/* Fattura */}
       <FatturaCard
         incoterm={incoterm}
         setIncoterm={setIncoterm}
@@ -205,13 +357,19 @@ export default function NuovaVinoPage() {
         setFatturaFile={setFatturaFile}
       />
 
+      {/* CTA */}
       <div className="flex justify-end">
         <button
           type="button"
           onClick={salva}
-          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
+          disabled={saving}
+          aria-busy={saving}
+          className={`rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2`}
         >
-          Salva
+          {saving && (
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border border-slate-400 border-t-transparent" />
+          )}
+          {saving ? 'Salvataggio…' : 'Salva'}
         </button>
       </div>
     </div>
