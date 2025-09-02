@@ -125,6 +125,8 @@ export default function NuovaVinoPage() {
     }
   };
 
+  const [plFiles, setPlFiles] = useState<File[]>([]);
+
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Nuova spedizione — vino</h2>
