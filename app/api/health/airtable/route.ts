@@ -1,12 +1,21 @@
 // app/api/health/airtable/route.ts
 import { NextResponse } from 'next/server';
-import { airtableEnvStatus } from '@/lib/airtable';
+import { airtableEnvStatus/*, airtableQuickPing*/ } from '@/lib/airtable';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const st = airtableEnvStatus();
-  const ok = (st.hasKey || st.hasToken) && st.hasBaseId;
-  return NextResponse.json(st, { status: ok ? 200 : 500 });
+  const status = airtableEnvStatus();
+  return NextResponse.json({ ok: true, status });
 }
+
+// Se vuoi testare anche la connessione reale, abilita la POST:
+// export async function POST() {
+//   try {
+//     const ping = await airtableQuickPing();
+//     return NextResponse.json(ping);
+//   } catch (e: any) {
+//     return NextResponse.json({ ok: false, error: e?.message || 'PING_ERROR' }, { status: 500 });
+//   }
+// }
