@@ -41,7 +41,7 @@ export const F = {
   D_Abilitato: 'Destinatario abilitato import',   // boolean
 
   // Fatturazione (prefisso “FATT …”)
-  F_RS: 'FATT Ragione sociale',
+  F_RS: 'FATT Ragione Sociale',
   F_REF: 'FATT Referente',
   F_PAESE: 'FATT Paese',
   F_CITTA: 'FATT Città',
