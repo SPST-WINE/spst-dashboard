@@ -47,7 +47,7 @@ export interface SpedizionePayload {
   contenuto?: string;
   formato: 'Pacco' | 'Pallet';
 
-  ritiroData?: string; // ISO string
+  ritiroData?: string; // ISO
   ritiroNote?: string;
 
   mittente: Party;
@@ -65,9 +65,10 @@ export interface SpedizionePayload {
   colli: Collo[];
   packingList?: RigaPL[];
 
-  // opzionale: override email creatore (altrimenti presa da idToken nello /api)
+  // opzionale: verrà usata se presente, altrimenti la POST /api prende l’email dal token
   createdByEmail?: string;
 }
+
 
 // -------------------------------------------------------------
 // ENV & init client
@@ -203,6 +204,42 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload): Promis
   // Crea record principale
   const created = await b(TABLE.SPED).create([{ fields }]);
   const recId = created[0].id;
+
+  // Aggiornamenti "tolleranti" a nomi diversi dei campi checkbox
+async function tryUpdateField(fieldName: string, value: any) {
+  try { await b(TABLE.SPED).update(recId, { [fieldName]: value }); return true; }
+  catch { return false; }
+}
+
+// Destinatario abilitato import (prova varianti nome campo)
+if (typeof payload.destAbilitato === 'boolean') {
+  const candidates = [
+    'Destinatario abilitato import',
+    "Destinatario abilitato all’import",
+    "Destinatario abilitato all'import",
+  ];
+  for (const name of candidates) {
+    const ok = await tryUpdateField(name, payload.destAbilitato);
+    if (ok) break;
+  }
+}
+
+// Delega Fattura (oltre a F.F_Delega, prova anche varianti)
+if (typeof payload.fattDelega === 'boolean') {
+  const candidates = [
+    // quello del tuo schema, se esiste
+    // (se non esiste, il catch lo ignora)
+    // @ts-ignore
+    F.F_Delega,
+    'Fattura - Delega a SPST',
+    'Fattura – Delega a SPST',
+  ].filter(Boolean) as string[];
+
+  for (const name of candidates) {
+    const ok = await tryUpdateField(name, payload.fattDelega);
+    if (ok) break;
+  }
+}
 
   // Prova a valorizzare l’ID custom se hai creato un campo testuale per l’ID
   const idCustomFieldCandidates = [
