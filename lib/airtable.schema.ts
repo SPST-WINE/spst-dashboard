@@ -75,7 +75,7 @@ export const F = {
 // --- Campi tabella figlia: SPED_COLLI --------------------------------------
 export const FCOLLO = {
   LinkSped: 'Spedizione',
-  Numero: '#',                                    // enumerazione collo (1,2,3…)
+  Tot: '#',                                    // enumerazione collo (1,2,3…)
   L: 'Lunghezza (cm)',
   W: 'Larghezza (cm)',
   H: 'Altezza (cm)',
