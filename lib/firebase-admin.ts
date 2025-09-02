@@ -1,28 +1,37 @@
 // lib/firebase-admin.ts
-import { getApps, initializeApp, getApp, cert } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
+import { getApps, initializeApp, getApp, cert, applicationDefault, type App } from 'firebase-admin/app';
+import { getAuth, type Auth } from 'firebase-admin/auth';
 
 const projectId = process.env.FIREBASE_PROJECT_ID;
 const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+const rawKey = process.env.FIREBASE_PRIVATE_KEY;
+const privateKey = rawKey ? rawKey.replace(/\\n/g, '\n') : undefined;
 
-const app =
-  getApps().length
-    ? getApp()
-    : initializeApp(
-        projectId && clientEmail && privateKey
-          ? { credential: cert({ projectId, clientEmail, privateKey }) }
-          : undefined // fallback su ADC se presente
-      );
+let app: App;
 
-const auth = getAuth(app);
+if (!getApps().length) {
+  // Usa Service Account dalle env se completo, altrimenti Application Default Credentials
+  const credential =
+    projectId && clientEmail && privateKey
+      ? cert({ projectId, clientEmail, privateKey })
+      : applicationDefault();
 
-// ✅ Alias per retro-compatibilità: alcuni file importano `adminAuth`
-const adminAuth = auth;
+  app = initializeApp({ credential });
+} else {
+  app = getApp();
+}
 
-export { auth, adminAuth };
+const _auth = getAuth(app);
 
-// Opzionale ma comodo: helper per verificare il token
+/** ✅ Da usare ovunque: adminAuth().verifyIdToken(...), adminAuth().getUser(...), ecc. */
+export function adminAuth(): Auth {
+  return _auth;
+}
+
+/** Export opzionale se ti serve direttamente l’oggetto */
+export { _auth as auth };
+
+/** Helper comodo */
 export function verifyIdToken(idToken: string) {
-  return auth.verifyIdToken(idToken);
+  return _auth.verifyIdToken(idToken);
 }
