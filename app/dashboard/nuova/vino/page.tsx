@@ -162,6 +162,7 @@ export default function NuovaVinoPage() {
       <PackingListVino
         value={pl}
         onChange={setPl}
+        files={plFiles} 
         onFiles={setPlFiles}   // <— i file finiscono qui
       />
 
