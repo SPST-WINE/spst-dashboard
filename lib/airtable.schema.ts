@@ -57,12 +57,8 @@ export const F = {
   F_DelegaAlt: 'Delega Fattura',                  // boolean (eventuale duplicato)
 
   // Allegati spedizione
-  LDV: 'Allegato LDV',
-  DLE: 'Allegato DLE',
-  Fattura: 'Allegato Fattura',
-  ATT1: 'Allegato 1',
-  ATT2: 'Allegato 2',
-  ATT3: 'Allegato 3',
+  Fattura_Att: 'Fattura - Allegato Cliente',        // Attachment
+  PL_Att: 'Packing List - Allegato Cliente', 
 
   // Link a tabelle figlie
   LinkColli: 'COLLI (link)',
