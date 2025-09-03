@@ -8,7 +8,7 @@ export const TABLE = {
   UTENTI: process.env.AIRTABLE_TABLE_UTENTI || 'UTENTI',
 } as const;
 
-// Nomi campi UTENTI (come in Airtable)
+// --- Campi tabella UTENTI --------------------------------------------------
 export const FUSER = {
   Email: 'Mail Cliente',
   Mittente: 'Mittente',
@@ -16,7 +16,7 @@ export const FUSER = {
   Citta: 'Città Mittente',
   CAP: 'CAP Mittente',
   Indirizzo: 'Indirizzo Mittente',
-  Telefono: 'Telefono Mittente',  
+  Telefono: 'Telefono Mittente',
   PIVA: 'Partita IVA Mittente',
   CreatedAt: 'Data Creazione',
 } as const;
@@ -29,11 +29,11 @@ export const F = {
   Tipo: 'Sottotipo (B2B, B2C, Sample)',           // Sottotipo spedizione
   Formato: 'Formato',
   Contenuto: 'Contenuto Colli',
-  RitiroData: 'Ritiro - Data',                    // <- attenzione al trattino semplice
+  RitiroData: 'Ritiro - Data',                    // date-only
   RitiroNote: 'Ritiro - Note',
   CreatoDaEmail: 'Creato da',
 
-  // Mittente (prefisso “Mittente - …”)
+  // Mittente
   M_RS: 'Mittente - Ragione Sociale',
   M_REF: 'Mittente - Referente',
   M_PAESE: 'Mittente - Paese',
@@ -43,7 +43,7 @@ export const F = {
   M_TEL: 'Mittente - Telefono',
   M_PIVA: 'Mittente - P.IVA/CF',
 
-  // Destinatario (prefisso “Destinatario - …”)
+  // Destinatario
   D_RS: 'Destinatario - Ragione Sociale',
   D_REF: 'Destinatario - Referente',
   D_PAESE: 'Destinatario - Paese',
@@ -54,7 +54,7 @@ export const F = {
   D_PIVA: 'Destinatario - P.IVA/CF',
   D_Abilitato: 'Destinatario abilitato import',   // boolean
 
-  // Fatturazione (prefisso “FATT …”)
+  // Fatturazione
   F_RS: 'FATT Ragione Sociale',
   F_REF: 'FATT Referente',
   F_PAESE: 'FATT Paese',
@@ -67,30 +67,35 @@ export const F = {
   Incoterm: 'Incoterm',
   Valuta: 'Valuta',
   NoteFatt: 'Note Fattura',
-  F_Delega: 'Fattura - Delega a SPST',            // boolean (checkbox ufficiale)
-  F_DelegaAlt: 'Delega Fattura',                  // boolean (eventuale duplicato)
+  F_Delega: 'Fattura - Delega a SPST',            // checkbox ufficiale
+  F_DelegaAlt: 'Delega Fattura',                  // eventuale duplicato
 
-  // Allegati spedizione
-  Fattura_Att: 'Fattura - Allegato Cliente',        // Attachment
-  PL_Att: 'Packing List - Allegato Cliente', 
+  // Allegati
+  Fattura_Att: 'Fattura - Allegato Cliente',      // Attachment
+  PL_Att: 'Packing List - Allegato Cliente',
 
   // Link a tabelle figlie
   LinkColli: 'COLLI (link)',
   LinkPL: 'PL (link)',
 
-  // Campo ID custom (testo), opzionale
+  // Campo ID custom
   ID_Spedizione: 'ID Spedizione',
+
+  // Tracking
+  Corriere: 'Corriere',
+  TrackingNumber: 'Tracking Number',
+  TrackingURL: 'Tracking URL',
+  ETA: 'ETA',                                     // opzionale, se lo usi in Overview
 } as const;
 
 // --- Campi tabella figlia: SPED_COLLI --------------------------------------
 export const FCOLLO = {
   LinkSped: 'Spedizione',
-  Tot: '#',                                    // enumerazione collo (1,2,3…)
+  Tot: '#',
   L: 'Lunghezza (cm)',
   W: 'Larghezza (cm)',
   H: 'Altezza (cm)',
   Peso: 'Peso (kg)',
-  // NB: nessun campo "Formato" in questa tabella
 } as const;
 
 // --- Campi tabella figlia: SPED_PL (packing list vino) ----------------------
@@ -105,11 +110,3 @@ export const FPL = {
   PesoNettoBott: 'Peso netto bott. (kg)',
   PesoLordoBott: 'Peso lordo bott. (kg)',
 } as const;
-
-export const F = {
-  // ...i tuoi già presenti
-  Corriere: "Corriere",
-  TrackingNumber: "Tracking Number",
-  TrackingURL: "Tracking URL",
-};
-
