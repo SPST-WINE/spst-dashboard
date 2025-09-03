@@ -138,7 +138,9 @@ function buildIdCustom() {
 // -------------------------------------------------------------
 // CREATE
 // -------------------------------------------------------------
-export async function createSpedizioneWebApp(payload: SpedizionePayload): Promise<{ id: string }> {
+export async function createSpedizioneWebApp(
+  payload: SpedizionePayload
+): Promise<{ id: string; idSpedizione: string }> {
   const b = base();
 
   const fields: Record<string, any> = {};
@@ -272,13 +274,15 @@ export async function createSpedizioneWebApp(payload: SpedizionePayload): Promis
   }
 
   // 1e) ID Spedizione custom (se esiste un campo testuale)
+  const idCustom = buildIdCustom();
   {
     const idCandidates = ['ID Spedizione', 'ID Spedizione (custom)', 'ID SPST'];
     for (const name of idCandidates) {
-      const ok = await tryUpdateField(name, buildIdCustom());
+      const ok = await tryUpdateField(name, idCustom);
       if (ok) break;
     }
   }
+
 
   // 2) COLLI
 if (payload.colli?.length) {
@@ -324,7 +328,7 @@ if (payload.colli?.length) {
     }
   }
 
-  return { id: recId };
+   return { id: recId, idSpedizione: idCustom };
 }
 
 
@@ -416,3 +420,25 @@ export function extractCreatorEmail(fields: Record<string, any>): string | undef
   return undefined;
 }
 
+export async function readSpedizioneMeta(recId: string): Promise<{
+  idSpedizione?: string;
+  creatoDaEmail?: string;
+}> {
+  const b = base();
+  const r = await b(TABLE.SPED).find(recId);
+  const f = r.fields as Record<string, any>;
+
+  const idCandidates = ['ID Spedizione', 'ID Spedizione (custom)', 'ID SPST'];
+  let idSpedizione: string | undefined;
+  for (const k of idCandidates) {
+    if (typeof f[k] === 'string' && f[k]) { idSpedizione = f[k]; break; }
+  }
+
+  const emailCandidates = [F.CreatoDaEmail, 'Creato da', 'Creato da email'];
+  let creatoDaEmail: string | undefined;
+  for (const k of emailCandidates) {
+    if (typeof f[k] === 'string' && f[k]) { creatoDaEmail = f[k]; break; }
+  }
+
+  return { idSpedizione, creatoDaEmail };
+}
