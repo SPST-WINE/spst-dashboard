@@ -23,7 +23,7 @@ const blankParty: Party = {
 };
 
 type SuccessInfo = {
-  recId: string;        // recordId Airtable (serve per notify/attach)
+  recId: string;    // recordId Airtable (serve per notify/attach)
   displayId: string;    // "ID Spedizione" leggibile (campo Airtable)
   tipoSped: 'B2B' | 'B2C' | 'Sample';
   incoterm: 'DAP' | 'DDP' | 'EXW';
@@ -32,6 +32,13 @@ type SuccessInfo = {
   formato: 'Pacco' | 'Pallet';
   destinatario: Party;
 };
+
+// Aggiungi un'interfaccia per la risposta dell'API
+interface SpedizioneResponse {
+  ok: boolean;
+  id: string;
+  displayId: string;
+}
 
 export default function NuovaVinoPage() {
   // Tipologia
@@ -189,19 +196,20 @@ export default function NuovaVinoPage() {
         packingList: pl,
       };
 
-      const res = await postSpedizione(payload, getIdToken); // deve tornare { id, displayId }
-await uploadAndAttach(res.id);
+      // Usa l'interfaccia SpedizioneResponse per tipizzare la risposta
+      const res: SpedizioneResponse = await postSpedizione(payload, getIdToken);
+      await uploadAndAttach(res.id);
 
-setSuccess({
-  recId: res.id,
-  displayId: res.displayId ?? res.id,  // fallback al recordId se manca
-  tipoSped,
-  incoterm,
-  dataRitiro: ritiroData?.toLocaleDateString(),
-  colli: colli.length,
-  formato,
-  destinatario,
-});
+      setSuccess({
+        recId: res.id,
+        displayId: res.displayId ?? res.id,  // fallback al recordId se manca
+        tipoSped,
+        incoterm,
+        dataRitiro: ritiroData?.toLocaleDateString(),
+        colli: colli.length,
+        formato,
+        destinatario,
+      });
 
     } catch (e) {
       console.error('Errore salvataggio/allegati', e);
@@ -214,16 +222,15 @@ setSuccess({
 
   // ------- Invio email -------
   const inviaEmail = async () => {
-  if (!success) return;
-  try {
-    await postSpedizioneNotify(success.recId, getIdToken);
-    setEmailSent('ok');
-  } catch (e) {
-    console.error(e);
-    setEmailSent('err');
-  }
-};
-
+    if (!success) return;
+    try {
+      await postSpedizioneNotify(success.recId, getIdToken);
+      setEmailSent('ok');
+    } catch (e) {
+      console.error(e);
+      setEmailSent('err');
+    }
+  };
 
   // ------- UI -------
   if (success) {
