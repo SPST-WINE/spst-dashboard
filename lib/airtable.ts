@@ -2,7 +2,7 @@
 // Server-only helpers per Airtable (Node runtime)
 
 import Airtable from 'airtable';
-import { TABLE, F, FCOLLO, FPL } from './airtable.schema';
+import { TABLE, F, FCOLLO, FPL, FUSER } from './airtable.schema';
 
 // -------------------------------------------------------------
 // Tipi base (coerenti con i componenti del form)
@@ -443,8 +443,6 @@ export async function readSpedizioneMeta(recId: string): Promise<{
   return { idSpedizione, creatoDaEmail };
 }
 
-import { TABLE, FUSER } from './airtable.schema';
-import type { Party } from './airtable'; // se Party è qui dentro, ignora questo import
 
 // Normalizza record Airtable -> Party
 function mapUserToParty(fields: any): Party {
