@@ -342,7 +342,13 @@ export default function NuovaVinoPage() {
         />
       </div>
 
-      <PackingListVino value={pl} onChange={setPl} onPickFile={(f) => f && setPlFiles([f])} />
+      <PackingListVino
+  value={pl}
+  onChange={setPl}
+  files={plFiles}
+  onFiles={setPlFiles}
+/>
+
 
       <ColliCard
         colli={colli}
