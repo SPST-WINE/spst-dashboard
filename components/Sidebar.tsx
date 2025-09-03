@@ -16,7 +16,7 @@ const nav = [
   { href: '/dashboard', label: 'Overview', Icon: LayoutDashboard },
   { href: '/dashboard/spedizioni', label: 'Le mie spedizioni', Icon: PackageSearch },
   { href: '/dashboard/nuova', label: 'Nuova spedizione', Icon: PlusCircle },
-  { href: '/dashboard/compliance', label: 'Compliance', Icon: ShieldCheck },
+  // { href: '/dashboard/compliance', label: 'Compliance', Icon: ShieldCheck }, // <-- nascosto per ora
   { href: '/dashboard/impostazioni', label: 'Impostazioni', Icon: Settings },
   { href: '/dashboard/info', label: 'Informazioni utili', Icon: BookOpen },
 ];
