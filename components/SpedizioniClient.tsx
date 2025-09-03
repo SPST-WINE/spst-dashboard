@@ -1,4 +1,3 @@
-// components/SpedizioniClient.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -24,10 +23,23 @@ function getDisplayId(r: Row) {
   );
 }
 
-function pickAtt(r: Row, names: string[]): Att[] {
-  for (const n of names) {
+function isAttArray(v: any): v is Att[] {
+  return Array.isArray(v) && v.length > 0 && typeof v[0]?.url === 'string';
+}
+
+// tenta lista nomi, altrimenti fa una scansione “furba” di tutte le chiavi
+function pickAttSmart(r: Row, preferredNames: string[], fallbackTokens: string[]): Att[] {
+  for (const n of preferredNames) {
     const v = r?.[n];
-    if (Array.isArray(v) && v.length && v[0]?.url) return v as Att[];
+    if (isAttArray(v)) return v;
+  }
+  // scan di tutti i campi: cerca chiavi che contengono i token e con allegati
+  const entries = Object.entries(r);
+  for (const [k, v] of entries) {
+    const key = String(k).toLowerCase();
+    if (fallbackTokens.some(tok => key.includes(tok)) && isAttArray(v)) {
+      return v;
+    }
   }
   return [];
 }
@@ -65,6 +77,8 @@ export default function SpedizioniClient() {
           ? j.rows
           : Array.isArray(j?.data)
           ? j.data
+          : Array.isArray(j)
+          ? j
           : [];
 
         if (!cancelled) setRows(list);
@@ -83,21 +97,17 @@ export default function SpedizioniClient() {
     const k = q.trim().toLowerCase();
     if (!k) return rows;
 
+    const pick = (r: Row, keys: string[]) =>
+      keys
+        .map((kk) => String(r?.[kk] ?? '').toLowerCase())
+        .find((s) => s);
+
     return rows.filter((r) => {
       const id = String(getDisplayId(r)).toLowerCase();
-      const dRS = String(
-        r['Destinatario - Ragione Sociale'] || r['Destinatario'] || ''
-      ).toLowerCase();
-      const dCity = String(
-        r['Destinatario - Città'] || r['Città Destinatario'] || ''
-      ).toLowerCase();
-      const dCountry = String(
-        r['Destinatario - Paese'] || r['Paese Destinatario'] || ''
-      ).toLowerCase();
-
-      return (
-        id.includes(k) || dRS.includes(k) || dCity.includes(k) || dCountry.includes(k)
-      );
+      const dRS = pick(r, ['Destinatario - Ragione Sociale', 'Destinatario']) || '';
+      const dCity = pick(r, ['Destinatario - Città', 'Città Destinatario']) || '';
+      const dCountry = pick(r, ['Destinatario - Paese', 'Paese Destinatario']) || '';
+      return id.includes(k) || dRS.includes(k) || dCity.includes(k) || dCountry.includes(k);
     });
   }, [rows, q]);
 
@@ -131,9 +141,10 @@ export default function SpedizioniClient() {
             const destCountry = r['Destinatario - Paese'] || r['Paese Destinatario'] || '';
             const ritiro = r['Ritiro - Data'] || r['Ritiro Data'] || '—';
 
-            const ldv = pickAtt(r, ATT_FIELDS.LDV);
-            const fatt = pickAtt(r, ATT_FIELDS.FATT);
-            const pl = pickAtt(r, ATT_FIELDS.PL);
+            // Allegati: smart pick
+            const ldv = pickAttSmart(r, ATT_FIELDS.LDV, ['ldv', 'vettura', 'awb', 'lettera']);
+            const fatt = pickAttSmart(r, ATT_FIELDS.FATT, ['fatt', 'invoice']);
+            const pl = pickAttSmart(r, ATT_FIELDS.PL, ['packing', 'pl']);
 
             return (
               <div key={r.id} className="rounded-xl border bg-white p-4 text-sm">
