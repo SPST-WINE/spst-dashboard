@@ -235,7 +235,7 @@ export default function NuovaVinoPage() {
   // ------- UI success -------
   if (success) {
     const INFO_URL =
-      process.env.NEXT_PUBLIC_INFO_URL || '/dashboard/info';
+      process.env.NEXT_PUBLIC_INFO_URL || '/dashboard/informazioni-utili';
     const WHATSAPP_URL_BASE =
       process.env.NEXT_PUBLIC_WHATSAPP_URL ||
       'https://wa.me/393000000000';
