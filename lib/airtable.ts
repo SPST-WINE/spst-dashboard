@@ -442,3 +442,61 @@ export async function readSpedizioneMeta(recId: string): Promise<{
 
   return { idSpedizione, creatoDaEmail };
 }
+
+import { TABLE, FUSER } from './airtable.schema';
+import type { Party } from './airtable'; // se Party è qui dentro, ignora questo import
+
+// Normalizza record Airtable -> Party
+function mapUserToParty(fields: any): Party {
+  return {
+    ragioneSociale: fields[FUSER.Mittente] || '',
+    referente: '', // non previsto in UTENTI
+    paese: fields[FUSER.Paese] || '',
+    citta: fields[FUSER.Citta] || '',
+    cap: fields[FUSER.CAP] || '',
+    indirizzo: fields[FUSER.Indirizzo] || '',
+    telefono: '', // non previsto in UTENTI
+    piva: fields[FUSER.PIVA] || '',
+  };
+}
+
+function mapPartyToUserFields(email: string, p: Party) {
+  return {
+    [FUSER.Email]: email,
+    [FUSER.Mittente]: p.ragioneSociale ?? '',
+    [FUSER.Paese]: p.paese ?? '',
+    [FUSER.Citta]: p.citta ?? '',
+    [FUSER.CAP]: p.cap ?? '',
+    [FUSER.Indirizzo]: p.indirizzo ?? '',
+    [FUSER.PIVA]: p.piva ?? '',
+    // [FUSER.CreatedAt] è calcolato da Airtable (se è un "created time") oppure lo lasci vuoto
+  };
+}
+
+export async function getUserProfileByEmail(email: string): Promise<{ id?: string; party?: Party }> {
+  const b = base();
+  const result = await b(TABLE.UTENTI)
+    .select({
+      filterByFormula: `LOWER({${FUSER.Email}}) = LOWER("${String(email).replace(/"/g, '\\"')}")`,
+      maxRecords: 1,
+    })
+    .firstPage();
+
+  if (!result.length) return {};
+  const rec = result[0];
+  return { id: rec.id, party: mapUserToParty(rec.fields) };
+}
+
+export async function upsertUserProfile(email: string, party: Party): Promise<{ id: string }> {
+  const b = base();
+  const found = await getUserProfileByEmail(email);
+  const fields = mapPartyToUserFields(email, party);
+
+  if (found.id) {
+    const upd = await b(TABLE.UTENTI).update(found.id, fields);
+    return { id: upd.id };
+  } else {
+    const created = await b(TABLE.UTENTI).create([{ fields }]);
+    return { id: created[0].id };
+  }
+}
