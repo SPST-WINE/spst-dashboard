@@ -108,3 +108,30 @@ export async function postSpedizioneNotify(id: string, getToken: () => Promise<s
   if (!r.ok) throw new Error('notify failed');
   return r.json();
 }
+
+export async function getUserProfile(getIdToken?: () => Promise<string | undefined>) {
+  const headers: Record<string, string> = {};
+  if (getIdToken) {
+    const t = await getIdToken();
+    if (t) headers['Authorization'] = `Bearer ${t}`;
+  }
+  const res = await fetch('/api/profile', { headers, credentials: 'include' });
+  if (!res.ok) throw new Error('PROFILE_FETCH_FAILED');
+  return res.json() as Promise<{ ok: boolean; email?: string; party?: any }>;
+}
+
+export async function saveUserProfile(party: any, getIdToken?: () => Promise<string | undefined>) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (getIdToken) {
+    const t = await getIdToken();
+    if (t) headers['Authorization'] = `Bearer ${t}`;
+  }
+  const res = await fetch('/api/profile', {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    body: JSON.stringify({ party }),
+  });
+  if (!res.ok) throw new Error('PROFILE_SAVE_FAILED');
+  return res.json() as Promise<{ ok: boolean; id?: string }>;
+}
