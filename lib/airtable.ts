@@ -78,7 +78,7 @@ const BASE_ID = process.env.AIRTABLE_BASE_ID_SPST || '';
 
 function assertEnv() {
   if (!API_TOKEN) throw new Error('AIRTABLE_API_TOKEN (o AIRTABLE_API_KEY) mancante');
-  if (!BASE_ID) throw new Error('AIRTABLE_BASE_ID mancante');
+  if (!BASE_ID) throw new Error('AIRTABLE_BASE_ID_SPST mancante');
 }
 
 function base() {
@@ -117,17 +117,15 @@ function optional<T>(value: T | undefined | null) {
   return value === undefined || value === null ? undefined : value;
 }
 
-// sostituisci la tua formatDateISO con questa
+// date-only AAAA-MM-GG per Airtable
 function formatAirtableDateOnly(d?: string) {
   if (!d) return undefined;
   try {
-    // toISOString è sempre UTC -> prendiamo solo AAAA-MM-GG
-    return new Date(d).toISOString().slice(0, 10); // es. "2025-09-02"
+    return new Date(d).toISOString().slice(0, 10);
   } catch {
     return undefined;
   }
 }
-
 
 function buildIdCustom() {
   const n = Math.floor(Math.random() * 10000);
@@ -145,9 +143,8 @@ export async function createSpedizioneWebApp(
 
   const fields: Record<string, any> = {};
 
-  // Generali (⚠️ NON scrivo Sorgente qui; lo faccio post-create in modo tollerante)
-  // fields[F.Sorgente] = payload.sorgente === 'vino' ? 'Vino' : 'Altro';
-  fields[F.Stato] = 'Nuova';  
+  // Generali
+  fields[F.Stato] = 'Nuova';
   if (F.Formato) fields[F.Formato] = payload.formato;
   if (payload.contenuto) fields[F.Contenuto] = payload.contenuto;
   if (payload.ritiroNote) fields[F.RitiroNote] = payload.ritiroNote;
@@ -156,7 +153,6 @@ export async function createSpedizioneWebApp(
   fields[F.Incoterm] = payload.incoterm;
   fields[F.Valuta] = payload.valuta;
   if (payload.noteFatt) fields[F.NoteFatt] = payload.noteFatt;
-
   if (payload.createdByEmail) fields[F.CreatoDaEmail] = payload.createdByEmail;
 
   // Mittente
@@ -217,21 +213,15 @@ export async function createSpedizioneWebApp(
     }
   }
 
-  // Sottotipo (B2B, B2C, Sample) — update tollerante post-create
-{
-  const sottotipoVal = payload.tipoSped; // 'B2B' | 'B2C' | 'Sample'
-  const candidates = [
-    'Sottotipo',                        // ✅ nome reale nel tuo base
-    'Tipo spedizione',
-    'Sottotipo (B2B, B2C, Sample)',
-    'Tipo',                             // eventuali vecchi alias
-  ];
-  for (const name of candidates) {
-    const ok = await tryUpdateField(name, sottotipoVal);
-    if (ok) break;
+  // 1a-b) Sottotipo (B2B, B2C, Sample) — post-create
+  {
+    const sottotipoVal = payload.tipoSped;
+    const candidates = ['Sottotipo', 'Tipo spedizione', 'Sottotipo (B2B, B2C, Sample)', 'Tipo'];
+    for (const name of candidates) {
+      const ok = await tryUpdateField(name, sottotipoVal);
+      if (ok) break;
+    }
   }
-}
-
 
   // 1b) Destinatario abilitato import — post-create
   if (typeof payload.destAbilitato === 'boolean') {
@@ -283,29 +273,26 @@ export async function createSpedizioneWebApp(
     }
   }
 
-
   // 2) COLLI
-if (payload.colli?.length) {
-  const tot = payload.colli.length;
+  if (payload.colli?.length) {
+    const tot = payload.colli.length;
 
-  const rows = payload.colli.map((c) => ({
-    fields: {
-      [FCOLLO.LinkSped]: [recId],
-      [FCOLLO.L]: optional(c.lunghezza_cm),
-      [FCOLLO.W]: optional(c.larghezza_cm),
-      [FCOLLO.H]: optional(c.altezza_cm),
-      [FCOLLO.Peso]: optional(c.peso_kg),
-      // se il campo '#' esiste, metto il totale su ogni riga
-      ...(FCOLLO as any).Tot ? { [(FCOLLO as any).Tot]: tot } : {},
-    },
-  }));
+    const rows = payload.colli.map((c) => ({
+      fields: {
+        [FCOLLO.LinkSped]: [recId],
+        [FCOLLO.L]: optional(c.lunghezza_cm),
+        [FCOLLO.W]: optional(c.larghezza_cm),
+        [FCOLLO.H]: optional(c.altezza_cm),
+        [FCOLLO.Peso]: optional(c.peso_kg),
+        ...(FCOLLO as any).Tot ? { [(FCOLLO as any).Tot]: tot } : {},
+      },
+    }));
 
-  const BATCH = 10;
-  for (let i = 0; i < rows.length; i += BATCH) {
-    await b(TABLE.COLLI).create(rows.slice(i, i + BATCH));
+    const BATCH = 10;
+    for (let i = 0; i < rows.length; i += BATCH) {
+      await b(TABLE.COLLI).create(rows.slice(i, i + BATCH));
+    }
   }
-}
-
 
   // 3) PACKING LIST (Vino)
   if (payload.sorgente === 'vino' && payload.packingList?.length) {
@@ -328,38 +315,52 @@ if (payload.colli?.length) {
     }
   }
 
-   return { id: recId, idSpedizione: idCustom };
+  return { id: recId, idSpedizione: idCustom };
 }
-
 
 // -------------------------------------------------------------
 // LIST (usata dalla GET /api/spedizioni)
 // -------------------------------------------------------------
-export async function listSpedizioni(opts?: { email?: string }): Promise<any[]> {
+export async function listSpedizioni(opts?: { email?: string }): Promise<Array<{ id: string; fields: any }>> {
   const b = base();
-  const all: any[] = [];
-  const filter =
-    opts?.email
-      ? `LOWER({${F.CreatoDaEmail}}) = LOWER("${String(opts.email).replace(/"/g, '\\"')}")`
-      : undefined;
+  const all: Array<{ id: string; fields: any }> = [];
+
+  const selectOpts: any = {
+    pageSize: 50,
+    sort: [{ field: F.RitiroData, direction: 'desc' }],
+  };
+
+  if (opts?.email && opts.email.trim()) {
+    const safeEmail = String(opts.email).replace(/"/g, '\\"').trim();
+    selectOpts.filterByFormula = `LOWER({${F.CreatoDaEmail}}) = LOWER("${safeEmail}")`;
+  }
+  // NB: non passiamo filterByFormula se non è una stringa (evita errori SDK)
 
   await b(TABLE.SPED)
-    .select({
-      filterByFormula: filter,
-      pageSize: 50,
-      sort: [{ field: F.RitiroData, direction: 'desc' }],
-    })
+    .select(selectOpts)
     .eachPage((records, next) => {
       for (const r of records) {
-        all.push({ id: r.id, ...r.fields });
+        all.push({ id: r.id, fields: r.fields });
       }
       next();
     });
 
+  // fallback: se manca RitiroData, ordina per createdTime desc
+  all.sort((a, b) => {
+    const da = a.fields?.[F.RitiroData] ? new Date(a.fields[F.RitiroData]).getTime() : 0;
+    const db = b.fields?.[F.RitiroData] ? new Date(b.fields[F.RitiroData]).getTime() : 0;
+    if (da !== db) return db - da;
+    const ca = (a as any)._createdTime ? new Date((a as any)._createdTime).getTime() : 0;
+    const cb = (b as any)._createdTime ? new Date((b as any)._createdTime).getTime() : 0;
+    return cb - ca;
+  });
+
   return all;
 }
 
-// lib/airtable.ts (append in fondo)
+// -------------------------------------------------------------
+// Attachments
+// -------------------------------------------------------------
 
 // Tipo comodo per passare URL+filename
 export type Att = { url: string; filename?: string };
@@ -385,7 +386,9 @@ export async function attachFilesToSpedizione(
   await b(TABLE.SPED).update(recId, updates);
 }
 
-// --- Helpers lettura record singolo / meta -------------------
+// -------------------------------------------------------------
+// Meta singolo record
+// -------------------------------------------------------------
 export async function getSpedizioneById(recId: string): Promise<{ id: string; fields: Record<string, any> }> {
   const b = base();
   const r = await b(TABLE.SPED).find(recId);
@@ -394,7 +397,7 @@ export async function getSpedizioneById(recId: string): Promise<{ id: string; fi
 
 export function extractPublicId(fields: Record<string, any>): string | undefined {
   const candidates = [
-    (F as any).ID_Spedizione,   // se nel tuo schema esiste
+    (F as any).ID_Spedizione,
     'ID Spedizione',
     'ID SPST',
     'ID Spedizione (custom)',
@@ -443,8 +446,9 @@ export async function readSpedizioneMeta(recId: string): Promise<{
   return { idSpedizione, creatoDaEmail };
 }
 
-
-// Normalizza record Airtable -> Party
+// -------------------------------------------------------------
+// UTENTI (profilo mittente)
+// -------------------------------------------------------------
 function mapUserToParty(fields: any): Party {
   return {
     ragioneSociale: fields[FUSER.Mittente] || '',
@@ -453,7 +457,7 @@ function mapUserToParty(fields: any): Party {
     citta: fields[FUSER.Citta] || '',
     cap: fields[FUSER.CAP] || '',
     indirizzo: fields[FUSER.Indirizzo] || '',
-    telefono: fields[FUSER.Telefono] || '',   // 👈 PRIMA ERA '' fisso
+    telefono: fields[FUSER.Telefono] || '',
     piva: fields[FUSER.PIVA] || '',
   };
 }
@@ -466,7 +470,7 @@ function mapPartyToUserFields(email: string, p: Party) {
     [FUSER.Citta]: p.citta ?? '',
     [FUSER.CAP]: p.cap ?? '',
     [FUSER.Indirizzo]: p.indirizzo ?? '',
-    [FUSER.Telefono]: p.telefono ?? '',       // 👈 AGGIUNTO
+    [FUSER.Telefono]: p.telefono ?? '',
     [FUSER.PIVA]: p.piva ?? '',
     // [FUSER.CreatedAt] lo gestisce Airtable se è "created time"
   };
@@ -525,7 +529,7 @@ export async function upsertUtente(email: string, rawFields: Record<string, any>
     FUSER.Citta,
     FUSER.CAP,
     FUSER.Indirizzo,
-    FUSER.Telefono,   // 👈 importante
+    FUSER.Telefono,
     FUSER.PIVA,
   ]);
 
@@ -545,7 +549,9 @@ export async function upsertUtente(email: string, rawFields: Record<string, any>
   }
 }
 
-// --- Colli per spedizione (tabella figlia) --------------------
+// -------------------------------------------------------------
+// COLLI per spedizione
+// -------------------------------------------------------------
 export async function listColliBySpedizione(recId: string): Promise<Array<{
   l?: number | null;
   w?: number | null;
@@ -575,7 +581,7 @@ export async function listColliBySpedizione(recId: string): Promise<Array<{
       return out;
     }
   } catch {
-    // se fallisce, passo al fallback
+    // fallback
   }
 
   // 2) Fallback: filtro sulla figlia cercando il recId dentro al link (array)
@@ -615,7 +621,7 @@ export async function listColliBySpedId(recId: string): Promise<
     .eachPage((records, next) => {
       for (const r of records) {
         const f = r.fields as Record<string, any>;
-        const links = (f[FCOLLO.LinkSped] as string[]) || []; // <-- array di recordId linkati
+        const links = (f[FCOLLO.LinkSped] as string[]) || []; // array di recordId linkati
 
         if (Array.isArray(links) && links.includes(recId)) {
           out.push({
@@ -631,5 +637,3 @@ export async function listColliBySpedId(recId: string): Promise<
 
   return out;
 }
-
-
