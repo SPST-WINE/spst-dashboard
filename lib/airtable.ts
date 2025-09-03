@@ -499,3 +499,48 @@ export async function upsertUserProfile(email: string, party: Party): Promise<{ 
     return { id: created[0].id };
   }
 }
+
+// GET compatibile con /api/utenti
+export async function getUtenteByEmail(email: string): Promise<{ id: string; fields: Record<string, any> } | null> {
+  const b = base();
+  const rows = await b(TABLE.UTENTI)
+    .select({
+      filterByFormula: `LOWER({${FUSER.Email}}) = LOWER("${String(email).replace(/"/g, '\\"')}")`,
+      maxRecords: 1,
+    })
+    .firstPage();
+
+  if (!rows.length) return null;
+  return { id: rows[0].id, fields: rows[0].fields as Record<string, any> };
+}
+
+// UPSERT compatibile con /api/utenti (accetta "fields" piatti)
+export async function upsertUtente(email: string, rawFields: Record<string, any>): Promise<{ id: string }> {
+  const b = base();
+
+  // allowlist: tutte le colonne scrivibili della tabella UTENTI
+  const ALLOWED = new Set<string>([
+    FUSER.Mittente,
+    FUSER.Paese,
+    FUSER.Citta,
+    FUSER.CAP,
+    FUSER.Indirizzo,
+    FUSER.Telefono,   // 👈 importante
+    FUSER.PIVA,
+  ]);
+
+  const fields: Record<string, any> = { [FUSER.Email]: email };
+  for (const [k, v] of Object.entries(rawFields || {})) {
+    if (ALLOWED.has(k)) fields[k] = v;
+  }
+
+  // cerco record esistente
+  const existing = await getUtenteByEmail(email);
+  if (existing?.id) {
+    const upd = await b(TABLE.UTENTI).update(existing.id, fields);
+    return { id: upd.id };
+  } else {
+    const created = await b(TABLE.UTENTI).create([{ fields }]);
+    return { id: created[0].id };
+  }
+}
