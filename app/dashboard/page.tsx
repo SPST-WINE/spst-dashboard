@@ -1,6 +1,4 @@
 // app/dashboard/page.tsx
-
-// app/dashboard/page.tsx
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
@@ -22,12 +20,11 @@ import { F } from "@/lib/airtable.schema";
 import { format, isToday } from "date-fns";
 import { it } from "date-fns/locale";
 
-// ------- helpers locali -------
+// ------- helpers -------
 function norm(val?: string | null) {
   return (val || "").toString().trim();
 }
 
-// Costruisce l'URL pubblico di tracking sul sito del corriere
 function buildTrackingUrl(carrier?: string | null, code?: string | null) {
   const c = norm(carrier).toLowerCase();
   const n = norm(code);
@@ -42,15 +39,13 @@ function buildTrackingUrl(carrier?: string | null, code?: string | null) {
   if (c.includes("poste")) return `https://www.poste.it/cerca/index.html#/risultati-spedizioni/${encodeURIComponent(n)}`;
   if (c.includes("sda")) return `https://www.sda.it/wps/portal/Servizi_online/ricerca_spedizioni?locale=it&tracing-codes=${encodeURIComponent(n)}`;
 
-  return null; // Privato/altro → nessun link pubblico
+  return null;
 }
 
-// Stati considerati "attivi / in corso"
 const ACTIVE_STATES = new Set([
   "In elaborazione",
   "In transito",
   "In consegna",
-  // eventuali normalizzazioni alternative se in tabella usi inglese:
   "Pending",
   "InfoReceived",
   "InTransit",
@@ -60,14 +55,11 @@ const ACTIVE_STATES = new Set([
   "Unknown",
 ]);
 
-// ------- Page (Server Component) -------
 export default async function DashboardOverview() {
-  // Legge tutte le spedizioni (id + fields)
   const rows: any[] = await listSpedizioni();
 
   // KPI
   const inCorso = rows.filter((r) => ACTIVE_STATES.has(norm(r.fields["Stato"] || r.fields["Tracking Status"]))).length;
-
   const inConsegnaOggi = rows.filter((r) => {
     const stato = norm(r.fields["Stato"] || r.fields["Tracking Status"]);
     const etaStr = r.fields["ETA"];
@@ -78,10 +70,10 @@ export default async function DashboardOverview() {
   const kpi = [
     { label: "Spedizioni in corso", value: String(inCorso), icon: Truck },
     { label: "In consegna oggi", value: String(inConsegnaOggi), icon: Package },
-    { label: "Azioni richieste", value: "0", icon: AlertTriangle }, // se hai una logica dedicata, sostituisci
+    { label: "Azioni richieste", value: "0", icon: AlertTriangle },
   ] as const;
 
-  // Area Tracking: ultime 10 spedizioni attive con link al corriere
+  // Tracking items (senza ETA nel testo)
   const trackingItems = rows
     .filter((r) => ACTIVE_STATES.has(norm(r.fields["Stato"] || r.fields["Tracking Status"])))
     .slice(0, 10)
@@ -89,11 +81,8 @@ export default async function DashboardOverview() {
       const ref = r.fields["ID Spedizione"] || r.id;
       const city = r.fields["Destinatario - Città"] || "";
       const country = r.fields["Destinatario - Paese"] || "";
-      const etaStr = r.fields["ETA"];
-      const eta = etaStr ? format(new Date(etaStr), "d MMM", { locale: it }) : "—";
       const stato = r.fields["Tracking Status"] || r.fields["Stato"] || "—";
 
-      // Il campo Corriere su Airtable (single select) può arrivare come {name: "..."} oppure stringa
       const carrier =
         (typeof r.fields[F.Corriere] === "object" && r.fields[F.Corriere]?.name) ||
         r.fields[F.Corriere] ||
@@ -106,13 +95,12 @@ export default async function DashboardOverview() {
         id: r.id,
         ref,
         dest: [city, country].filter(Boolean).join(" (") + (country ? ")" : ""),
-        eta,
         stato,
         url,
       };
     });
 
-  // Ritiri programmati: prendi prossimi 5 da "Ritiro - Data"
+  // Ritiri programmati (per card in basso a destra)
   const ritiri = rows
     .map((r) => {
       const d = r.fields["Ritiro - Data"] ? new Date(r.fields["Ritiro - Data"]) : null;
@@ -128,12 +116,10 @@ export default async function DashboardOverview() {
     <div className="space-y-8">
       <header>
         <h1 className="text-2xl font-semibold text-slate-800">Overview</h1>
-        <p className="text-slate-500 text-sm mt-1">
-          Riepilogo account, azioni rapide e tracking.
-        </p>
+        <p className="text-slate-500 text-sm mt-1">Riepilogo account, azioni rapide e tracking.</p>
       </header>
 
-      {/* KPI (3 card) */}
+      {/* KPI */}
       <section>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {kpi.map(({ label, value, icon: Icon }) => (
@@ -156,14 +142,9 @@ export default async function DashboardOverview() {
       <section>
         <h3 className="mb-3 text-sm font-semibold text-[#f7911e]">Azioni rapide</h3>
         <div className="grid gap-4 md:grid-cols-3">
-          <Link
-            href="/dashboard/nuova/vino"
-            className="group rounded-2xl border bg-white p-4 hover:shadow-md transition"
-          >
+          <Link href="/dashboard/nuova/vino" className="group rounded-2xl border bg-white p-4 hover:shadow-md transition">
             <div className="flex items-start gap-3">
-              <span className="rounded-xl bg-[#1c3e5e]/10 p-2 text-[#1c3e5e]">
-                <PlusCircle className="h-5 w-5" />
-              </span>
+              <span className="rounded-xl bg-[#1c3e5e]/10 p-2 text-[#1c3e5e]"><PlusCircle className="h-5 w-5" /></span>
               <div>
                 <div className="font-medium text-slate-900">Spedizione vino</div>
                 <p className="text-sm text-slate-500">Dati completi, fatture e packing list.</p>
@@ -171,14 +152,9 @@ export default async function DashboardOverview() {
             </div>
           </Link>
 
-          <Link
-            href="/dashboard/nuova/altro"
-            className="group rounded-2xl border bg-white p-4 hover:shadow-md transition"
-          >
+          <Link href="/dashboard/nuova/altro" className="group rounded-2xl border bg-white p-4 hover:shadow-md transition">
             <div className="flex items-start gap-3">
-              <span className="rounded-xl bg-[#1c3e5e]/10 p-2 text-[#1c3e5e]">
-                <Boxes className="h-5 w-5" />
-              </span>
+              <span className="rounded-xl bg-[#1c3e5e]/10 p-2 text-[#1c3e5e]"><Boxes className="h-5 w-5" /></span>
               <div>
                 <div className="font-medium text-slate-900">Altre spedizioni</div>
                 <p className="text-sm text-slate-500">Materiali, brochure e non accise.</p>
@@ -186,14 +162,9 @@ export default async function DashboardOverview() {
             </div>
           </Link>
 
-          <Link
-            href="/dashboard/informazioni-utili"
-            className="group rounded-2xl border bg-white p-4 hover:shadow-md transition"
-          >
+          <Link href="/dashboard/informazioni-utili" className="group rounded-2xl border bg-white p-4 hover:shadow-md transition">
             <div className="flex items-start gap-3">
-              <span className="rounded-xl bg-[#1c3e5e]/10 p-2 text-[#1c3e5e]">
-                <FileText className="h-5 w-5" />
-              </span>
+              <span className="rounded-xl bg-[#1c3e5e]/10 p-2 text-[#1c3e5e]"><FileText className="h-5 w-5" /></span>
               <div>
                 <div className="font-medium text-slate-900">Documenti utili</div>
                 <p className="text-sm text-slate-500">Guide pallet/pacchi, compliance e FAQ.</p>
@@ -203,10 +174,9 @@ export default async function DashboardOverview() {
         </div>
       </section>
 
-      {/* Area tracking + Ritiri programmati */}
-      <section className="grid gap-6 lg:grid-cols-3">
-        {/* AREA TRACKING (sostituisce 'Ultime spedizioni' + 'Compliance/To-do') */}
-        <div className="rounded-2xl border bg-white p-4 lg:col-span-2">
+      {/* Tracking a tutta riga */}
+      <section>
+        <div className="rounded-2xl border bg-white p-4">
           <h3 className="mb-3 text-sm font-semibold text-[#f7911e]">Tracking spedizioni</h3>
           {trackingItems.length === 0 ? (
             <p className="text-sm text-slate-500">Nessuna spedizione in corso.</p>
@@ -214,19 +184,17 @@ export default async function DashboardOverview() {
             <div className="divide-y">
               {trackingItems.map((row) => (
                 <div key={row.id} className="py-3 flex items-center justify-between">
-                  <div>
-                    <div className="font-medium text-slate-900">{row.ref}</div>
-                    <div className="text-sm text-slate-500">
-                      {row.dest || "—"} · ETA {row.eta} · {row.stato}
+                  <div className="flex items-start gap-3">
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+                      <Package className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <div className="font-medium text-slate-900">{row.ref}</div>
+                      <div className="text-sm text-slate-500">{row.dest || "—"} · {row.stato}</div>
                     </div>
                   </div>
                   {row.url ? (
-                    <a
-                      className="inline-flex items-center gap-1 text-[#1c3e5e] hover:underline text-sm"
-                      href={row.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
+                    <a className="inline-flex items-center gap-1 text-[#1c3e5e] hover:underline text-sm" href={row.url} target="_blank" rel="noopener noreferrer">
                       Apri tracking <ArrowRight className="h-4 w-4" />
                     </a>
                   ) : (
@@ -237,16 +205,30 @@ export default async function DashboardOverview() {
             </div>
           )}
           <div className="mt-3 text-right">
-            <Link
-              href="/dashboard/spedizioni"
-              className="inline-flex items-center gap-1 text-[#1c3e5e] hover:underline text-sm"
-            >
+            <Link href="/dashboard/spedizioni" className="inline-flex items-center gap-1 text-[#1c3e5e] hover:underline text-sm">
               Vedi tutte <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
         </div>
+      </section>
 
-        {/* RITIRI PROGRAMMATI (mantieni) */}
+      {/* Supporto + Ritiri (ritiri spostati in basso a destra) */}
+      <section className="grid gap-6 lg:grid-cols-2">
+        {/* Supporto (sx) */}
+        <div className="rounded-2xl border bg-white p-4">
+          <h3 className="mb-3 text-sm font-semibold text-[#f7911e]">Supporto</h3>
+          <p className="text-sm text-slate-600">Hai bisogno di aiuto? Siamo a disposizione per domande su compliance, documenti e tracking.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link href="/dashboard/informazioni-utili" className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-[#1c3e5e] hover:bg-slate-50">
+              <FileText className="h-4 w-4" /> Documenti utili
+            </Link>
+            <Link href="https://wa.me/393204662570" target="_blank" className="inline-flex items-center gap-2 rounded-lg bg-[#f7911e] px-3 py-2 text-sm text-white hover:opacity-95">
+              <HelpCircle className="h-4 w-4" /> WhatsApp
+            </Link>
+          </div>
+        </div>
+
+        {/* Ritiri (dx) */}
         <div className="rounded-2xl border bg-white p-4">
           <h3 className="mb-3 text-sm font-semibold text-[#f7911e]">Ritiri programmati</h3>
           {ritiri.length === 0 ? (
@@ -259,41 +241,10 @@ export default async function DashboardOverview() {
                     <Calendar className="h-4 w-4 text-[#1c3e5e]" />
                     <span>{format(r.date!, "d MMMM yyyy", { locale: it })} – {r.city} {r.country ? `(${r.country})` : ""}</span>
                   </div>
-                  {/* Se hai una fascia oraria in tabella puoi stamparla qui */}
                 </li>
               ))}
             </ul>
           )}
-        </div>
-      </section>
-
-      {/* Supporto */}
-      <section className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border bg-white p-4">
-          <h3 className="mb-3 text-sm font-semibold text-[#f7911e]">Supporto</h3>
-          <p className="text-sm text-slate-600">
-            Hai bisogno di aiuto? Siamo a disposizione per domande su compliance, documenti e tracking.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Link
-              href="/dashboard/informazioni-utili"
-              className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-[#1c3e5e] hover:bg-slate-50"
-            >
-              <FileText className="h-4 w-4" />
-              Documenti utili
-            </Link>
-            <Link
-              href="https://wa.me/393204662570"
-              target="_blank"
-              className="inline-flex items-center gap-2 rounded-lg bg-[#f7911e] px-3 py-2 text-sm text-white hover:opacity-95"
-            >
-              <HelpCircle className="h-4 w-4" />
-              WhatsApp
-            </Link>
-          </div>
-        </div>
-        <div className="rounded-2xl border bg-white p-4">
-          {/* spazio libero per un widget futuro (es. scorciatoie o note) */}
         </div>
       </section>
     </div>
