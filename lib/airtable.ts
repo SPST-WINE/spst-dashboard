@@ -555,7 +555,30 @@ export async function listColliBySpedizione(recId: string): Promise<Array<{
   const b = base();
   const out: Array<{ l?: number | null; w?: number | null; h?: number | null; peso?: number | null }> = [];
 
-  // In Airtable il link è array -> filtro robusto con FIND su ARRAYJOIN
+  // 1) Provo a leggere il record padre e il campo link "COLLI (link)"
+  try {
+    const parent = await b(TABLE.SPED).find(recId);
+    const link = (parent.fields as any)?.[F.LinkColli] as string[] | undefined;
+    if (Array.isArray(link) && link.length) {
+      for (const id of link) {
+        try {
+          const r = await b(TABLE.COLLI).find(id);
+          const f = r.fields as Record<string, any>;
+          out.push({
+            l: f[FCOLLO.L] ?? null,
+            w: f[FCOLLO.W] ?? null,
+            h: f[FCOLLO.H] ?? null,
+            peso: f[FCOLLO.Peso] ?? null,
+          });
+        } catch {}
+      }
+      return out;
+    }
+  } catch {
+    // se fallisce, passo al fallback
+  }
+
+  // 2) Fallback: filtro sulla figlia cercando il recId dentro al link (array)
   const filter = `FIND("${recId}", ARRAYJOIN({${FCOLLO.LinkSped}}))`;
   await b(TABLE.COLLI)
     .select({ filterByFormula: filter, pageSize: 50 })
@@ -574,4 +597,3 @@ export async function listColliBySpedizione(recId: string): Promise<Array<{
 
   return out;
 }
-
