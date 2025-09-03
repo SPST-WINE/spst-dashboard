@@ -1,7 +1,7 @@
-// app/api/spedizioni/[id]/notify/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { buildCorsHeaders } from '@/lib/cors';
 import { adminAuth } from '@/lib/firebase-admin';
+import { readSpedizioneMeta } from '@/lib/airtable';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,92 +11,55 @@ export async function OPTIONS(req: NextRequest) {
   return new NextResponse(null, { status: 204, headers: buildCorsHeaders(origin) });
 }
 
-export async function POST(
-  req: NextRequest,
-  ctx: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const origin = req.headers.get('origin') ?? undefined;
   const cors = buildCorsHeaders(origin);
-  const recId = ctx.params.id;
-
-  // Estrai il token dall'header Authorization: Bearer <idToken>
-  const authz = req.headers.get('authorization') || '';
-  const idToken = authz.startsWith('Bearer ') ? authz.slice(7) : undefined;
+  const recId = params.id;
 
   try {
-    // Ricava l'email dell'utente autenticato
+    // prova a prendere l'email dal token client
+    const authHeader = req.headers.get('authorization') ?? '';
+    const m = authHeader.match(/^Bearer\s+(.+)$/i);
     let userEmail: string | undefined;
-    if (idToken) {
-      const decoded = await adminAuth().verifyIdToken(idToken, true);
-      userEmail = decoded.email || undefined;
+    if (m) {
+      try {
+        const decoded = await adminAuth().verifyIdToken(m[1], true);
+        userEmail = decoded.email || undefined;
+      } catch {}
     }
-    // Se non ho l'email, non fallire: ritorna ok ma sent:false (evita 500)
-    if (!userEmail) {
-      return NextResponse.json(
-        { ok: true, sent: false, reason: 'NO_EMAIL' },
-        { headers: cors }
-      );
-    }
+
+    // leggi meta da Airtable (ID Spedizione & eventuale email creatore)
+    const meta = await readSpedizioneMeta(recId);
+    const idSped = meta.idSpedizione || recId;
+    const to = userEmail || meta.creatoDaEmail;
 
     const RESEND_API_KEY = process.env.RESEND_API_KEY;
-    const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@spst.it';
-
-    // Se mancano le env necessarie, non inviare ma non andare in errore
-    if (!RESEND_API_KEY || !EMAIL_FROM) {
-      return NextResponse.json(
-        { ok: true, sent: false, reason: 'MISSING_RESEND_ENV' },
-        { headers: cors }
-      );
+    const EMAIL_FROM = process.env.EMAIL_FROM || 'notification@spst.it';
+    if (!RESEND_API_KEY || !EMAIL_FROM || !to) {
+      return NextResponse.json({ ok: true, sent: false }, { headers: cors });
     }
 
-    // Subject/body base (se vuoi, personalizza: recupera displayId lato client e includilo nella pagina)
-    const subject = `Conferma invio spedizione – ID record ${recId}`;
-    const html = `
-      <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+    const { Resend } = await import('resend');
+    const resend = new Resend(RESEND_API_KEY);
+
+    await resend.emails.send({
+      from: EMAIL_FROM,
+      to,
+      subject: `SPST - Spedizione Confermata — ${idSped}`,
+      text: `Grazie! La tua richiesta di spedizione è stata registrata.\n\nID spedizione: ${idSped}\n\nConserva questo identificativo per future comunicazioni.\n\nTeam SPST`,
+      html: `
         <p>Grazie! La tua richiesta di spedizione è stata registrata.</p>
-        <p><strong>ID record Airtable:</strong> ${recId}</p>
+        <p><strong>ID spedizione:</strong> ${idSped}</p>
         <p>Conserva questo identificativo per future comunicazioni.</p>
         <p>Team SPST</p>
-      </div>
-    `;
-
-    // Chiamata REST a Resend (no libreria)
-    const resp = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: EMAIL_FROM,
-        to: [userEmail],
-        subject,
-        html,
-      }),
+      `,
     });
 
-    // Se Resend risponde 2xx consideriamo inviato
-    if (resp.ok) {
-      return NextResponse.json({ ok: true, sent: true }, { headers: cors });
-    } else {
-      const err = await safeJson(resp);
-      return NextResponse.json(
-        { ok: true, sent: false, reason: 'RESEND_ERROR', detail: err },
-        { headers: cors }
-      );
-    }
+    return NextResponse.json({ ok: true, sent: true }, { headers: cors });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
       { status: 500, headers: cors }
     );
-  }
-}
-
-async function safeJson(r: Response) {
-  try {
-    return await r.json();
-  } catch {
-    return { status: r.status, statusText: r.statusText };
   }
 }
