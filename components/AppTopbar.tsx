@@ -1,25 +1,32 @@
+// components/AppTopbar.tsx
 'use client';
 
 import { usePathname } from 'next/navigation';
 
-const routes = [
-  { href: '/dashboard', label: 'Overview' },
+type RouteItem = { href: string; label: string };
+
+const routes: RouteItem[] = [
   { href: '/dashboard/spedizioni', label: 'Le mie spedizioni' },
   { href: '/dashboard/nuova', label: 'Nuova spedizione' },
-  // { href: '/dashboard/compliance', label: 'Compliance' }, // nascosta
   { href: '/dashboard/informazioni-utili', label: 'Informazioni utili' },
+  { href: '/dashboard', label: 'Overview' }, // <- lasciata per ultima (fallback)
 ];
 
 function titleFor(path: string) {
-  const m = routes.find(r => path === r.href || path.startsWith(r.href + '/'));
-  return m?.label ?? 'Dashboard';
+  // Prende la rotta più specifica (href più lungo) che fa match
+  const match = routes
+    .filter(r => path === r.href || path.startsWith(r.href + '/'))
+    .sort((a, b) => b.href.length - a.href.length)[0];
+
+  // Se non matcha niente ma siamo esattamente su '/dashboard'
+  if (!match && path === '/dashboard') return 'Overview';
+  return match?.label ?? 'Dashboard';
 }
 
 export default function AppTopbar() {
   const pathname = usePathname();
   const title = titleFor(pathname);
 
-  // URL WhatsApp fisso con fallback a env pubblica se vuoi gestirlo da .env
   const whatsappUrl =
     process.env.NEXT_PUBLIC_WHATSAPP_LINK ||
     'https://wa.me/message/CP62RMFFDNZPO1';
