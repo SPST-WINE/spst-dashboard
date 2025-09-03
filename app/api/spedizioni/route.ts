@@ -37,15 +37,21 @@ export async function GET(req: NextRequest) {
   const cors = buildCorsHeaders(origin);
 
   try {
-    // NEW: consenti override via query string (?email=...)
+    // override via query string (?email=...)
     const { searchParams } = new URL(req.url);
     const emailParam = searchParams.get('email') || undefined;
 
     const email = emailParam || (await getEmailFromAuth(req));
     const rows = await listSpedizioni(email ? { email } : undefined);
 
-    // La UI si aspetta { ok, rows }
-    return NextResponse.json({ ok: true, rows }, { headers: cors });
+    // 🔧 Flatten per retrocompatibilità UI: { id, ...fields, fields }
+    const data = rows.map((r: any) => ({
+      id: r.id,
+      ...(r.fields || {}),
+      fields: r.fields || {},
+    }));
+
+    return NextResponse.json({ ok: true, rows: data }, { headers: cors });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
@@ -64,7 +70,7 @@ export async function POST(req: NextRequest) {
     // Se arriva un token, crea session cookie
     if (payload.token) {
       const sessionCookie = await adminAuth().createSessionCookie(payload.token, {
-        expiresIn: 60 * 60 * 24 * 5 * 1000,
+        expiresIn: 60 * 60 * 24 * 5 * 1000, // 5 giorni
       });
       const res = NextResponse.json({ ok: true, message: 'Sessione creata' }, { headers: cors });
       res.cookies.set({
@@ -85,7 +91,10 @@ export async function POST(req: NextRequest) {
     }
 
     const created = await createSpedizioneWebApp(payload);
-    return NextResponse.json({ ok: true, id: created.id, idSpedizione: created.idSpedizione }, { headers: cors });
+    return NextResponse.json(
+      { ok: true, id: created.id, idSpedizione: created.idSpedizione },
+      { headers: cors }
+    );
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
