@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import PartyCard, { Party } from '@/components/nuova/PartyCard';
 import ColliCard, { Collo } from '@/components/nuova/ColliCard';
 import RitiroCard from '@/components/nuova/RitiroCard';
@@ -23,22 +24,19 @@ const blankParty: Party = {
 };
 
 type SuccessInfo = {
-  recId: string;    // recordId Airtable (serve per notify/attach)
-  displayId: string;    // "ID Spedizione" leggibile (campo Airtable)
+  id: string;              // Airtable record id (fallback)
+  idSped?: string;         // ✅ ID Spedizione custom
   tipoSped: 'B2B' | 'B2C' | 'Sample';
   incoterm: 'DAP' | 'DDP' | 'EXW';
+  valuta: 'EUR' | 'USD' | 'GBP';
   dataRitiro?: string;
   colli: number;
   formato: 'Pacco' | 'Pallet';
+  contenuto?: string;
+  ritiroNote?: string;
+  mittente: Party;
   destinatario: Party;
 };
-
-// Aggiungi un'interfaccia per la risposta dell'API
-interface SpedizioneResponse {
-  ok: boolean;
-  id: string;
-  displayId: string;
-}
 
 export default function NuovaVinoPage() {
   // Tipologia
@@ -97,7 +95,7 @@ export default function NuovaVinoPage() {
     }
   }, [errors.length]);
 
-  // ------- Upload allegati (Firebase) + attach su Airtable -------
+  // Upload allegati (Firebase) + attach su Airtable
   async function uploadAndAttach(spedId: string) {
     const storage = getStorage();
     const fattura: { url: string; filename?: string }[] = [];
@@ -122,14 +120,12 @@ export default function NuovaVinoPage() {
     }
   }
 
-  // ------- Validazione client -------
+  // Validazione client
   function validate(): string[] {
     const errs: string[] = [];
 
-    // Mittente: P.IVA obbligatoria
     if (!mittente.piva?.trim()) errs.push('Partita IVA/Codice Fiscale del mittente mancante.');
 
-    // Colli: per ogni collo servono TUTTE le misure e il peso (>0)
     colli.forEach((c, i) => {
       const miss =
         c.lunghezza_cm == null ||
@@ -144,14 +140,11 @@ export default function NuovaVinoPage() {
       if (miss || nonPos) errs.push(`Collo #${i + 1}: inserire tutte le misure e un peso > 0.`);
     });
 
-    // Data ritiro
     if (!ritiroData) errs.push('Seleziona il giorno di ritiro.');
 
-    // Dati fattura: se NON c’è file allegato, applica regole
     if (!fatturaFile) {
       const fatt = sameAsDest ? destinatario : fatturazione;
       if (!fatt.ragioneSociale?.trim()) errs.push('Dati fattura: ragione sociale mancante.');
-      // CF/P.IVA obbligatorio per B2B e Sample, non per B2C
       if ((tipoSped === 'B2B' || tipoSped === 'Sample') && !fatt.piva?.trim()) {
         errs.push('Dati fattura: P.IVA/CF obbligatoria per B2B e Campionatura.');
       }
@@ -160,17 +153,13 @@ export default function NuovaVinoPage() {
     return errs;
   }
 
-  // ------- Salva -------
+  // Salva
   const salva = async () => {
-    if (saving) return; // blocca doppio click
+    if (saving) return;
 
     const v = validate();
-    if (v.length) {
-      setErrors(v);
-      return;
-    } else {
-      setErrors([]);
-    }
+    if (v.length) { setErrors(v); return; }
+    setErrors([]);
 
     setSaving(true);
     setEmailSent(null);
@@ -196,21 +185,31 @@ export default function NuovaVinoPage() {
         packingList: pl,
       };
 
-      // Usa l'interfaccia SpedizioneResponse per tipizzare la risposta
-      const res: SpedizioneResponse = await postSpedizione(payload, getIdToken);
+      const res = await postSpedizione(payload, getIdToken);
       await uploadAndAttach(res.id);
 
+      // invio email AUTOMATICO
+      try {
+        await postSpedizioneNotify(res.id, getIdToken);
+        setEmailSent('ok');
+      } catch {
+        setEmailSent('err');
+      }
+
       setSuccess({
-        recId: res.id,
-        displayId: res.displayId ?? res.id,  // fallback al recordId se manca
+        id: res.id,
+        idSped: res.idSped,
         tipoSped,
         incoterm,
+        valuta,
         dataRitiro: ritiroData?.toLocaleDateString(),
         colli: colli.length,
         formato,
+        contenuto,
+        ritiroNote,
+        mittente,
         destinatario,
       });
-
     } catch (e) {
       console.error('Errore salvataggio/allegati', e);
       setErrors(['Si è verificato un errore durante il salvataggio. Riprova più tardi.']);
@@ -220,49 +219,73 @@ export default function NuovaVinoPage() {
     }
   };
 
-  // ------- Invio email -------
-  const inviaEmail = async () => {
-    if (!success) return;
-    try {
-      await postSpedizioneNotify(success.recId, getIdToken);
-      setEmailSent('ok');
-    } catch (e) {
-      console.error(e);
-      setEmailSent('err');
-    }
-  };
-
-  // ------- UI -------
+  // UI – schermata conferma
   if (success) {
     return (
       <div className="space-y-4" ref={topRef}>
         <h2 className="text-lg font-semibold">Spedizione creata</h2>
 
         <div className="rounded-2xl border bg-white p-4">
-          <div className="mb-3 text-sm">
-            <div className="font-medium">ID Spedizione</div>
-            <div className="font-mono">{success.displayId}</div>
-          </div>
-
           <div className="grid gap-3 md:grid-cols-2 text-sm">
-            <div><span className="text-slate-500">Tipo:</span> {success.tipoSped}</div>
-            <div><span className="text-slate-500">Incoterm:</span> {success.incoterm}</div>
-            <div><span className="text-slate-500">Data ritiro:</span> {success.dataRitiro ?? '—'}</div>
-            <div><span className="text-slate-500">Colli:</span> {success.colli} ({success.formato})</div>
+            <div>
+              <div className="font-medium">ID Spedizione</div>
+              <div className="font-mono">{success.idSped || success.id}</div>
+            </div>
+
+            <div>
+              <div className="font-medium">Incoterm</div>
+              <div>{success.incoterm}</div>
+            </div>
+
+            <div>
+              <div className="font-medium">Tipo</div>
+              <div>{success.tipoSped}</div>
+            </div>
+
+            <div>
+              <div className="font-medium">Valuta</div>
+              <div>{success.valuta}</div>
+            </div>
+
+            <div>
+              <div className="font-medium">Data ritiro</div>
+              <div>{success.dataRitiro ?? '—'}</div>
+            </div>
+
+            <div>
+              <div className="font-medium">Colli</div>
+              <div>{success.colli} ({success.formato})</div>
+            </div>
+
             <div className="md:col-span-2">
-              <span className="text-slate-500">Destinatario:</span>{' '}
-              {success.destinatario.ragioneSociale} — {success.destinatario.citta}
+              <div className="font-medium">Contenuto colli</div>
+              <div>{success.contenuto || '—'}</div>
+            </div>
+
+            <div className="md:col-span-2">
+              <div className="font-medium">Note ritiro</div>
+              <div>{success.ritiroNote || '—'}</div>
+            </div>
+
+            <div className="md:col-span-2">
+              <div className="font-medium">Mittente</div>
+              <div>{success.mittente.ragioneSociale} — {success.mittente.citta}</div>
+            </div>
+
+            <div className="md:col-span-2">
+              <div className="font-medium">Destinatario</div>
+              <div>{success.destinatario.ragioneSociale} — {success.destinatario.citta}</div>
             </div>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={inviaEmail}
+            <Link
+              href="/dashboard/spedizioni"
               className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
             >
-              Invia email al cliente
-            </button>
+              Le mie spedizioni
+            </Link>
+
             {emailSent === 'ok' && (
               <span className="text-sm text-green-700">Email inviata ✅</span>
             )}
@@ -279,11 +302,11 @@ export default function NuovaVinoPage() {
     );
   }
 
+  // UI – form
   return (
     <div className="space-y-4" ref={topRef}>
       <h2 className="text-lg font-semibold">Nuova spedizione — vino</h2>
 
-      {/* blocco errori */}
       {!!errors.length && (
         <div className="rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-800">
           <div className="font-medium mb-1">Controlla questi campi:</div>
@@ -293,7 +316,6 @@ export default function NuovaVinoPage() {
         </div>
       )}
 
-      {/* Tipologia spedizione */}
       <div className="rounded-2xl border bg-white p-4">
         <Select
           label="Stai spedendo ad un privato? O ad una azienda?"
@@ -307,7 +329,6 @@ export default function NuovaVinoPage() {
         />
       </div>
 
-      {/* Mittente / Destinatario */}
       <div className="grid gap-4 md:grid-cols-2">
         <PartyCard title="Mittente" value={mittente} onChange={setMittente} />
         <PartyCard
@@ -322,15 +343,8 @@ export default function NuovaVinoPage() {
         />
       </div>
 
-      {/* Packing list (righe) + upload PL */}
-      <PackingListVino
-        value={pl}
-        onChange={setPl}
-        files={plFiles}
-        onFiles={setPlFiles}
-      />
+      <PackingListVino value={pl} onChange={setPl} files={plFiles} onFiles={setPlFiles} />
 
-      {/* Colli */}
       <ColliCard
         colli={colli}
         onChange={setColli}
@@ -340,7 +354,6 @@ export default function NuovaVinoPage() {
         setContenuto={setContenuto}
       />
 
-      {/* Ritiro */}
       <RitiroCard
         date={ritiroData}
         setDate={setRitiroData}
@@ -348,7 +361,6 @@ export default function NuovaVinoPage() {
         setNote={setRitiroNote}
       />
 
-      {/* Fattura */}
       <FatturaCard
         incoterm={incoterm}
         setIncoterm={setIncoterm}
@@ -367,14 +379,13 @@ export default function NuovaVinoPage() {
         setFatturaFile={setFatturaFile}
       />
 
-      {/* CTA */}
       <div className="flex justify-end">
         <button
           type="button"
           onClick={salva}
           disabled={saving}
           aria-busy={saving}
-          className={`rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2`}
+          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
         >
           {saving && (
             <span className="inline-block h-4 w-4 animate-spin rounded-full border border-slate-400 border-t-transparent" />
