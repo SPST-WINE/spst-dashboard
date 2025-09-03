@@ -44,8 +44,25 @@ export default function NuovaVinoPage() {
   const [destAbilitato, setDestAbilitato] = useState(false);
 
   // Parti
-  const [mittente, setMittente] = useState<Party>(blankParty);
-  const [destinatario, setDestinatario] = useState<Party>(blankParty);
+const [mittente, setMittente] = useState<Party>(blankParty);
+const [destinatario, setDestinatario] = useState<Party>(blankParty);
+
+// Prefill mittente dai dati profilo (Airtable -> UTENTI)
+useEffect(() => {
+  let cancelled = false;
+  (async () => {
+    try {
+      const r = await getUserProfile(getIdToken);
+      if (!cancelled && r?.ok && r?.party) {
+        setMittente(prev => ({ ...prev, ...r.party })); // <-- ora setMittente esiste
+      }
+    } catch {
+      // se fallisce, l’utente compila a mano
+    }
+  })();
+  return () => { cancelled = true; };
+}, []);
+
 
   // Colli
   const [colli, setColli] = useState<Collo[]>([
@@ -404,24 +421,3 @@ export default function NuovaVinoPage() {
     </div>
   );
 }
-
-// Parti
-const [mittente, setMittente] = useState<Party>(blankParty);
-const [destinatario, setDestinatario] = useState<Party>(blankParty);
-
-// Prefill mittente dai dati profilo (Airtable -> UTENTI)
-useEffect(() => {
-  let cancelled = false;
-  (async () => {
-    try {
-      const r = await getUserProfile(getIdToken);
-      if (!cancelled && r?.ok && r?.party) {
-        setMittente(prev => ({ ...prev, ...r.party })); // <-- ora setMittente esiste
-      }
-    } catch {
-      // se fallisce, l’utente compila a mano
-    }
-  })();
-  return () => { cancelled = true; };
-}, []);
-
