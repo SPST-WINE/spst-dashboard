@@ -5,6 +5,19 @@ export const TABLE = {
   SPED: process.env.AIRTABLE_TABLE_SPEDIZIONI_WEBAPP || 'SpedizioniWebApp',
   COLLI: process.env.AIRTABLE_TABLE_SPED_COLLI || 'SPED_COLLI',
   PL: process.env.AIRTABLE_TABLE_SPED_PL || 'SPED_PL',
+  UTENTI: process.env.AIRTABLE_TABLE_UTENTI || 'UTENTI',
+} as const;
+
+// Nomi campi UTENTI (come in Airtable)
+export const FUSER = {
+  Email: 'Mail Cliente',
+  Mittente: 'Mittente',
+  Paese: 'Paese Mittente',
+  Citta: 'Città Mittente',
+  CAP: 'CAP Mittente',
+  Indirizzo: 'Indirizzo Mittente',
+  PIVA: 'Partita IVA Mittente',
+  CreatedAt: 'Data Creazione',
 } as const;
 
 // --- Campi tabella principale: SpedizioniWebApp ----------------------------
