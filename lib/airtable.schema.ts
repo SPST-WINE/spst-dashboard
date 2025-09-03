@@ -105,3 +105,11 @@ export const FPL = {
   PesoNettoBott: 'Peso netto bott. (kg)',
   PesoLordoBott: 'Peso lordo bott. (kg)',
 } as const;
+
+export const F = {
+  // ...i tuoi già presenti
+  Corriere: "Corriere",
+  TrackingNumber: "Tracking Number",
+  TrackingURL: "Tracking URL",
+};
+
