@@ -1,220 +1,142 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { getIdToken } from '@/lib/firebase-client-auth';
+import { onAuthStateChanged } from 'firebase/auth';
+import { authClient } from '@/lib/firebase-client';
+import { authedJson } from '@/lib/authed-fetch';
+import ShipmentCard from '@/components/ShipmentCard';
 import Drawer from '@/components/Drawer';
 import ShipmentDetail from '@/components/ShipmentDetail';
+import { ShipmentCardSkeleton } from '@/components/Skeletons';
 
-type Row = { id: string; [k: string]: any };
-type Att = { url: string; filename?: string };
-
-const ATT_FIELDS = {
-  LDV: ['LDV', 'Lettera di Vettura', 'Lettera di vettura', 'AWB'],
-  FATT: ['Fattura - Allegato Cliente', 'Fattura – Allegato Cliente', 'Fattura Cliente', 'Fattura', 'Invoice'],
-  PL: ['Packing List - Allegato Cliente', 'Packing List', 'PL - Allegato Cliente'],
-};
-
-function getDisplayId(r: Row) {
-  return (
-    r['ID Spedizione'] ||
-    r['ID SPST'] ||
-    r['ID Spedizione (custom)'] ||
-    r.id
-  );
-}
-
-function isAttArray(v: any): v is Att[] {
-  return Array.isArray(v) && v.length > 0 && typeof v[0]?.url === 'string';
-}
-
-// tenta lista nomi, altrimenti fa una scansione “furba” di tutte le chiavi
-function pickAttSmart(r: Row, preferredNames: string[], fallbackTokens: string[]): Att[] {
-  for (const n of preferredNames) {
-    const v = r?.[n];
-    if (isAttArray(v)) return v;
-  }
-  // scan di tutti i campi: cerca chiavi che contengono i token e con allegati
-  const entries = Object.entries(r);
-  for (const [k, v] of entries) {
-    const key = String(k).toLowerCase();
-    if (fallbackTokens.some(tok => key.includes(tok)) && isAttArray(v)) {
-      return v;
-    }
-  }
+function normalizeArray(json: any): any[] {
+  if (Array.isArray(json)) return json;
+  if (Array.isArray(json?.data)) return json.data;
+  if (Array.isArray(json?.results)) return json.results;
   return [];
 }
 
+const pickStr = (f: any, keys: string[]) => {
+  for (const k of keys) {
+    const v = f?.[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return '';
+};
+
+// estrae timestamp (UTC) dal formato SP-YYYY-MM-DD-XXXX
+function tsFromIdSped(f: any): number {
+  const id = pickStr(f, ['ID Spedizione', 'ID SPST', 'ID Spedizione (custom)']);
+  const m = id.match(/SP-(\d{4})-(\d{2})-(\d{2})-/i);
+  if (!m) return 0;
+  const y = +m[1], mo = +m[2] - 1, d = +m[3];
+  return Date.UTC(y, mo, d);
+}
+
+function tsFromRitiro(f: any): number {
+  const s = pickStr(f, ['Ritiro - Data', 'Ritiro Data', 'Data ritiro']);
+  const t = s ? Date.parse(s) : NaN;
+  return isNaN(t) ? 0 : t;
+}
+
 export default function SpedizioniClient() {
-  const [q, setQ] = useState('');
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Row | null>(null);
+  const [q, setQ] = useState('');
+  const [selected, setSelected] = useState<any | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE = 10;
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
+    const unsub = onAuthStateChanged(authClient(), async (user) => {
+      if (!user) return;
       try {
-        setLoading(true);
-        setErr(null);
-
-        const emailLS =
-          (typeof window !== 'undefined' && localStorage.getItem('userEmail')?.trim()) || '';
-        const token = await getIdToken().catch(() => undefined);
-
-        const url = emailLS
-          ? `/api/spedizioni?email=${encodeURIComponent(emailLS)}`
-          : `/api/spedizioni`;
-
-        const res = await fetch(url, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          cache: 'no-store',
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        const j = await res.json();
-        const list: Row[] = Array.isArray(j?.rows)
-          ? j.rows
-          : Array.isArray(j?.data)
-          ? j.data
-          : Array.isArray(j)
-          ? j
-          : [];
-
-        if (!cancelled) setRows(list);
+        const json = await authedJson('/api/spedizioni');
+        setData(normalizeArray(json));
       } catch (e: any) {
-        if (!cancelled) setErr(e?.message || 'Errore di caricamento');
-      } finally {
-        if (!cancelled) setLoading(false);
+        setErr(e?.message || 'Errore');
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    });
+    return () => unsub();
   }, []);
 
-  const filtered = useMemo(() => {
-    const k = q.trim().toLowerCase();
-    if (!k) return rows;
-
-    const pick = (r: Row, keys: string[]) =>
-      keys
-        .map((kk) => String(r?.[kk] ?? '').toLowerCase())
-        .find((s) => s);
-
-    return rows.filter((r) => {
-      const id = String(getDisplayId(r)).toLowerCase();
-      const dRS = pick(r, ['Destinatario - Ragione Sociale', 'Destinatario']) || '';
-      const dCity = pick(r, ['Destinatario - Città', 'Città Destinatario']) || '';
-      const dCountry = pick(r, ['Destinatario - Paese', 'Paese Destinatario']) || '';
-      return id.includes(k) || dRS.includes(k) || dCity.includes(k) || dCountry.includes(k);
+  // ORDINA: più recenti prima (ID Sped -> data; fallback: ritiro)
+  const sorted = useMemo(() => {
+    if (!data) return null;
+    const copy = [...data];
+    copy.sort((a, b) => {
+      const byId = tsFromIdSped(b) - tsFromIdSped(a);
+      if (byId !== 0) return byId;
+      return tsFromRitiro(b) - tsFromRitiro(a);
     });
-  }, [rows, q]);
+    return copy;
+  }, [data]);
 
-  if (err) return <div className="text-sm text-rose-700">Errore: {err}</div>;
+  // FILTRO
+  const filtered = useMemo(() => {
+    if (!sorted) return null;
+    const term = q.trim().toLowerCase();
+    if (!term) return sorted;
+
+    const get = (f: any, k: string) => String(f?.[k] ?? '').toLowerCase();
+    return sorted.filter((f: any) =>
+      get(f, 'ID Spedizione').includes(term) ||
+      get(f, 'Destinatario').includes(term) ||
+      get(f, 'Destinatario - Ragione Sociale').includes(term) ||
+      get(f, 'Destinatario - Città').includes(term) ||
+      get(f, 'Destinatario - Paese').includes(term) ||
+      get(f, 'Città Destinatario').includes(term) ||
+      get(f, 'Paese Destinatario').includes(term)
+    );
+  }, [sorted, q]);
+
+  if (err) return <div className="p-4 text-red-600">Errore: {err}</div>;
+
+  if (!filtered) {
+    return (
+      <div className="space-y-3">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div className="h-9 w-full rounded bg-gray-100 md:max-w-md" />
+          <div className="h-5 w-20 rounded bg-gray-100" />
+        </div>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <ShipmentCardSkeleton key={i} />
+        ))}
+      </div>
+    );
+  }
+
+  const shown = filtered.slice(0, page * PAGE);
 
   return (
     <>
       <div className="mb-3 flex items-center justify-between gap-3">
         <input
+          className="w-full rounded-lg border px-3 py-2 md:max-w-md"
           placeholder="Cerca per ID, destinatario, città, paese…"
           value={q}
-          onChange={(e) => setQ(e.target.value)}
-          className="w-full max-w-xl rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20"
+          onChange={(e) => {
+            setQ(e.target.value);
+            setPage(1);
+          }}
         />
-        <div className="text-sm text-slate-500">
-          {loading ? 'Caricamento…' : `${filtered.length} risultati`}
-        </div>
+        <div className="text-sm text-gray-500">{filtered.length} risultati</div>
       </div>
 
-      {loading ? (
-        <div className="text-sm text-slate-500">Recupero spedizioni…</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-sm text-slate-500">0 risultati</div>
-      ) : (
-        <div className="grid gap-3">
-          {filtered.map((r) => {
-            const id = getDisplayId(r);
-            const stato = r['Stato'] || '—';
-            const destRS = r['Destinatario - Ragione Sociale'] || r['Destinatario'] || '—';
-            const destCity = r['Destinatario - Città'] || r['Città Destinatario'] || '';
-            const destCountry = r['Destinatario - Paese'] || r['Paese Destinatario'] || '';
-            const ritiro = r['Ritiro - Data'] || r['Ritiro Data'] || '—';
+      <div className="grid gap-3">
+        {shown.map((f: any) => (
+          <ShipmentCard key={f.id || f['ID Spedizione']} f={f} onOpen={() => setSelected(f)} />
+        ))}
+      </div>
 
-            // Allegati: smart pick
-            const ldv = pickAttSmart(r, ATT_FIELDS.LDV, ['ldv', 'vettura', 'awb', 'lettera']);
-            const fatt = pickAttSmart(r, ATT_FIELDS.FATT, ['fatt', 'invoice']);
-            const pl = pickAttSmart(r, ATT_FIELDS.PL, ['packing', 'pl']);
-
-            return (
-              <div key={r.id} className="rounded-xl border bg-white p-4 text-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="font-mono font-medium">{id}</div>
-                  <div className="rounded-md border px-2 py-0.5 text-xs">{stato}</div>
-                </div>
-
-                <div className="mt-2 text-slate-700">
-                  <span className="text-slate-500">Destinatario: </span>
-                  {destRS}
-                  {destCity ? ` — ${destCity}` : ''}
-                  {destCountry ? `, ${destCountry}` : ''}
-                </div>
-
-                <div className="mt-1 text-slate-700">
-                  <span className="text-slate-500">Ritiro: </span>
-                  {ritiro}
-                </div>
-
-                {/* Allegati */}
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {ldv.length ? (
-                    <a
-                      href={ldv[0].url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded-md border px-3 py-1 text-xs hover:bg-slate-50"
-                    >
-                      Scarica LDV
-                    </a>
-                  ) : (
-                    <span className="rounded-md border px-3 py-1 text-xs text-slate-500">
-                      LDV non disponibile
-                    </span>
-                  )}
-
-                  {fatt.length > 0 && (
-                    <a
-                      href={fatt[0].url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded-md border px-3 py-1 text-xs hover:bg-slate-50"
-                    >
-                      Fattura{fatt.length > 1 ? ` (${fatt.length})` : ''}
-                    </a>
-                  )}
-
-                  {pl.length > 0 && (
-                    <a
-                      href={pl[0].url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded-md border px-3 py-1 text-xs hover:bg-slate-50"
-                    >
-                      Packing List{pl.length > 1 ? ` (${pl.length})` : ''}
-                    </a>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => setSelected(r)}
-                    className="ml-auto rounded-md border px-3 py-1 text-xs hover:bg-slate-50"
-                  >
-                    Mostra dettagli
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+      {shown.length < filtered.length && (
+        <div className="mt-4 flex justify-center">
+          <button
+            onClick={() => setPage((p) => p + 1)}
+            className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            Carica altri
+          </button>
         </div>
       )}
 
