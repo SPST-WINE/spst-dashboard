@@ -25,7 +25,7 @@ const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Overview', icon: Home, exact: true },
   { href: '/dashboard/spedizioni', label: 'Le mie spedizioni', icon: Package },
   { href: '/dashboard/nuova', label: 'Nuova spedizione', icon: FileText },
-  { href: '/dashboard/compliance', label: 'Compliance', icon: ShieldCheck },
+  
   { href: '/dashboard/impostazioni', label: 'Impostazioni', icon: Settings },
   { href: '/dashboard/informazioni-utili', label: 'Informazioni utili', icon: Info },
 ];
