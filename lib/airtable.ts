@@ -453,7 +453,7 @@ function mapUserToParty(fields: any): Party {
     citta: fields[FUSER.Citta] || '',
     cap: fields[FUSER.CAP] || '',
     indirizzo: fields[FUSER.Indirizzo] || '',
-    telefono: '', // non previsto in UTENTI
+    telefono: fields[FUSER.Telefono] || '',   // 👈 PRIMA ERA '' fisso
     piva: fields[FUSER.PIVA] || '',
   };
 }
@@ -466,8 +466,9 @@ function mapPartyToUserFields(email: string, p: Party) {
     [FUSER.Citta]: p.citta ?? '',
     [FUSER.CAP]: p.cap ?? '',
     [FUSER.Indirizzo]: p.indirizzo ?? '',
+    [FUSER.Telefono]: p.telefono ?? '',       // 👈 AGGIUNTO
     [FUSER.PIVA]: p.piva ?? '',
-    // [FUSER.CreatedAt] è calcolato da Airtable (se è un "created time") oppure lo lasci vuoto
+    // [FUSER.CreatedAt] lo gestisce Airtable se è "created time"
   };
 }
 
