@@ -1,28 +1,15 @@
 // app/api/spedizioni/[id]/colli/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { buildCorsHeaders } from '@/lib/cors';
+import { listColliBySpedId } from '@/lib/airtable';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const cors = buildCorsHeaders(_req.headers.get('origin') ?? undefined);
+export async function GET(_req: NextRequest, ctx: { params: { id: string } }) {
   try {
-    const { listColliBySpedizione } = await import('@/lib/airtable');
-    const colli = await listColliBySpedizione(params.id);
-    return NextResponse.json({ ok: true, colli }, { headers: cors });
+    const rows = await listColliBySpedId(ctx.params.id);
+    return NextResponse.json({ ok: true, rows });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || 'SERVER_ERROR' },
-      { status: 500, headers: cors }
-    );
+    return NextResponse.json({ ok: false, error: e?.message || 'SERVER_ERROR' }, { status: 500 });
   }
-}
-
-export async function OPTIONS(req: NextRequest) {
-  const cors = buildCorsHeaders(req.headers.get('origin') ?? undefined);
-  return new NextResponse(null, { status: 204, headers: cors });
 }
