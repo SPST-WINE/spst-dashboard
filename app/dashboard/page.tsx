@@ -1,4 +1,9 @@
 // app/dashboard/page.tsx
+
+// app/dashboard/page.tsx
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 import Link from "next/link";
 import {
   Package,
