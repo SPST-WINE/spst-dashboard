@@ -1,7 +1,8 @@
+// app/dashboard/nuova/vino/page.tsx
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import PartyCard, { Party } from '@/components/nuova/PartyCard';
 import ColliCard, { Collo } from '@/components/nuova/ColliCard';
 import RitiroCard from '@/components/nuova/RitiroCard';
@@ -24,21 +25,19 @@ const blankParty: Party = {
 };
 
 type SuccessInfo = {
-  id: string;              // Airtable record id (fallback)
-  idSped?: string;         // ✅ ID Spedizione custom
+  recId: string;
+  idSped: string; // ID Spedizione "umano"
   tipoSped: 'B2B' | 'B2C' | 'Sample';
   incoterm: 'DAP' | 'DDP' | 'EXW';
-  valuta: 'EUR' | 'USD' | 'GBP';
   dataRitiro?: string;
   colli: number;
   formato: 'Pacco' | 'Pallet';
-  contenuto?: string;
-  ritiroNote?: string;
-  mittente: Party;
   destinatario: Party;
 };
 
 export default function NuovaVinoPage() {
+  const router = useRouter();
+
   // Tipologia
   const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
   const [destAbilitato, setDestAbilitato] = useState(false);
@@ -86,7 +85,6 @@ export default function NuovaVinoPage() {
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [success, setSuccess] = useState<SuccessInfo | null>(null);
-  const [emailSent, setEmailSent] = useState<null | 'ok' | 'err'>(null);
   const topRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -95,7 +93,21 @@ export default function NuovaVinoPage() {
     }
   }, [errors.length]);
 
-  // Upload allegati (Firebase) + attach su Airtable
+  // ------- helper: fetch ID Spedizione "umano" dal meta endpoint -------
+  async function fetchIdSpedizione(recId: string): Promise<string> {
+    try {
+      const t = await getIdToken();
+      const r = await fetch(`/api/spedizioni/${recId}/meta`, {
+        headers: t ? { Authorization: `Bearer ${t}` } : undefined,
+      });
+      const j = await r.json();
+      return j?.idSpedizione || recId;
+    } catch {
+      return recId;
+    }
+  }
+
+  // ------- Upload allegati (Firebase) + attach su Airtable -------
   async function uploadAndAttach(spedId: string) {
     const storage = getStorage();
     const fattura: { url: string; filename?: string }[] = [];
@@ -120,7 +132,7 @@ export default function NuovaVinoPage() {
     }
   }
 
-  // Validazione client
+  // ------- Validazione client -------
   function validate(): string[] {
     const errs: string[] = [];
 
@@ -153,16 +165,19 @@ export default function NuovaVinoPage() {
     return errs;
   }
 
-  // Salva
+  // ------- Salva -------
   const salva = async () => {
     if (saving) return;
 
     const v = validate();
-    if (v.length) { setErrors(v); return; }
-    setErrors([]);
+    if (v.length) {
+      setErrors(v);
+      return;
+    } else {
+      setErrors([]);
+    }
 
     setSaving(true);
-    setEmailSent(null);
     try {
       const payload = {
         sorgente: 'vino' as const,
@@ -185,113 +200,97 @@ export default function NuovaVinoPage() {
         packingList: pl,
       };
 
+      // 1) Crea spedizione
       const res = await postSpedizione(payload, getIdToken);
+
+      // 2) Allegati
       await uploadAndAttach(res.id);
 
-      // invio email AUTOMATICO
-      try {
-        await postSpedizioneNotify(res.id, getIdToken);
-        setEmailSent('ok');
-      } catch {
-        setEmailSent('err');
-      }
+      // 3) Email automatica (non blocca il flusso se fallisce)
+      try { await postSpedizioneNotify(res.id, getIdToken); } catch {}
 
+      // 4) Recupera ID Spedizione "umano"
+      const idSped = await fetchIdSpedizione(res.id);
+
+      // 5) schermata conferma
       setSuccess({
-        id: res.id,
-        idSped: res.idSped,
+        recId: res.id,
+        idSped,
         tipoSped,
         incoterm,
-        valuta,
         dataRitiro: ritiroData?.toLocaleDateString(),
         colli: colli.length,
         formato,
-        contenuto,
-        ritiroNote,
-        mittente,
         destinatario,
       });
+      if (topRef.current) topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
       console.error('Errore salvataggio/allegati', e);
       setErrors(['Si è verificato un errore durante il salvataggio. Riprova più tardi.']);
     } finally {
       setSaving(false);
-      if (topRef.current) topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
 
-  // UI – schermata conferma
+  // ------- UI success -------
   if (success) {
+    const INFO_URL =
+      process.env.NEXT_PUBLIC_INFO_URL || '/dashboard/info';
+    const WHATSAPP_URL_BASE =
+      process.env.NEXT_PUBLIC_WHATSAPP_URL ||
+      'https://wa.me/393000000000';
+    const whatsappHref = `${WHATSAPP_URL_BASE}?text=${encodeURIComponent(
+      `Ciao SPST, ho bisogno di supporto sulla spedizione ${success.idSped}`
+    )}`;
+
     return (
       <div className="space-y-4" ref={topRef}>
         <h2 className="text-lg font-semibold">Spedizione creata</h2>
 
         <div className="rounded-2xl border bg-white p-4">
+          <div className="mb-3 text-sm">
+            <div className="font-medium">ID Spedizione</div>
+            <div className="font-mono">{success.idSped}</div>
+          </div>
+
           <div className="grid gap-3 md:grid-cols-2 text-sm">
-            <div>
-              <div className="font-medium">ID Spedizione</div>
-              <div className="font-mono">{success.idSped || success.id}</div>
-            </div>
-
-            <div>
-              <div className="font-medium">Incoterm</div>
-              <div>{success.incoterm}</div>
-            </div>
-
-            <div>
-              <div className="font-medium">Tipo</div>
-              <div>{success.tipoSped}</div>
-            </div>
-
-            <div>
-              <div className="font-medium">Valuta</div>
-              <div>{success.valuta}</div>
-            </div>
-
-            <div>
-              <div className="font-medium">Data ritiro</div>
-              <div>{success.dataRitiro ?? '—'}</div>
-            </div>
-
-            <div>
-              <div className="font-medium">Colli</div>
-              <div>{success.colli} ({success.formato})</div>
-            </div>
-
+            <div><span className="text-slate-500">Tipo:</span> {success.tipoSped}</div>
+            <div><span className="text-slate-500">Incoterm:</span> {success.incoterm}</div>
+            <div><span className="text-slate-500">Data ritiro:</span> {success.dataRitiro ?? '—'}</div>
+            <div><span className="text-slate-500">Colli:</span> {success.colli} ({success.formato})</div>
             <div className="md:col-span-2">
-              <div className="font-medium">Contenuto colli</div>
-              <div>{success.contenuto || '—'}</div>
-            </div>
-
-            <div className="md:col-span-2">
-              <div className="font-medium">Note ritiro</div>
-              <div>{success.ritiroNote || '—'}</div>
-            </div>
-
-            <div className="md:col-span-2">
-              <div className="font-medium">Mittente</div>
-              <div>{success.mittente.ragioneSociale} — {success.mittente.citta}</div>
-            </div>
-
-            <div className="md:col-span-2">
-              <div className="font-medium">Destinatario</div>
-              <div>{success.destinatario.ragioneSociale} — {success.destinatario.citta}</div>
+              <span className="text-slate-500">Destinatario:</span>{' '}
+              {success.destinatario.ragioneSociale || '—'}{success.destinatario.citta ? ` — ${success.destinatario.citta}` : ''}
             </div>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <Link
-              href="/dashboard/spedizioni"
+            <button
+              type="button"
+              onClick={() => router.push('/dashboard/spedizioni')}
               className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
             >
               Le mie spedizioni
-            </Link>
+            </button>
 
-            {emailSent === 'ok' && (
-              <span className="text-sm text-green-700">Email inviata ✅</span>
-            )}
-            {emailSent === 'err' && (
-              <span className="text-sm text-red-700">Invio email fallito</span>
-            )}
+            <a
+              href={INFO_URL}
+              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
+            >
+              Documenti & info utili
+            </a>
+
+            <a
+              href={whatsappHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50"
+              style={{ borderColor: '#f7911e' }}
+            >
+              Supporto WhatsApp
+            </a>
+
+            <span className="text-sm text-green-700">Email di conferma inviata ✅</span>
           </div>
 
           <div className="mt-6 text-xs text-slate-500">
@@ -302,7 +301,7 @@ export default function NuovaVinoPage() {
     );
   }
 
-  // UI – form
+  // ------- UI form -------
   return (
     <div className="space-y-4" ref={topRef}>
       <h2 className="text-lg font-semibold">Nuova spedizione — vino</h2>
@@ -343,7 +342,7 @@ export default function NuovaVinoPage() {
         />
       </div>
 
-      <PackingListVino value={pl} onChange={setPl} files={plFiles} onFiles={setPlFiles} />
+      <PackingListVino value={pl} onChange={setPl} onPickFile={(f) => f && setPlFiles([f])} />
 
       <ColliCard
         colli={colli}
