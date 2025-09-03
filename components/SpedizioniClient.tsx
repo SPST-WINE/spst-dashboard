@@ -3,18 +3,44 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { getIdToken } from '@/lib/firebase-client-auth';
+import Drawer from '@/components/Drawer';
+import ShipmentDetail from '@/components/ShipmentDetail';
 
 type Row = { id: string; [k: string]: any };
+type Att = { url: string; filename?: string };
+
+const ATT_FIELDS = {
+  LDV: ['LDV', 'Lettera di Vettura', 'Lettera di vettura', 'AWB'],
+  FATT: ['Fattura - Allegato Cliente', 'Fattura – Allegato Cliente', 'Fattura Cliente', 'Fattura', 'Invoice'],
+  PL: ['Packing List - Allegato Cliente', 'Packing List', 'PL - Allegato Cliente'],
+};
+
+function getDisplayId(r: Row) {
+  return (
+    r['ID Spedizione'] ||
+    r['ID SPST'] ||
+    r['ID Spedizione (custom)'] ||
+    r.id
+  );
+}
+
+function pickAtt(r: Row, names: string[]): Att[] {
+  for (const n of names) {
+    const v = r?.[n];
+    if (Array.isArray(v) && v.length && v[0]?.url) return v as Att[];
+  }
+  return [];
+}
 
 export default function SpedizioniClient() {
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Row | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
       try {
         setLoading(true);
@@ -32,7 +58,6 @@ export default function SpedizioniClient() {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           cache: 'no-store',
         });
-
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const j = await res.json();
@@ -49,20 +74,10 @@ export default function SpedizioniClient() {
         if (!cancelled) setLoading(false);
       }
     })();
-
     return () => {
       cancelled = true;
     };
   }, []);
-
-  function getDisplayId(r: Row) {
-    return (
-      r['ID Spedizione'] ||
-      r['ID SPST'] ||
-      r['ID Spedizione (custom)'] ||
-      r.id
-    );
-  }
 
   const filtered = useMemo(() => {
     const k = q.trim().toLowerCase();
@@ -86,13 +101,11 @@ export default function SpedizioniClient() {
     });
   }, [rows, q]);
 
-  if (err) {
-    return <div className="text-sm text-rose-700">Errore: {err}</div>;
-  }
+  if (err) return <div className="text-sm text-rose-700">Errore: {err}</div>;
 
   return (
-    <div className="space-y-4">
-      <div className="mb-2 flex items-center justify-between gap-3">
+    <>
+      <div className="mb-3 flex items-center justify-between gap-3">
         <input
           placeholder="Cerca per ID, destinatario, città, paese…"
           value={q}
@@ -118,6 +131,10 @@ export default function SpedizioniClient() {
             const destCountry = r['Destinatario - Paese'] || r['Paese Destinatario'] || '';
             const ritiro = r['Ritiro - Data'] || r['Ritiro Data'] || '—';
 
+            const ldv = pickAtt(r, ATT_FIELDS.LDV);
+            const fatt = pickAtt(r, ATT_FIELDS.FATT);
+            const pl = pickAtt(r, ATT_FIELDS.PL);
+
             return (
               <div key={r.id} className="rounded-xl border bg-white p-4 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -136,11 +153,63 @@ export default function SpedizioniClient() {
                   <span className="text-slate-500">Ritiro: </span>
                   {ritiro}
                 </div>
+
+                {/* Allegati */}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {ldv.length ? (
+                    <a
+                      href={ldv[0].url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-md border px-3 py-1 text-xs hover:bg-slate-50"
+                    >
+                      Scarica LDV
+                    </a>
+                  ) : (
+                    <span className="rounded-md border px-3 py-1 text-xs text-slate-500">
+                      LDV non disponibile
+                    </span>
+                  )}
+
+                  {fatt.length > 0 && (
+                    <a
+                      href={fatt[0].url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-md border px-3 py-1 text-xs hover:bg-slate-50"
+                    >
+                      Fattura{fatt.length > 1 ? ` (${fatt.length})` : ''}
+                    </a>
+                  )}
+
+                  {pl.length > 0 && (
+                    <a
+                      href={pl[0].url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-md border px-3 py-1 text-xs hover:bg-slate-50"
+                    >
+                      Packing List{pl.length > 1 ? ` (${pl.length})` : ''}
+                    </a>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setSelected(r)}
+                    className="ml-auto rounded-md border px-3 py-1 text-xs hover:bg-slate-50"
+                  >
+                    Mostra dettagli
+                  </button>
+                </div>
               </div>
             );
           })}
         </div>
       )}
-    </div>
+
+      <Drawer open={!!selected} onClose={() => setSelected(null)} title="Dettagli spedizione">
+        {selected && <ShipmentDetail f={selected} />}
+      </Drawer>
+    </>
   );
 }
