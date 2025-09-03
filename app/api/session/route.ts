@@ -1,64 +1,16 @@
-///spst-dashboard/app/api/session/route.ts
-
+// app/api/session/route.ts
 import { NextResponse, type NextRequest } from 'next/server';
 import { buildCorsHeaders } from '@/lib/cors';
 import { adminAuth } from '@/lib/firebase-admin';
-import { createSpedizioneWebApp, listSpedizioni } from '@/lib/airtable';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const COOKIE_NAME = 'spst_session';
+
 export async function OPTIONS(req: NextRequest) {
   const origin = req.headers.get('origin') ?? undefined;
   return new NextResponse(null, { status: 204, headers: buildCorsHeaders(origin) });
-}
-
-async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
-  // 1) Bearer ID token nell'Authorization header
-  const authHeader = req.headers.get('authorization') ?? '';
-  const m = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (m) {
-    try {
-      const decoded = await adminAuth().verifyIdToken(m[1], true);
-      console.log('Token ID decodificato con successo:', decoded.email); // Debug Log
-      return decoded.email || decoded.firebase?.identities?.email?.[0] || undefined;
-    } catch (e) {
-      console.error('Errore nella verifica del token ID:', e); // Debug Log
-      // continua coi fallback
-    }
-  }
-
-  // 2) Session cookie creato da /api/session
-  const session = req.cookies.get('spst_session')?.value;
-  if (session) {
-    try {
-      const decoded = await adminAuth().verifySessionCookie(session, true);
-      console.log('Session cookie decodificato con successo:', decoded.email); // Debug Log
-      return decoded.email || decoded.firebase?.identities?.email?.[0] || undefined;
-    } catch (e) {
-      console.error('Errore nella verifica del session cookie:', e); // Debug Log
-      // ignore
-    }
-  }
-
-  return undefined;
-}
-
-export async function GET(req: NextRequest) {
-  const origin = req.headers.get('origin') ?? undefined;
-  const cors = buildCorsHeaders(origin);
-
-  try {
-    const email = await getEmailFromAuth(req);
-    const rows = await listSpedizioni(email ? { email } : undefined);
-    return NextResponse.json({ ok: true, rows }, { headers: cors });
-  } catch (e: any) {
-    console.error('Errore nella GET request:', e); // Debug Log
-    return NextResponse.json(
-      { ok: false, error: e?.message || 'SERVER_ERROR' },
-      { status: 500, headers: cors }
-    );
-  }
 }
 
 export async function POST(req: NextRequest) {
@@ -66,38 +18,46 @@ export async function POST(req: NextRequest) {
   const cors = buildCorsHeaders(origin);
 
   try {
-    const payload: any = await req.json();
-    console.log('Payload ricevuto:', payload); // Debug Log
+    const { idToken, email: emailFromBody } = await req.json();
 
-    if (payload.token) {
-        // Crea un session cookie dal token ID
-        const sessionCookie = await adminAuth().createSessionCookie(payload.token, { expiresIn: 60 * 60 * 24 * 5 * 1000 });
-        const response = NextResponse.json({ ok: true, message: 'Sessione creata' }, { headers: cors });
-        response.cookies.set({
-            name: 'spst_session',
-            value: sessionCookie,
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            path: '/',
-        });
-        return response;
-    } else {
-        // Se non c'è il token, gestisci la logica di fallback
-        // Se non arriva già dal client, prova a valorizzare createdByEmail dai token/cookie
-        if (!payload.createdByEmail) {
-          const email = await getEmailFromAuth(req);
-          if (email) payload.createdByEmail = email;
-        }
-        const res = await createSpedizioneWebApp(payload);
-        console.log('Risposta da Airtable:', res); // Debug Log
-        return NextResponse.json({ ok: true, id: res.id }, { headers: cors });
+    if (!idToken) {
+      return NextResponse.json(
+        { ok: false, error: 'TOKEN_REQUIRED' },
+        { status: 400, headers: cors }
+      );
     }
+
+    // Verifica token ed estrai (se c’è) l’email
+    const decoded = await adminAuth().verifyIdToken(idToken, true);
+
+    let email: string | undefined =
+      decoded.email || decoded.firebase?.identities?.email?.[0] || emailFromBody;
+
+    // Fallback: prova a leggere dal record utente
+    if (!email) {
+      const user = await adminAuth().getUser(decoded.uid);
+      email = user.email || undefined;
+    }
+
+    // Crea Session Cookie (5 giorni)
+    const expiresIn = 1000 * 60 * 60 * 24 * 5;
+    const sessionCookie = await adminAuth().createSessionCookie(idToken, { expiresIn });
+
+    const res = NextResponse.json({ ok: true, email: email ?? null }, { headers: cors });
+    res.cookies.set(COOKIE_NAME, sessionCookie, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: expiresIn / 1000,
+    });
+
+    return res;
   } catch (e: any) {
-    // Questo log è il più importante e ti darà la causa esatta del 500.
-    console.error('Errore critico nella POST request:', e);
+    // Log server (visibile su Vercel)
+    console.error('SESSION_POST_ERROR', e?.message || e);
     return NextResponse.json(
-      { ok: false, error: e?.message || 'SERVER_ERROR' },
+      { ok: false, error: 'SERVER_ERROR' },
       { status: 500, headers: cors }
     );
   }
