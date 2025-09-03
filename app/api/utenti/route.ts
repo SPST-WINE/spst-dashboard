@@ -30,11 +30,14 @@ export async function GET(req: NextRequest) {
 
     if (email && typeof fn === 'function') {
       const rec = await fn(email);
-      return NextResponse.json({ ok: true, data: rec ? [rec] : [] }, { headers: cors });
+      // Rispondo in modo "compatibile": record singolo + fields + anche data:[] per retrocompatibilità
+      return NextResponse.json(
+        { ok: true, record: rec || null, fields: rec?.fields || null, data: rec ? [rec] : [] },
+        { headers: cors }
+      );
     }
 
-    // fallback: niente funzione => lista vuota
-    return NextResponse.json({ ok: true, data: [] }, { headers: cors });
+    return NextResponse.json({ ok: true, record: null, fields: null, data: [] }, { headers: cors });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
@@ -43,7 +46,8 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/utenti  body: { email, fields }
+// POST /api/utenti
+// Accetta SIA { email, fields: {...} } SIA un body piatto { email, "Paese Mittente": "...", ... }
 export async function POST(req: NextRequest) {
   const origin = readOrigin(req);
   const cors = buildCorsHeaders(origin);
@@ -51,13 +55,34 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const email: string | undefined = body?.email;
-    const fields: Record<string, any> = body?.fields || {};
 
     if (!email) {
       return NextResponse.json(
         { ok: false, error: 'EMAIL_REQUIRED' },
         { status: 400, headers: cors },
       );
+    }
+
+    // Allowlist dei campi accettati
+    const ALLOWED = new Set<string>([
+      'Paese Mittente',
+      'Mittente',
+      'Città Mittente',
+      'CAP Mittente',
+      'Indirizzo Mittente',
+      'Partita IVA Mittente',
+      'Telefono Mittente', // 👈 telefono
+    ]);
+
+    // Normalizza: se non arriva "fields", estrai dal body piatto
+    const incoming: Record<string, any> = body?.fields && typeof body.fields === 'object'
+      ? body.fields
+      : body;
+
+    const fields: Record<string, any> = {};
+    for (const [k, v] of Object.entries(incoming)) {
+      if (k === 'email') continue;
+      if (ALLOWED.has(k)) fields[k] = v;
     }
 
     const airtable: any = await import('@/lib/airtable').catch(() => ({}));
@@ -68,7 +93,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, record }, { headers: cors });
     }
 
-    // fallback: nessuna funzione implementata
     return NextResponse.json(
       { ok: true, record: null, note: 'upsertUtente non implementato' },
       { headers: cors },
