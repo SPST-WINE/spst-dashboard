@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+
 type Att = { url: string; filename?: string; name?: string };
 type FMap = Record<string, any>;
 
@@ -10,7 +12,6 @@ function getStr(f: FMap, keys: string[], def = '—') {
   }
   return def;
 }
-
 function getBool(f: FMap, keys: string[]) {
   for (const k of keys) {
     const v = f?.[k];
@@ -19,14 +20,13 @@ function getBool(f: FMap, keys: string[]) {
   }
   return false;
 }
-
 function getDateStr(f: FMap, keys: string[]) {
   const s = getStr(f, keys, '');
   if (!s) return '—';
   try { return new Date(s).toLocaleDateString(); } catch { return s; }
 }
 
-// Raccoglie tutti gli attachment dalle chiavi che “somigliano” a quelle note
+// Attachment grouping
 function pickAttachments(f: FMap) {
   const all: { key: string; list: Att[] }[] = [];
   for (const [k, v] of Object.entries(f || {})) {
@@ -34,24 +34,36 @@ function pickAttachments(f: FMap) {
       all.push({ key: k, list: v as Att[] });
     }
   }
-
   const match = (k: string, re: RegExp) => re.test(k.toLowerCase());
-
   const ldv = all.find(a => match(a.key, /(ldv|awb|lettera.*vett|waybill)/i))?.list ?? [];
   const fattura = all.find(a => match(a.key, /fattur/i))?.list ?? [];
   const packing = all.find(a => match(a.key, /packing/i))?.list ?? [];
-
-  // eventuali altri allegati fuori da questi gruppi
-  const known = new Set([...(all.find(a => match(a.key, /(ldv|awb|lettera.*vett|waybill)/i))?.list ?? []),
-                         ...fattura, ...packing]);
+  const known = new Set([...(ldv ?? []), ...(fattura ?? []), ...(packing ?? [])]);
   const altri: Att[] = [];
-  for (const a of all) for (const item of a.list) if (!known.has(item)) altri.push(item);
-
+  for (const a of all) for (const it of a.list) if (!known.has(it)) altri.push(it);
   return { ldv, fattura, packing, altri };
 }
 
+type ColloRow = { l?: number | null; w?: number | null; h?: number | null; peso?: number | null };
+
 export default function ShipmentDetail({ f }: { f: FMap }) {
-  // ID pubblico
+  const [colli, setColli] = useState<ColloRow[] | null>(null);
+
+  const recId = f?.id || f?.['id'];
+  useEffect(() => {
+    let abort = false;
+    (async () => {
+      if (!recId) { setColli([]); return; }
+      try {
+        const r = await fetch(`/api/spedizioni/${recId}/colli`, { cache: 'no-store' });
+        const j = await r.json().catch(() => ({}));
+        if (!abort) setColli(Array.isArray(j?.colli) ? j.colli : []);
+      } catch { if (!abort) setColli([]); }
+    })();
+    return () => { abort = true; };
+  }, [recId]);
+
+  // Header info
   const id = getStr(f, ['ID Spedizione', 'ID SPST', 'ID Spedizione (custom)']);
   const incoterm = getStr(f, ['Incoterm']);
   const tipo = getStr(f, ['Sottotipo', 'Tipo spedizione', 'Sottotipo (B2B, B2C, Sample)']);
@@ -66,7 +78,7 @@ export default function ShipmentDetail({ f }: { f: FMap }) {
                   .filter(Boolean).join(', ') || '—';
 
   // Destinatario
-  const d_rs   = getStr(f, ['Destinatario - Ragione Sociale']);
+  const d_rs   = getStr(f, ['Destinatario - Ragione Sociale','Destinatario']);
   const d_ref  = getStr(f, ['Destinatario - Referente']);
   const d_tel  = getStr(f, ['Destinatario - Telefono']);
   const d_addr = [getStr(f, ['Destinatario - Indirizzo',''], ''), getStr(f, ['Destinatario - CAP',''], ''),
@@ -84,14 +96,6 @@ export default function ShipmentDetail({ f }: { f: FMap }) {
   const f_piva = getStr(f, ['FATT PIVA/CF','FATT P.IVA/CF','FATT PIVA','FATT P.IVA'], '—');
   const f_same = getBool(f, ['FATT Uguale a Destinatario']);
   const f_delega = getBool(f, ['Fattura - Delega a SPST', 'Fattura – Delega a SPST', 'Delega Fattura']);
-
-  // Colli (se presenti in campi aggregati)
-  const colliTot = ((): string => {
-    const x = f?.['#'] ?? f?.['Tot Collli'] ?? f?.['Colli'] ?? null;
-    if (typeof x === 'number') return String(x);
-    if (typeof x === 'string' && x.trim()) return x.trim();
-    return '—';
-  })();
 
   const att = pickAttachments(f);
 
@@ -117,7 +121,8 @@ export default function ShipmentDetail({ f }: { f: FMap }) {
           <div className="text-xs text-slate-600">{d_addr}</div>
           <div className="text-xs">Tel: {d_tel}</div>
           <div className="mt-1 text-[11px]">
-            Abilitato import: <span className={d_abil ? 'text-green-700' : 'text-slate-600'}>
+            Abilitato import:{' '}
+            <span className={d_abil ? 'text-green-700' : 'text-slate-600'}>
               {d_abil ? 'Sì' : 'No'}
             </span>
           </div>
@@ -146,7 +151,8 @@ export default function ShipmentDetail({ f }: { f: FMap }) {
         <div className="text-xs text-slate-600">{f_addr}</div>
         <div className="text-xs">P.IVA/CF: {f_piva}</div>
         <div className="mt-1 text-[11px]">
-          Uguale a Destinatario: <span className={f_same ? 'text-green-700' : 'text-slate-600'}>
+          Uguale a Destinatario:{' '}
+          <span className={f_same ? 'text-green-700' : 'text-slate-600'}>
             {f_same ? 'Sì' : 'No'}
           </span>
           {' · '}
@@ -157,47 +163,59 @@ export default function ShipmentDetail({ f }: { f: FMap }) {
         </div>
       </div>
 
+      {/* COLLI */}
       <div className="rounded-md border p-2 text-sm">
-        <div className="text-xs font-semibold">Colli</div>
-        <div>{colliTot !== '—' ? `${colliTot} colli` : 'Nessun collo disponibile'}</div>
+        <div className="text-xs font-semibold mb-1">Colli</div>
+        {!colli
+          ? <div className="text-slate-500">Caricamento…</div>
+          : (colli.length
+              ? (
+                <div className="space-y-1">
+                  {colli.map((c, i) => (
+                    <div key={i} className="rounded border px-2 py-1 text-xs">
+                      Collo #{i + 1} — L: {c.l ?? '—'} cm · W: {c.w ?? '—'} cm · H: {c.h ?? '—'} cm · Peso: {c.peso ?? '—'} kg
+                    </div>
+                  ))}
+                </div>
+              )
+              : <div className="text-slate-500">Nessun collo disponibile</div>
+            )
+        }
       </div>
 
+      {/* ALLEGATI */}
       <div className="rounded-md border p-2 text-sm space-y-2">
         <div className="text-xs font-semibold">Allegati</div>
         <div className="flex flex-wrap gap-2">
-          {/* LDV */}
           {att.ldv.length ? (
             att.ldv.map((a, i) => (
               <a key={`ldv-${i}`} href={a.url} target="_blank" rel="noopener noreferrer"
                  className="rounded border px-2 py-1 text-xs hover:bg-slate-50">
-                Scarica LDV {a.filename ? `(${a.filename})` : ''}
+                Scarica LDV
               </a>
             ))
           ) : (
             <span className="rounded border px-2 py-1 text-xs text-slate-500">LDV non disponibile</span>
           )}
 
-          {/* Fattura */}
           {att.fattura.map((a, i) => (
             <a key={`fatt-${i}`} href={a.url} target="_blank" rel="noopener noreferrer"
                className="rounded border px-2 py-1 text-xs hover:bg-slate-50">
-              Fattura {a.filename ? `(${a.filename})` : ''}
+              Fattura
             </a>
           ))}
 
-          {/* Packing */}
           {att.packing.map((a, i) => (
             <a key={`pl-${i}`} href={a.url} target="_blank" rel="noopener noreferrer"
                className="rounded border px-2 py-1 text-xs hover:bg-slate-50">
-              Packing List {a.filename ? `(${a.filename})` : ''}
+              Packing List
             </a>
           ))}
 
-          {/* Altri */}
           {att.altri.map((a, i) => (
             <a key={`alt-${i}`} href={a.url} target="_blank" rel="noopener noreferrer"
                className="rounded border px-2 py-1 text-xs hover:bg-slate-50">
-              Allegato {a.filename ? `(${a.filename})` : ''}
+              Allegato
             </a>
           ))}
         </div>
