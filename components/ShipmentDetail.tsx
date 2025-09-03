@@ -47,22 +47,25 @@ function pickAttachments(f: FMap) {
 type ColloRow = { l?: number | null; w?: number | null; h?: number | null; peso?: number | null };
 
 export default function ShipmentDetail({ f }: { f: FMap }) {
-  const [colli, setColli] = useState<ColloRow[] | null>(null);
+const [colli, setColli] = useState<
+  { lunghezza_cm: number | null; larghezza_cm: number | null; altezza_cm: number | null; peso_kg: number | null }[]
+>([]);
 
   const recId = f?.id || f?.['id'];
   useEffect(() => {
-    let abort = false;
-    (async () => {
-      if (!recId) { setColli([]); return; }
-      try {
-        const r = await fetch(`/api/spedizioni/${recId}/colli`, { cache: 'no-store' });
-        const j = await r.json().catch(() => ({}));
-        if (!abort) setColli(Array.isArray(j?.colli) ? j.colli : []);
-      } catch { if (!abort) setColli([]); }
-    })();
-    return () => { abort = true; };
-  }, [recId]);
-
+  let stop = false;
+  (async () => {
+    try {
+      const r = await fetch(`/api/spedizioni/${f.id}/colli`, { cache: 'no-store' });
+      const j = await r.json();
+      if (!stop && Array.isArray(j?.rows)) setColli(j.rows);
+    } catch {
+      if (!stop) setColli([]);
+    }
+  })();
+  return () => { stop = true; };
+}, [f.id]);
+  
   // Header info
   const id = getStr(f, ['ID Spedizione', 'ID SPST', 'ID Spedizione (custom)']);
   const incoterm = getStr(f, ['Incoterm']);
@@ -164,24 +167,23 @@ export default function ShipmentDetail({ f }: { f: FMap }) {
       </div>
 
       {/* COLLI */}
-      <div className="rounded-md border p-2 text-sm">
-        <div className="text-xs font-semibold mb-1">Colli</div>
-        {!colli
-          ? <div className="text-slate-500">Caricamento…</div>
-          : (colli.length
-              ? (
-                <div className="space-y-1">
-                  {colli.map((c, i) => (
-                    <div key={i} className="rounded border px-2 py-1 text-xs">
-                      Collo #{i + 1} — L: {c.l ?? '—'} cm · W: {c.w ?? '—'} cm · H: {c.h ?? '—'} cm · Peso: {c.peso ?? '—'} kg
-                    </div>
-                  ))}
-                </div>
-              )
-              : <div className="text-slate-500">Nessun collo disponibile</div>
-            )
-        }
-      </div>
+      <div className="rounded-lg border p-3">
+  <div className="mb-1 text-sm font-medium">Colli</div>
+  {colli.length === 0 ? (
+    <div className="text-sm text-slate-500">Nessun collo disponibile</div>
+  ) : (
+    <div className="grid gap-2 md:grid-cols-2">
+      {colli.map((c, i) => (
+        <div key={i} className="rounded border p-2 text-sm">
+          <div className="font-medium mb-1">Collo #{i + 1}</div>
+          <div>L × W × H: {c.lunghezza_cm ?? '—'} × {c.larghezza_cm ?? '—'} × {c.altezza_cm ?? '—'} cm</div>
+          <div>Peso: {c.peso_kg ?? '—'} kg</div>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+
 
       {/* ALLEGATI */}
       <div className="rounded-md border p-2 text-sm space-y-2">
