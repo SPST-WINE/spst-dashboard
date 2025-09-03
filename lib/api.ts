@@ -48,21 +48,24 @@ export interface SpedizioneResponse {
   displayId: string;
 }
 
-export function postSpedizione(
+export async function postSpedizione(
   payload: any,
-  getIdToken?: GetIdToken
-): Promise<SpedizioneResponse> {
-  // Correggi il tipo di ritorno per usare la nuova interfaccia
-  return request<SpedizioneResponse>(
-    '/api/spedizioni',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+  getIdToken?: () => Promise<string | undefined>
+): Promise<{ id: string; idSped?: string }> {
+  const t = (await getIdToken?.()) || undefined;
+  const res = await fetch('/api/spedizioni', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(t ? { Authorization: `Bearer ${t}` } : {}),
     },
-    getIdToken
-  );
+    body: JSON.stringify(payload),
+  });
+  const j = await res.json();
+  if (!res.ok) throw new Error(j?.error || 'SERVER_ERROR');
+  return { id: j.id, idSped: j.idSped };
 }
+
 
 /** Restituisce SEMPRE un array (normalizzato) */
 export async function getSpedizioni(
