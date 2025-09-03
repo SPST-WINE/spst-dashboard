@@ -54,8 +54,8 @@ export async function POST(req: NextRequest) {
       const email = await getEmailFromAuth(req);
       if (email) payload.createdByEmail = email;
     }
-    const { id } = await createSpedizioneWebApp(payload);
-    return NextResponse.json({ ok: true, id }, { headers: cors });
+    const res = await createSpedizioneWebApp(payload);
+return NextResponse.json({ ok: true, id: res.id, idSped: res.idSpedizione }, { headers: cors });
   } catch (e: any) {
     console.error('SPEDIZIONI_POST_ERROR', e?.message || e);
     return NextResponse.json({ ok: false, error: 'SERVER_ERROR' }, { status: 500, headers: cors });
