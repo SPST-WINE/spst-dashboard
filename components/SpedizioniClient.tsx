@@ -2,111 +2,145 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
-import { authClient } from '@/lib/firebase-client';
-import { authedJson } from '@/lib/authed-fetch';
-import ShipmentCard from '@/components/ShipmentCard';
-import Drawer from '@/components/Drawer';
-import ShipmentDetail from '@/components/ShipmentDetail';
-import { ShipmentCardSkeleton } from '@/components/Skeletons';
+import { getIdToken } from '@/lib/firebase-client-auth';
 
-function normalizeArray(json: any): any[] {
-  if (Array.isArray(json)) return json;
-  if (Array.isArray(json?.data)) return json.data;
-  if (Array.isArray(json?.results)) return json.results;
-  return [];
-}
+type Row = { id: string; [k: string]: any };
 
 export default function SpedizioniClient() {
-  const [data, setData] = useState<any[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
   const [q, setQ] = useState('');
-  const [selected, setSelected] = useState<any | null>(null);
-  const [page, setPage] = useState(1);
-  const PAGE = 10;
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(authClient(), async (user) => {
-      if (!user) return;
+    let cancelled = false;
+
+    (async () => {
       try {
-        const json = await authedJson('/api/spedizioni');
-        setData(normalizeArray(json));
+        setLoading(true);
+        setErr(null);
+
+        const emailLS =
+          (typeof window !== 'undefined' && localStorage.getItem('userEmail')?.trim()) || '';
+        const token = await getIdToken().catch(() => undefined);
+
+        const url = emailLS
+          ? `/api/spedizioni?email=${encodeURIComponent(emailLS)}`
+          : `/api/spedizioni`;
+
+        const res = await fetch(url, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          cache: 'no-store',
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const j = await res.json();
+        const list: Row[] = Array.isArray(j?.rows)
+          ? j.rows
+          : Array.isArray(j?.data)
+          ? j.data
+          : [];
+
+        if (!cancelled) setRows(list);
       } catch (e: any) {
-        setErr(e?.message || 'Errore');
+        if (!cancelled) setErr(e?.message || 'Errore di caricamento');
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    });
-    return () => unsub();
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const filtered = useMemo(() => {
-    if (!data) return null;
-    const term = q.trim().toLowerCase();
-    if (!term) return data;
-
-    const pick = (f: any, k: string) =>
-      String(f?.[k] ?? '').toLowerCase();
-
-    return data.filter((f: any) =>
-      pick(f, 'ID Spedizione').includes(term) ||
-      pick(f, 'Destinatario').includes(term) ||
-      pick(f, 'Città Destinatario').includes(term) ||
-      pick(f, 'Paese Destinatario').includes(term)
-    );
-  }, [data, q]);
-
-  if (err) return <div className="p-4 text-red-600">Errore: {err}</div>;
-
-  if (!filtered) {
+  function getDisplayId(r: Row) {
     return (
-      <div className="space-y-3">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <div className="h-9 w-full rounded bg-gray-100 md:max-w-md" />
-          <div className="h-5 w-20 rounded bg-gray-100" />
-        </div>
-        {Array.from({ length: 6 }).map((_, i) => (
-          <ShipmentCardSkeleton key={i} />
-        ))}
-      </div>
+      r['ID Spedizione'] ||
+      r['ID SPST'] ||
+      r['ID Spedizione (custom)'] ||
+      r.id
     );
   }
 
-  const shown = filtered.slice(0, page * PAGE);
+  const filtered = useMemo(() => {
+    const k = q.trim().toLowerCase();
+    if (!k) return rows;
+
+    return rows.filter((r) => {
+      const id = String(getDisplayId(r)).toLowerCase();
+      const dRS = String(
+        r['Destinatario - Ragione Sociale'] || r['Destinatario'] || ''
+      ).toLowerCase();
+      const dCity = String(
+        r['Destinatario - Città'] || r['Città Destinatario'] || ''
+      ).toLowerCase();
+      const dCountry = String(
+        r['Destinatario - Paese'] || r['Paese Destinatario'] || ''
+      ).toLowerCase();
+
+      return (
+        id.includes(k) || dRS.includes(k) || dCity.includes(k) || dCountry.includes(k)
+      );
+    });
+  }, [rows, q]);
+
+  if (err) {
+    return <div className="text-sm text-rose-700">Errore: {err}</div>;
+  }
 
   return (
-    <>
-      <div className="mb-3 flex items-center justify-between gap-3">
+    <div className="space-y-4">
+      <div className="mb-2 flex items-center justify-between gap-3">
         <input
-          className="w-full rounded-lg border px-3 py-2 md:max-w-md"
           placeholder="Cerca per ID, destinatario, città, paese…"
           value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            setPage(1);
-          }}
+          onChange={(e) => setQ(e.target.value)}
+          className="w-full max-w-xl rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20"
         />
-        <div className="text-sm text-gray-500">{filtered.length} risultati</div>
+        <div className="text-sm text-slate-500">
+          {loading ? 'Caricamento…' : `${filtered.length} risultati`}
+        </div>
       </div>
 
-      <div className="grid gap-3">
-        {shown.map((f: any) => (
-          <ShipmentCard key={f.id || f['ID Spedizione']} f={f} onOpen={() => setSelected(f)} />
-        ))}
-      </div>
+      {loading ? (
+        <div className="text-sm text-slate-500">Recupero spedizioni…</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-sm text-slate-500">0 risultati</div>
+      ) : (
+        <div className="grid gap-3">
+          {filtered.map((r) => {
+            const id = getDisplayId(r);
+            const stato = r['Stato'] || '—';
+            const destRS = r['Destinatario - Ragione Sociale'] || r['Destinatario'] || '—';
+            const destCity = r['Destinatario - Città'] || r['Città Destinatario'] || '';
+            const destCountry = r['Destinatario - Paese'] || r['Paese Destinatario'] || '';
+            const ritiro = r['Ritiro - Data'] || r['Ritiro Data'] || '—';
 
-      {shown.length < filtered.length && (
-        <div className="mt-4 flex justify-center">
-          <button
-            onClick={() => setPage((p) => p + 1)}
-            className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            Carica altri
-          </button>
+            return (
+              <div key={r.id} className="rounded-xl border bg-white p-4 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-mono font-medium">{id}</div>
+                  <div className="rounded-md border px-2 py-0.5 text-xs">{stato}</div>
+                </div>
+
+                <div className="mt-2 text-slate-700">
+                  <span className="text-slate-500">Destinatario: </span>
+                  {destRS}
+                  {destCity ? ` — ${destCity}` : ''}
+                  {destCountry ? `, ${destCountry}` : ''}
+                </div>
+
+                <div className="mt-1 text-slate-700">
+                  <span className="text-slate-500">Ritiro: </span>
+                  {ritiro}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
-
-      <Drawer open={!!selected} onClose={() => setSelected(null)} title="Dettagli spedizione">
-        {selected && <ShipmentDetail f={selected} />}
-      </Drawer>
-    </>
+    </div>
   );
 }
