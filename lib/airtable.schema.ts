@@ -16,6 +16,7 @@ export const FUSER = {
   Citta: 'Città Mittente',
   CAP: 'CAP Mittente',
   Indirizzo: 'Indirizzo Mittente',
+  Telefono: 'Telefono Mittente',  
   PIVA: 'Partita IVA Mittente',
   CreatedAt: 'Data Creazione',
 } as const;
