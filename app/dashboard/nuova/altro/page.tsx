@@ -23,7 +23,6 @@ const blankParty: Party = {
 export default function NuovaAltroPage() {
   const router = useRouter();
 
-  // ----- stato base -----
   const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
   const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
   const [incoterm, setIncoterm] = useState<'DAP' | 'DDP' | 'EXW'>('DAP');
@@ -36,33 +35,32 @@ export default function NuovaAltroPage() {
     { lunghezza_cm: null, larghezza_cm: null, altezza_cm: null, peso_kg: null },
   ]);
 
-  const [ritiroData, setRitiroData] = useState<string | undefined>(undefined); // ISO date (YYYY-MM-DD)
+  const [ritiroData, setRitiroData] = useState<string | undefined>(undefined); // YYYY-MM-DD
   const [ritiroNote, setRitiroNote] = useState('');
 
+  const [contenuto, setContenuto] = useState<string>(''); // <-- serve a ColliCard
   const [noteFatt, setNoteFatt] = useState('');
   const [delega, setDelega] = useState(false);
   const [sameAsDest, setSameAsDest] = useState(false);
   const [fatturazione, setFatturazione] = useState<Party>(blankParty);
 
-  // ----- allegati -----
+  // Allegati
   const [fatturaFile, setFatturaFile] = useState<File | null>(null);
   const [plFiles, setPlFiles] = useState<File[]>([]);
 
-  // Prefill mittente da profilo Airtable (tabella UTENTI)
+  // Prefill mittente da UTENTI (Airtable)
   useEffect(() => {
     (async () => {
       try {
         const r = await getUserProfile(getIdToken);
         if (r?.ok && r?.party) {
           setMittente(prev => ({ ...prev, ...r.party }));
-          // se vuoi pre-fill anche la fatturazione:
           setFatturazione(prev => ({ ...prev, ...r.party }));
         }
-      } catch { /* opzionale: ignora errori */ }
+      } catch {}
     })();
   }, []);
 
-  // Upload + attach su Firebase Storage -> Airtable
   async function uploadAndAttach(spedId: string) {
     const storage = getStorage();
     const fattura: { url: string; filename?: string }[] = [];
@@ -91,7 +89,7 @@ export default function NuovaAltroPage() {
     const payload = {
       sorgente: 'altro' as const,
       tipoSped,
-      contenuto: '', // opzionale per "altro"
+      contenuto,
       formato,
       ritiroData: ritiroData ? new Date(ritiroData).toISOString() : undefined,
       ritiroNote,
@@ -110,7 +108,6 @@ export default function NuovaAltroPage() {
     const res = await postSpedizione(payload, getIdToken);
     try {
       await uploadAndAttach(res.id);
-      // Vai alla lista o mostra conferma
       router.push(`/dashboard/nuova/altro?ok=${encodeURIComponent(res.id)}`);
     } catch (e) {
       console.error('Upload allegati fallito:', e);
@@ -120,7 +117,7 @@ export default function NuovaAltroPage() {
 
   return (
     <div className="space-y-4">
-      {/* Dettagli spedizione (selettori base) */}
+      {/* Dettagli spedizione */}
       <div className="rounded-2xl border bg-white p-4">
         <h3 className="mb-3 font-medium">Dettagli spedizione</h3>
         <div className="grid gap-3 md:grid-cols-4">
@@ -209,8 +206,15 @@ export default function NuovaAltroPage() {
         </div>
       </div>
 
-      {/* Colli */}
-      <ColliCard colli={colli} onChange={setColli} />
+      {/* Colli (➕ props richieste da ColliCard) */}
+      <ColliCard
+        colli={colli}
+        onChange={setColli}
+        formato={formato}
+        setFormato={setFormato}
+        contenuto={contenuto}
+        setContenuto={setContenuto}
+      />
 
       {/* Fatturazione */}
       <div className="rounded-2xl border bg-white p-4 space-y-3">
