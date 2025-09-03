@@ -597,3 +597,32 @@ export async function listColliBySpedizione(recId: string): Promise<Array<{
 
   return out;
 }
+
+// --- LISTA COLLI PER SPEDIZIONE -------------------------------------------
+export async function listColliBySpedId(recId: string): Promise<
+  { lunghezza_cm: number | null; larghezza_cm: number | null; altezza_cm: number | null; peso_kg: number | null }[]
+> {
+  const b = base();
+  const out: { lunghezza_cm: number | null; larghezza_cm: number | null; altezza_cm: number | null; peso_kg: number | null }[] = [];
+
+  // Per i campi linkati usiamo SEARCH su ARRAYJOIN
+  const formula = `SEARCH("${recId}", ARRAYJOIN({${FCOLLO.LinkSped}}))`;
+
+  await b(TABLE.COLLI)
+    .select({ filterByFormula: formula, pageSize: 50 })
+    .eachPage((records, next) => {
+      for (const r of records) {
+        const f = r.fields as Record<string, any>;
+        out.push({
+          lunghezza_cm: typeof f[FCOLLO.L] === 'number' ? f[FCOLLO.L] : null,
+          larghezza_cm: typeof f[FCOLLO.W] === 'number' ? f[FCOLLO.W] : null,
+          altezza_cm: typeof f[FCOLLO.H] === 'number' ? f[FCOLLO.H] : null,
+          peso_kg: typeof f[FCOLLO.Peso] === 'number' ? f[FCOLLO.Peso] : null,
+        });
+      }
+      next();
+    });
+
+  return out;
+}
+
