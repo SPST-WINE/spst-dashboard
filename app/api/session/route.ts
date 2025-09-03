@@ -1,4 +1,5 @@
-// app/api/session/route.ts
+///spst-dashboard/app/api/session/route.ts
+
 import { NextResponse, type NextRequest } from 'next/server';
 import { buildCorsHeaders } from '@/lib/cors';
 import { adminAuth } from '@/lib/firebase-admin';
@@ -68,18 +69,33 @@ export async function POST(req: NextRequest) {
     const payload: any = await req.json();
     console.log('Payload ricevuto:', payload); // Debug Log
 
-    // Se non arriva già dal client, prova a valorizzare createdByEmail dai token/cookie
-    if (!payload.createdByEmail) {
-      const email = await getEmailFromAuth(req);
-      if (email) payload.createdByEmail = email;
+    if (payload.token) {
+        // Crea un session cookie dal token ID
+        const sessionCookie = await adminAuth().createSessionCookie(payload.token, { expiresIn: 60 * 60 * 24 * 5 * 1000 });
+        const response = NextResponse.json({ ok: true, message: 'Sessione creata' }, { headers: cors });
+        response.cookies.set({
+            name: 'spst_session',
+            value: sessionCookie,
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            path: '/',
+        });
+        return response;
+    } else {
+        // Se non c'è il token, gestisci la logica di fallback
+        // Se non arriva già dal client, prova a valorizzare createdByEmail dai token/cookie
+        if (!payload.createdByEmail) {
+          const email = await getEmailFromAuth(req);
+          if (email) payload.createdByEmail = email;
+        }
+        const res = await createSpedizioneWebApp(payload);
+        console.log('Risposta da Airtable:', res); // Debug Log
+        return NextResponse.json({ ok: true, id: res.id }, { headers: cors });
     }
-
-    const res = await createSpedizioneWebApp(payload);
-    console.log('Risposta da Airtable:', res); // Debug Log
-    return NextResponse.json({ ok: true, id: res.id }, { headers: cors });
   } catch (e: any) {
     // Questo log è il più importante e ti darà la causa esatta del 500.
-    console.error('Errore critico nella POST request:', e); 
+    console.error('Errore critico nella POST request:', e);
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
       { status: 500, headers: cors }
