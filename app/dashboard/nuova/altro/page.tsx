@@ -1,13 +1,21 @@
 // app/dashboard/nuova/altro/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import PartyCard, { Party } from '@/components/nuova/PartyCard';
 import ColliCard, { Collo } from '@/components/nuova/ColliCard';
-import { postSpedizione, postSpedizioneAttachments, getUserProfile } from '@/lib/api';
+import RitiroCard from '@/components/nuova/RitiroCard';
+import FatturaCard from '@/components/nuova/FatturaCard';
+import { Select } from '@/components/nuova/Field';
+import {
+  postSpedizione,
+  postSpedizioneAttachments,
+  postSpedizioneNotify,
+  getUserProfile,
+} from '@/lib/api';
 import { getIdToken } from '@/lib/firebase-client-auth';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { useRouter } from 'next/navigation';
 
 const blankParty: Party = {
   ragioneSociale: '',
@@ -20,193 +28,328 @@ const blankParty: Party = {
   piva: '',
 };
 
+type SuccessInfo = {
+  recId: string;
+  idSped: string; // ID Spedizione "umano"
+  tipoSped: 'B2B' | 'B2C' | 'Sample';
+  incoterm: 'DAP' | 'DDP' | 'EXW';
+  dataRitiro?: string;
+  colli: number;
+  formato: 'Pacco' | 'Pallet';
+  destinatario: Party;
+};
+
 export default function NuovaAltroPage() {
   const router = useRouter();
 
+  // Tipologia
   const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
-  const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
-  const [incoterm, setIncoterm] = useState<'DAP' | 'DDP' | 'EXW'>('DAP');
-  const [valuta, setValuta] = useState<'EUR' | 'USD' | 'GBP'>('EUR');
+  const [destAbilitato, setDestAbilitato] = useState(false);
 
+  // Parti
   const [mittente, setMittente] = useState<Party>(blankParty);
   const [destinatario, setDestinatario] = useState<Party>(blankParty);
 
-  const [colli, setColli] = useState<Collo[]>([
-    { lunghezza_cm: null, larghezza_cm: null, altezza_cm: null, peso_kg: null },
-  ]);
-
-  const [ritiroData, setRitiroData] = useState<string | undefined>(undefined); // YYYY-MM-DD
-  const [ritiroNote, setRitiroNote] = useState('');
-
-  const [contenuto, setContenuto] = useState<string>(''); // <-- serve a ColliCard
-  const [noteFatt, setNoteFatt] = useState('');
-  const [delega, setDelega] = useState(false);
-  const [sameAsDest, setSameAsDest] = useState(false);
-  const [fatturazione, setFatturazione] = useState<Party>(blankParty);
-
-  // Allegati
-  const [fatturaFile, setFatturaFile] = useState<File | null>(null);
-  const [plFiles, setPlFiles] = useState<File[]>([]);
-
   // Prefill mittente da UTENTI (Airtable)
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const r = await getUserProfile(getIdToken);
-        if (r?.ok && r?.party) {
+        if (!cancelled && r?.ok && r?.party) {
           setMittente(prev => ({ ...prev, ...r.party }));
-          setFatturazione(prev => ({ ...prev, ...r.party }));
         }
       } catch {}
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  async function uploadAndAttach(spedId: string) {
-    const storage = getStorage();
-    const fattura: { url: string; filename?: string }[] = [];
-    const packing: { url: string; filename?: string }[] = [];
+  // Colli
+  const [colli, setColli] = useState<Collo[]>([
+    { lunghezza_cm: null, larghezza_cm: null, altezza_cm: null, peso_kg: null },
+  ]);
+  const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
+  const [contenuto, setContenuto] = useState<string>('');
 
-    if (fatturaFile) {
-      const r = ref(storage, `spedizioni/${spedId}/fattura/${fatturaFile.name}`);
-      await uploadBytes(r, fatturaFile);
-      const url = await getDownloadURL(r);
-      fattura.push({ url, filename: fatturaFile.name });
+  // Ritiro
+  const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
+  const [ritiroNote, setRitiroNote] = useState('');
+
+  // Fattura
+  const [incoterm, setIncoterm] = useState<'DAP' | 'DDP' | 'EXW'>('DAP');
+  const [valuta, setValuta] = useState<'EUR' | 'USD' | 'GBP'>('EUR');
+  const [noteFatt, setNoteFatt] = useState('');
+  const [delega, setDelega] = useState(false);
+  const [fatturazione, setFatturazione] = useState<Party>(blankParty);
+  const [sameAsDest, setSameAsDest] = useState(false);
+  const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined);
+
+  // UI state
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [success, setSuccess] = useState<SuccessInfo | null>(null);
+  const topRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (errors.length && topRef.current) {
+      topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
+  }, [errors.length]);
 
-    for (const f of plFiles) {
-      const r = ref(storage, `spedizioni/${spedId}/packing/${f.name}`);
-      await uploadBytes(r, f);
-      const url = await getDownloadURL(r);
-      packing.push({ url, filename: f.name });
-    }
-
-    if (fattura.length || packing.length) {
-      await postSpedizioneAttachments(spedId, { fattura, packing }, getIdToken);
-    }
-  }
-
-  async function salva() {
-    const payload = {
-      sorgente: 'altro' as const,
-      tipoSped,
-      contenuto,
-      formato,
-      ritiroData: ritiroData ? new Date(ritiroData).toISOString() : undefined,
-      ritiroNote,
-      mittente,
-      destinatario,
-      incoterm,
-      valuta,
-      noteFatt,
-      fatturazione: sameAsDest ? destinatario : fatturazione,
-      fattSameAsDest: sameAsDest,
-      fattDelega: delega,
-      fatturaFileName: fatturaFile?.name || null,
-      colli,
-    };
-
-    const res = await postSpedizione(payload, getIdToken);
+  // ID Spedizione "umano" dal meta endpoint
+  async function fetchIdSpedizione(recId: string): Promise<string> {
     try {
-      await uploadAndAttach(res.id);
-      router.push(`/dashboard/nuova/altro?ok=${encodeURIComponent(res.id)}`);
-    } catch (e) {
-      console.error('Upload allegati fallito:', e);
-      router.push(`/dashboard/nuova/altro?ok=${encodeURIComponent(res.id)}&attach=ko`);
+      const t = await getIdToken();
+      const r = await fetch(`/api/spedizioni/${recId}/meta`, {
+        headers: t ? { Authorization: `Bearer ${t}` } : undefined,
+      });
+      const j = await r.json();
+      return j?.idSpedizione || recId;
+    } catch {
+      return recId;
     }
   }
 
-  return (
-    <div className="space-y-4">
-      {/* Dettagli spedizione */}
-      <div className="rounded-2xl border bg-white p-4">
-        <h3 className="mb-3 font-medium">Dettagli spedizione</h3>
-        <div className="grid gap-3 md:grid-cols-4">
-          <div>
-            <label className="mb-1 block text-sm">Tipo</label>
-            <select
-              value={tipoSped}
-              onChange={(e) => setTipoSped(e.target.value as any)}
-              className="w-full rounded-lg border px-3 py-2 text-sm"
-            >
-              <option value="B2B">B2B</option>
-              <option value="B2C">B2C</option>
-              <option value="Sample">Sample</option>
-            </select>
+  // Upload allegati (solo fattura) + attach su Airtable
+  async function uploadAndAttach(spedId: string) {
+    if (!fatturaFile) return;
+    const storage = getStorage();
+    const r = ref(storage, `spedizioni/${spedId}/fattura/${fatturaFile.name}`);
+    await uploadBytes(r, fatturaFile);
+    const url = await getDownloadURL(r);
+    await postSpedizioneAttachments(
+      spedId,
+      { fattura: [{ url, filename: fatturaFile.name }] },
+      getIdToken
+    );
+  }
+
+  // Validazione client
+  function validate(): string[] {
+    const errs: string[] = [];
+
+    if (!mittente.piva?.trim()) errs.push('Partita IVA/Codice Fiscale del mittente mancante.');
+
+    colli.forEach((c, i) => {
+      const miss =
+        c.lunghezza_cm == null ||
+        c.larghezza_cm == null ||
+        c.altezza_cm == null ||
+        c.peso_kg == null;
+      const nonPos =
+        (c.lunghezza_cm ?? 0) <= 0 ||
+        (c.larghezza_cm ?? 0) <= 0 ||
+        (c.altezza_cm ?? 0) <= 0 ||
+        (c.peso_kg ?? 0) <= 0;
+      if (miss || nonPos) errs.push(`Collo #${i + 1}: inserire tutte le misure e un peso > 0.`);
+    });
+
+    if (!ritiroData) errs.push('Seleziona il giorno di ritiro.');
+
+    if (!fatturaFile) {
+      const fatt = sameAsDest ? destinatario : fatturazione;
+      if (!fatt.ragioneSociale?.trim()) errs.push('Dati fattura: ragione sociale mancante.');
+      if ((tipoSped === 'B2B' || tipoSped === 'Sample') && !fatt.piva?.trim()) {
+        errs.push('Dati fattura: P.IVA/CF obbligatoria per B2B e Campionatura.');
+      }
+    }
+
+    return errs;
+  }
+
+  // Salva
+  const salva = async () => {
+    if (saving) return;
+
+    const v = validate();
+    if (v.length) {
+      setErrors(v);
+      return;
+    } else {
+      setErrors([]);
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        sorgente: 'altro' as const,
+        tipoSped,
+        destAbilitato,
+        contenuto,
+        formato,
+        ritiroData: ritiroData ? ritiroData.toISOString() : undefined,
+        ritiroNote,
+        mittente,
+        destinatario,
+        incoterm,
+        valuta,
+        noteFatt,
+        fatturazione: sameAsDest ? destinatario : fatturazione,
+        fattSameAsDest: sameAsDest,
+        fattDelega: delega,
+        fatturaFileName: fatturaFile?.name || null,
+        colli,
+        // nessuna packingList
+      };
+
+      // 1) Crea spedizione
+      const res = await postSpedizione(payload, getIdToken);
+
+      // 2) Allegati (solo fattura se presente)
+      await uploadAndAttach(res.id);
+
+      // 3) Email automatica (best-effort)
+      try {
+        await postSpedizioneNotify(res.id, getIdToken);
+      } catch {}
+
+      // 4) Recupera ID Spedizione "umano"
+      const idSped = await fetchIdSpedizione(res.id);
+
+      // 5) Schermata conferma
+      setSuccess({
+        recId: res.id,
+        idSped,
+        tipoSped,
+        incoterm,
+        dataRitiro: ritiroData?.toLocaleDateString(),
+        colli: colli.length,
+        formato,
+        destinatario,
+      });
+      if (topRef.current) topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (e) {
+      console.error('Errore salvataggio/allegati', e);
+      setErrors(['Si è verificato un errore durante il salvataggio. Riprova più tardi.']);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // UI success
+  if (success) {
+    const INFO_URL = process.env.NEXT_PUBLIC_INFO_URL || '/dashboard/informazioni-utili';
+    const WHATSAPP_URL_BASE =
+      process.env.NEXT_PUBLIC_WHATSAPP_URL || 'https://wa.me/393000000000';
+    const whatsappHref = `${WHATSAPP_URL_BASE}?text=${encodeURIComponent(
+      `Ciao SPST, ho bisogno di supporto sulla spedizione ${success.idSped}`
+    )}`;
+
+    return (
+      <div className="space-y-4" ref={topRef}>
+        <h2 className="text-lg font-semibold">Spedizione creata</h2>
+
+        <div className="rounded-2xl border bg-white p-4">
+          <div className="mb-3 text-sm">
+            <div className="font-medium">ID Spedizione</div>
+            <div className="font-mono">{success.idSped}</div>
           </div>
 
-          <div>
-            <label className="mb-1 block text-sm">Formato</label>
-            <select
-              value={formato}
-              onChange={(e) => setFormato(e.target.value as any)}
-              className="w-full rounded-lg border px-3 py-2 text-sm"
-            >
-              <option value="Pacco">Pacco</option>
-              <option value="Pallet">Pallet</option>
-            </select>
+          <div className="grid gap-3 md:grid-cols-2 text-sm">
+            <div>
+              <span className="text-slate-500">Tipo:</span> {success.tipoSped}
+            </div>
+            <div>
+              <span className="text-slate-500">Incoterm:</span> {success.incoterm}
+            </div>
+            <div>
+              <span className="text-slate-500">Data ritiro:</span>{' '}
+              {success.dataRitiro ?? '—'}
+            </div>
+            <div>
+              <span className="text-slate-500">Colli:</span> {success.colli} ({success.formato})
+            </div>
+            <div className="md:col-span-2">
+              <span className="text-slate-500">Destinatario:</span>{' '}
+              {success.destinatario.ragioneSociale || '—'}
+              {success.destinatario.citta ? ` — ${success.destinatario.citta}` : ''}
+            </div>
           </div>
 
-          <div>
-            <label className="mb-1 block text-sm">Incoterm</label>
-            <select
-              value={incoterm}
-              onChange={(e) => setIncoterm(e.target.value as any)}
-              className="w-full rounded-lg border px-3 py-2 text-sm"
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => router.push('/dashboard/spedizioni')}
+              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
             >
-              <option value="DAP">DAP</option>
-              <option value="DDP">DDP</option>
-              <option value="EXW">EXW</option>
-            </select>
+              Le mie spedizioni
+            </button>
+
+            <a
+              href={INFO_URL}
+              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
+            >
+              Documenti & info utili
+            </a>
+
+            <a
+              href={whatsappHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50"
+              style={{ borderColor: '#f7911e' }}
+            >
+              Supporto WhatsApp
+            </a>
+
+            <span className="text-sm text-green-700">Email di conferma inviata ✅</span>
           </div>
 
-          <div>
-            <label className="mb-1 block text-sm">Valuta</label>
-            <select
-              value={valuta}
-              onChange={(e) => setValuta(e.target.value as any)}
-              className="w-full rounded-lg border px-3 py-2 text-sm"
-            >
-              <option value="EUR">EUR</option>
-              <option value="USD">USD</option>
-              <option value="GBP">GBP</option>
-            </select>
+          <div className="mt-6 text-xs text-slate-500">
+            Suggerimento: conserva l’ID per future comunicazioni. Puoi chiudere questa pagina.
           </div>
         </div>
       </div>
+    );
+  }
 
-      {/* Mittente / Destinatario */}
+  // UI form
+  return (
+    <div className="space-y-4" ref={topRef}>
+      <h2 className="text-lg font-semibold">Nuova spedizione — altro</h2>
+
+      {!!errors.length && (
+        <div className="rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+          <div className="font-medium mb-1">Controlla questi campi:</div>
+          <ul className="list-disc ml-5 space-y-1">
+            {errors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="rounded-2xl border bg-white p-4">
+        <Select
+          label="Stai spedendo ad un privato? O ad una azienda?"
+          value={tipoSped}
+          onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Sample')}
+          options={[
+            { label: 'B2C — privato / cliente', value: 'B2C' },
+            { label: 'B2B — azienda', value: 'B2B' },
+            { label: 'Sample — campionatura', value: 'Sample' },
+          ]}
+        />
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2">
         <PartyCard title="Mittente" value={mittente} onChange={setMittente} />
-        <PartyCard title="Destinatario" value={destinatario} onChange={setDestinatario} />
+        <PartyCard
+          title="Destinatario"
+          value={destinatario}
+          onChange={setDestinatario}
+          extraSwitch={{
+            label: 'Destinatario abilitato all’import',
+            checked: destAbilitato,
+            onChange: setDestAbilitato,
+          }}
+        />
       </div>
 
-      {/* Ritiro */}
-      <div className="rounded-2xl border bg-white p-4">
-        <h3 className="mb-3 font-medium">Ritiro</h3>
-        <div className="grid gap-3 md:grid-cols-3">
-          <div>
-            <label className="mb-1 block text-sm">Data ritiro</label>
-            <input
-              type="date"
-              value={ritiroData || ''}
-              onChange={(e) => setRitiroData(e.target.value || undefined)}
-              className="w-full rounded-lg border px-3 py-2 text-sm"
-            />
-          </div>
-          <div className="md:col-span-2">
-            <label className="mb-1 block text-sm">Note ritiro</label>
-            <input
-              type="text"
-              value={ritiroNote}
-              onChange={(e) => setRitiroNote(e.target.value)}
-              placeholder="Istruzioni per il ritiro…"
-              className="w-full rounded-lg border px-3 py-2 text-sm"
-            />
-          </div>
-        </div>
-      </div>
+      {/* Nessuna Packing List qui */}
 
-      {/* Colli (➕ props richieste da ColliCard) */}
       <ColliCard
         colli={colli}
         onChange={setColli}
@@ -216,81 +359,43 @@ export default function NuovaAltroPage() {
         setContenuto={setContenuto}
       />
 
-      {/* Fatturazione */}
-      <div className="rounded-2xl border bg-white p-4 space-y-3">
-        <h3 className="font-medium">Fatturazione</h3>
+      <RitiroCard
+        date={ritiroData}
+        setDate={setRitiroData}
+        note={ritiroNote}
+        setNote={setRitiroNote}
+      />
 
-        <label className="inline-flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={sameAsDest}
-            onChange={(e) => setSameAsDest(e.target.checked)}
-          />
-          <span>Uguale al Destinatario</span>
-        </label>
-
-        {!sameAsDest && (
-          <PartyCard title="Dati fatturazione" value={fatturazione} onChange={setFatturazione} />
-        )}
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <label className="inline-flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={delega}
-              onChange={(e) => setDelega(e.target.checked)}
-            />
-            <span>Delega fattura a SPST</span>
-          </label>
-
-          <div>
-            <label className="mb-1 block text-sm">Note fattura</label>
-            <input
-              type="text"
-              value={noteFatt}
-              onChange={(e) => setNoteFatt(e.target.value)}
-              className="w-full rounded-lg border px-3 py-2 text-sm"
-              placeholder="Note opzionali…"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Allegati (opzionali) */}
-      <div className="rounded-2xl border bg-white p-4">
-        <h3 className="font-medium mb-2">Allegati (opzionali)</h3>
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <div>
-            <label className="block text-sm mb-1">Fattura (PDF/JPG/PNG)</label>
-            <input
-              type="file"
-              accept="application/pdf,image/*"
-              onChange={(e) => setFatturaFile(e.target.files?.[0] ?? null)}
-              className="block w-full rounded-lg border px-3 py-2 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm mb-1">Packing List (uno o più file)</label>
-            <input
-              type="file"
-              multiple
-              accept="application/pdf,image/*"
-              onChange={(e) => setPlFiles(Array.from(e.target.files || []))}
-              className="block w-full rounded-lg border px-3 py-2 text-sm"
-            />
-          </div>
-        </div>
-      </div>
+      <FatturaCard
+        incoterm={incoterm}
+        setIncoterm={setIncoterm}
+        valuta={valuta}
+        setValuta={setValuta}
+        note={noteFatt}
+        setNote={setNoteFatt}
+        delega={delega}
+        setDelega={setDelega}
+        fatturazione={fatturazione}
+        setFatturazione={setFatturazione}
+        destinatario={destinatario}
+        sameAsDest={sameAsDest}
+        setSameAsDest={setSameAsDest}
+        fatturaFile={fatturaFile}
+        setFatturaFile={setFatturaFile}
+      />
 
       <div className="flex justify-end">
         <button
           type="button"
           onClick={salva}
-          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
+          disabled={saving}
+          aria-busy={saving}
+          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
         >
-          Salva
+          {saving && (
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border border-slate-400 border-t-transparent" />
+          )}
+          {saving ? 'Salvataggio…' : 'Salva'}
         </button>
       </div>
     </div>
