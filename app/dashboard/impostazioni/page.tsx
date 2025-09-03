@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { getUserProfile, saveUserProfile } from '@/lib/api';
+import { getIdToken } from '@/lib/firebase-client-auth';
 
 type FormState = {
   paese: string;
@@ -29,39 +31,44 @@ export default function ImpostazioniPage() {
   const [saving, setSaving] = useState<boolean>(false);
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
+  // Prefill: prova a leggere email + dati mittente da /api/profile (autenticato)
   useEffect(() => {
-    const stored = typeof window !== 'undefined' ? localStorage.getItem('userEmail') : null;
-    if (stored) setEmail(stored);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    if (!email) return;
     let aborted = false;
     (async () => {
       try {
         setLoading(true);
-        const res = await fetch(`/api/utenti?email=${encodeURIComponent(email)}`, { cache: 'no-store' });
-        const data = await res.json();
-        if (aborted) return;
-        if (data?.fields) {
-          setForm({
-            paese: data.fields['Paese Mittente'] || '',
-            mittente: data.fields['Mittente'] || '',
-            citta: data.fields['Città Mittente'] || '',
-            cap: data.fields['CAP Mittente'] || '',
-            indirizzo: data.fields['Indirizzo Mittente'] || '',
-            telefono: data.fields['Telefono Mittente'] || '',
-            piva: data.fields['Partita IVA Mittente'] || '',
-          });
+        // 1) prova da backend (cookie sessione / bearer idToken)
+        const r = await getUserProfile(getIdToken);
+        if (!aborted && r?.ok) {
+          if (r.email) setEmail(r.email);
+          if (r.party) {
+            setForm({
+              paese: r.party.paese ?? '',
+              mittente: r.party.ragioneSociale ?? '',
+              citta: r.party.citta ?? '',
+              cap: r.party.cap ?? '',
+              indirizzo: r.party.indirizzo ?? '',
+              telefono: r.party.telefono ?? '',
+              piva: r.party.piva ?? '',
+            });
+          }
+        }
+
+        // 2) fallback (solo UI): localStorage -> mantiene il tuo comportamento
+        if (!aborted && !r?.email) {
+          const stored = typeof window !== 'undefined' ? localStorage.getItem('userEmail') : null;
+          if (stored) setEmail(stored);
         }
       } finally {
         if (!aborted) setLoading(false);
       }
     })();
-    return () => { aborted = true; };
-  }, [email]);
+    return () => {
+      aborted = true;
+    };
+  }, []);
 
+  // abilita Salva se c'è email e almeno un campo base
   const canSave = useMemo(() => {
     return !!email && (form.mittente.trim().length > 0 || form.indirizzo.trim().length > 0);
   }, [email, form]);
@@ -73,30 +80,38 @@ export default function ImpostazioniPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email) { setMessage({ type: 'err', text: 'Inserisci/recupera la tua email prima di salvare.' }); return; }
+    if (!email) {
+      setMessage({ type: 'err', text: 'Inserisci/recupera la tua email prima di salvare.' });
+      return;
+    }
+
     try {
       setSaving(true);
       setMessage(null);
-      const payload = {
-        email,
-        'Paese Mittente': form.paese,
-        'Mittente': form.mittente,
-        'Città Mittente': form.citta,
-        'CAP Mittente': form.cap,
-        'Indirizzo Mittente': form.indirizzo,
-        'Telefono Mittente': form.telefono,
-        'Partita IVA Mittente': form.piva,
+
+      // Mappa il form al tipo Party usato dal backend
+      const party = {
+        ragioneSociale: form.mittente,
+        referente: '',
+        paese: form.paese,
+        citta: form.citta,
+        cap: form.cap,
+        indirizzo: form.indirizzo,
+        telefono: form.telefono,
+        piva: form.piva,
       };
-      const res = await fetch('/api/utenti', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error('Errore salvataggio');
+
+      await saveUserProfile(party, getIdToken);
+
+      // conserva l’email come fallback UI, se vuoi
+      if (typeof window !== 'undefined') localStorage.setItem('userEmail', email);
+
       setMessage({ type: 'ok', text: 'Dati salvati correttamente.' });
     } catch {
       setMessage({ type: 'err', text: 'Errore durante il salvataggio.' });
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -122,60 +137,98 @@ export default function ImpostazioniPage() {
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Paese</label>
-              <input value={form.paese} onChange={(e) => onChange('paese', e.target.value)}
-                     placeholder="IT, FR, ES…" className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20" />
+              <input
+                value={form.paese}
+                onChange={(e) => onChange('paese', e.target.value)}
+                placeholder="IT, FR, ES…"
+                className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20"
+              />
             </div>
 
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Mittente</label>
-              <input value={form.mittente} onChange={(e) => onChange('mittente', e.target.value)}
-                     placeholder="Ragione sociale / Nome" className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20" />
+              <input
+                value={form.mittente}
+                onChange={(e) => onChange('mittente', e.target.value)}
+                placeholder="Ragione sociale / Nome"
+                className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20"
+              />
             </div>
 
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Città</label>
-              <input value={form.citta} onChange={(e) => onChange('citta', e.target.value)}
-                     placeholder="Avellino" className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20" />
+              <input
+                value={form.citta}
+                onChange={(e) => onChange('citta', e.target.value)}
+                placeholder="Avellino"
+                className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20"
+              />
             </div>
 
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">CAP</label>
-              <input value={form.cap} onChange={(e) => onChange('cap', e.target.value)}
-                     placeholder="83100" className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20" />
+              <input
+                value={form.cap}
+                onChange={(e) => onChange('cap', e.target.value)}
+                placeholder="83100"
+                className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20"
+              />
             </div>
 
             <div className="md:col-span-2">
               <label className="mb-1 block text-sm font-medium text-slate-700">Indirizzo</label>
-              <input value={form.indirizzo} onChange={(e) => onChange('indirizzo', e.target.value)}
-                     placeholder="Via / Piazza e numero civico" className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20" />
+              <input
+                value={form.indirizzo}
+                onChange={(e) => onChange('indirizzo', e.target.value)}
+                placeholder="Via / Piazza e numero civico"
+                className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20"
+              />
             </div>
 
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Telefono</label>
-              <input value={form.telefono} onChange={(e) => onChange('telefono', e.target.value)}
-                     placeholder="+39 320 000 0000" className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20" />
+              <input
+                value={form.telefono}
+                onChange={(e) => onChange('telefono', e.target.value)}
+                placeholder="+39 320 000 0000"
+                className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20"
+              />
             </div>
 
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Partita IVA</label>
-              <input value={form.piva} onChange={(e) => onChange('piva', e.target.value)}
-                     placeholder="IT01234567890" className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20" />
+              <input
+                value={form.piva}
+                onChange={(e) => onChange('piva', e.target.value)}
+                placeholder="IT01234567890"
+                className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20"
+              />
             </div>
           </div>
 
           {message && (
-            <div className={['mt-4 rounded-md px-3 py-2 text-sm',
-              message.type === 'ok' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                    : 'bg-rose-50 text-rose-800 border border-rose-200'].join(' ')}>
+            <div
+              className={[
+                'mt-4 rounded-md px-3 py-2 text-sm',
+                message.type === 'ok'
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                  : 'bg-rose-50 text-rose-800 border border-rose-200',
+              ].join(' ')}
+            >
               {message.text}
             </div>
           )}
 
           <div className="mt-4">
-            <button type="submit" disabled={!canSave || saving || loading}
-                    className={['w-full md:w-auto rounded-lg px-4 py-2 text-sm font-medium',
-                                'border bg-spst-blue text-white hover:opacity-95',
-                                (!canSave || saving || loading) ? 'opacity-60 cursor-not-allowed' : ''].join(' ')}>
+            <button
+              type="submit"
+              disabled={!canSave || saving || loading}
+              className={[
+                'w-full md:w-auto rounded-lg px-4 py-2 text-sm font-medium',
+                'border bg-spst-blue text-white hover:opacity-95',
+                !canSave || saving || loading ? 'opacity-60 cursor-not-allowed' : '',
+              ].join(' ')}
+            >
               {saving ? 'Salvataggio…' : 'Salva'}
             </button>
           </div>
