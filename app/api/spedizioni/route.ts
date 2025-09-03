@@ -14,22 +14,23 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const idToken: string | undefined = body?.idToken;
 
-    // prende email dal token (se presente)
+    // Prende email dal token (se presente)
     let email: string | undefined;
     if (idToken) {
-      const decoded = await adminAuth.verifyIdToken(idToken, true);
+      // CORREZIONE: Chiamo adminAuth() per ottenere l'istanza e poi uso il metodo.
+      const decoded = await adminAuth().verifyIdToken(idToken, true);
       email = decoded.email || decoded.firebase?.identities?.email?.[0];
     }
     if (!email && typeof body?.createdByEmail === 'string') {
       email = body.createdByEmail;
     }
 
-    // inoltra al payload per Airtable
+    // Inoltra al payload per Airtable
     const payload = { ...body, createdByEmail: email };
 
     const { id } = await createSpedizioneWebApp(payload);
 
-    // leggo il campo "ID Spedizione" per restituirlo al client
+    // Leggo il campo "ID Spedizione" per restituirlo al client
     let displayId = id;
     try {
       const rec = await getSpedizioneById(id);
@@ -38,6 +39,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, id, displayId }, { headers: cors });
   } catch (e: any) {
+    // Aggiungo il log per capire l'errore a runtime
+    console.error('Errore nella POST per /api/spedizioni:', e);
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
       { status: 500, headers: cors }
