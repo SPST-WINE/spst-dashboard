@@ -14,23 +14,6 @@ import { getIdToken } from '@/lib/firebase-client-auth';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getUserProfile } from '@/lib/api';
 
-useEffect(() => {
-  (async () => {
-    try {
-      const r = await getUserProfile(getIdToken);
-      if (r.ok && r.party) {
-        setMittente((prev) => ({
-          ...prev,
-          ...r.party, // ha la stessa shape di Party
-        }));
-      }
-    } catch {
-      // nessun blocco: se fallisce si compila a mano
-    }
-  })();
-}, []);
-
-
 const blankParty: Party = {
   ragioneSociale: '',
   referente: '',
@@ -110,6 +93,8 @@ export default function NuovaVinoPage() {
       topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [errors.length]);
+
+  
 
   // ------- helper: fetch ID Spedizione "umano" dal meta endpoint -------
   async function fetchIdSpedizione(recId: string): Promise<string> {
@@ -419,3 +404,24 @@ export default function NuovaVinoPage() {
     </div>
   );
 }
+
+// Parti
+const [mittente, setMittente] = useState<Party>(blankParty);
+const [destinatario, setDestinatario] = useState<Party>(blankParty);
+
+// Prefill mittente dai dati profilo (Airtable -> UTENTI)
+useEffect(() => {
+  let cancelled = false;
+  (async () => {
+    try {
+      const r = await getUserProfile(getIdToken);
+      if (!cancelled && r?.ok && r?.party) {
+        setMittente(prev => ({ ...prev, ...r.party })); // <-- ora setMittente esiste
+      }
+    } catch {
+      // se fallisce, l’utente compila a mano
+    }
+  })();
+  return () => { cancelled = true; };
+}, []);
+
