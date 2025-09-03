@@ -2,23 +2,33 @@
 import { getApps, initializeApp, getApp, cert, App } from 'firebase-admin/app';
 import { getAuth, type Auth } from 'firebase-admin/auth';
 
-let app: App;
+function getEnv(name: string) {
+  return process.env[name];
+}
 
+const projectId =
+  getEnv('FIREBASE_PROJECT_ID') || getEnv('FIREBASE_ADMIN_PROJECT_ID');
+
+const clientEmail =
+  getEnv('FIREBASE_CLIENT_EMAIL') || getEnv('FIREBASE_ADMIN_CLIENT_EMAIL');
+
+const rawKey =
+  getEnv('FIREBASE_PRIVATE_KEY') || getEnv('FIREBASE_ADMIN_PRIVATE_KEY');
+
+const privateKey = rawKey?.includes('\\n') ? rawKey.replace(/\\n/g, '\n') : rawKey;
+
+let app: App;
 if (getApps().length) {
   app = getApp();
 } else {
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const rawKey = process.env.FIREBASE_PRIVATE_KEY;
-  const privateKey = rawKey?.includes('\\n') ? rawKey.replace(/\\n/g, '\n') : rawKey;
-
   if (!projectId || !clientEmail || !privateKey) {
-    // Fallire subito con un messaggio chiaro (su Vercel non c'è ADC)
     const missing = [
-      !projectId && 'FIREBASE_PROJECT_ID',
-      !clientEmail && 'FIREBASE_CLIENT_EMAIL',
-      !privateKey && 'FIREBASE_PRIVATE_KEY',
-    ].filter(Boolean).join(', ');
+      !projectId && 'FIREBASE_PROJECT_ID|FIREBASE_ADMIN_PROJECT_ID',
+      !clientEmail && 'FIREBASE_CLIENT_EMAIL|FIREBASE_ADMIN_CLIENT_EMAIL',
+      !privateKey && 'FIREBASE_PRIVATE_KEY|FIREBASE_ADMIN_PRIVATE_KEY',
+    ]
+      .filter(Boolean)
+      .join(', ');
     throw new Error(`FIREBASE_ADMIN_MISCONFIG: missing envs -> ${missing}`);
   }
 
@@ -27,10 +37,8 @@ if (getApps().length) {
   });
 }
 
-const auth = getAuth(app);
-
-// esportiamo come funzione per avere sempre un Auth
+const _auth = getAuth(app);
 export function adminAuth(): Auth {
-  return auth;
+  return _auth;
 }
-export { auth };
+export { _auth as auth };
