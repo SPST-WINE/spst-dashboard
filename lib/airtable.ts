@@ -321,9 +321,13 @@ export async function createSpedizioneWebApp(
 // -------------------------------------------------------------
 // LIST (usata dalla GET /api/spedizioni)
 // -------------------------------------------------------------
-export async function listSpedizioni(opts?: { email?: string }): Promise<Array<{ id: string; fields: any }>> {
+export async function listSpedizioni(opts?: {
+  email?: string;
+  q?: string; // ricerca libera (destinatario, città, paese, id, mittente)
+  sort?: 'created_desc' | 'ritiro_desc' | 'dest_az' | 'status'; // server usa solo ritiro; il resto client
+}): Promise<Array<{ id: string; fields: any; _createdTime?: string }>> {
   const b = base();
-  const all: Array<{ id: string; fields: any }> = [];
+  const all: Array<{ id: string; fields: any; _createdTime?: string }> = [];
 
   const selectOpts: any = {
     pageSize: 50,
@@ -636,4 +640,72 @@ export async function listColliBySpedId(recId: string): Promise<
     });
 
   return out;
+}
+
+  // ---- filtro email (opzionale)
+  let emailFilter: string | undefined;
+  if (opts?.email && opts.email.trim()) {
+    const safeEmail = String(opts.email).replace(/"/g, '\\"').trim();
+    emailFilter = `LOWER({${F.CreatoDaEmail}}) = LOWER("${safeEmail}")`;
+  }
+
+  // ---- filtro ricerca libera (q) su più campi
+  let qFilter: string | undefined;
+  if (opts?.q && opts.q.trim()) {
+    const needle = String(opts.q).toLowerCase().replace(/"/g, '\\"').trim();
+    const contains = (field: string) => `FIND("${needle}", LOWER(({${field}} & "")))`; // safe su blank
+    const fields = [
+      F.ID_Spedizione,
+      F.D_RS, F.D_CITTA, F.D_PAESE,
+      F.M_RS,
+    ];
+    qFilter = `OR(${fields.map(contains).join(',')})`;
+  }
+
+  // ---- combina i filtri
+  if (emailFilter && qFilter) selectOpts.filterByFormula = `AND(${emailFilter}, ${qFilter})`;
+  else if (emailFilter) selectOpts.filterByFormula = emailFilter;
+  else if (qFilter) selectOpts.filterByFormula = qFilter;
+  // altrimenti niente filterByFormula (evita errore SDK)
+
+  await b(TABLE.SPED)
+    .select(selectOpts)
+    .eachPage((records, next) => {
+      for (const r of records) {
+        all.push({ id: r.id, fields: r.fields, _createdTime: (r as any)._rawJson?.createdTime });
+      }
+      next();
+    });
+
+  // ---- sort lato client
+  const sortBy = opts?.sort || 'created_desc';
+  all.sort((a, b) => {
+    if (sortBy === 'ritiro_desc') {
+      const da = a.fields?.[F.RitiroData] ? new Date(a.fields[F.RitiroData]).getTime() : 0;
+      const db = b.fields?.[F.RitiroData] ? new Date(b.fields[F.RitiroData]).getTime() : 0;
+      return db - da;
+    }
+    if (sortBy === 'dest_az') {
+      const aa = `${a.fields?.[F.D_CITTA] || ''} ${a.fields?.[F.D_PAESE] || ''}`.toLowerCase();
+      const bb = `${b.fields?.[F.D_CITTA] || ''} ${b.fields?.[F.D_PAESE] || ''}`.toLowerCase();
+      return aa.localeCompare(bb);
+    }
+    if (sortBy === 'status') {
+      const order = (s?: string) => {
+        const v = (s || '').toLowerCase();
+        if (v.includes('in transito') || v.includes('intransit')) return 2;
+        if (v.includes('in consegna') || v.includes('outfordelivery')) return 1;
+        if (v.includes('consegn')) return 0;
+        if (v.includes('eccez') || v.includes('exception') || v.includes('failed')) return 3;
+        return 4;
+      };
+      return order(a.fields?.[F.Stato]) - order(b.fields?.[F.Stato]);
+    }
+    // created_desc (default)
+    const ca = a._createdTime ? new Date(a._createdTime).getTime() : 0;
+    const cb = b._createdTime ? new Date(b._createdTime).getTime() : 0;
+    return cb - ca;
+  });
+
+  return all;
 }
