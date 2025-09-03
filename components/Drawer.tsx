@@ -1,38 +1,44 @@
-"use client";
-import { useEffect } from "react";
+// components/Drawer.tsx
+'use client';
 
-export default function Drawer({
-  open, title, onClose, children,
-}: { open: boolean; title?: string; onClose: () => void; children: React.ReactNode }) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+import { ReactNode } from 'react';
+
+type DrawerProps = {
+  open: boolean;
+  onClose: () => void;
+  title?: ReactNode | (() => ReactNode); // accetta testo, nodo o anche una funzione che ritorna un nodo
+  children: ReactNode;
+};
+
+export default function Drawer({ open, onClose, title, children }: DrawerProps) {
+  if (!open) return null;
+
+  const renderedTitle =
+    typeof title === 'function' ? (title as () => ReactNode)() : title;
 
   return (
-    <div
-      className={`fixed inset-0 z-50 ${open ? "" : "pointer-events-none"}`}
-      aria-hidden={!open}
-    >
-      {/* overlay */}
-      <div
-        className={`absolute inset-0 bg-black/30 transition-opacity ${open ? "opacity-100" : "opacity-0"}`}
+    <div className="fixed inset-0 z-50 flex">
+      {/* backdrop */}
+      <button
+        aria-label="Chiudi"
         onClick={onClose}
+        className="flex-1 bg-black/30"
       />
-      {/* panel */}
-      <aside
-        className={`absolute right-0 top-0 h-full w-full max-w-lg bg-white shadow-xl
-                    transition-transform ${open ? "translate-x-0" : "translate-x-full"}`}
-        role="dialog" aria-modal="true"
-      >
-        <div className="flex items-center justify-between border-b p-4">
-          <h2 className="text-lg font-semibold">{title || "Dettagli"}</h2>
-          <button onClick={onClose} className="rounded-lg border px-2 py-1 text-sm hover:bg-gray-50">Chiudi</button>
+      {/* pannello */}
+      <div className="h-full w-full max-w-xl overflow-auto bg-white shadow-xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white p-3">
+          <div className="text-sm font-semibold">
+            {renderedTitle ?? 'Dettagli'}
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-md border px-2 py-1 text-sm hover:bg-slate-50"
+          >
+            Chiudi
+          </button>
         </div>
-        <div className="h-[calc(100%-56px)] overflow-auto p-4">{children}</div>
-      </aside>
+        <div className="p-3">{children}</div>
+      </div>
     </div>
   );
 }
