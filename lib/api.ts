@@ -1,4 +1,3 @@
-// lib/api.ts
 export type GetIdToken =
   | (() => Promise<string | undefined> | string | undefined)
   | undefined;
@@ -41,11 +40,20 @@ async function request<T>(
   return data as T;
 }
 
+// Aggiungi la definizione del tipo qui per renderla accessibile
+// a tutte le funzioni che ne hanno bisogno.
+export interface SpedizioneResponse {
+  ok: boolean;
+  id: string;
+  displayId: string;
+}
+
 export function postSpedizione(
   payload: any,
   getIdToken?: GetIdToken
-): Promise<{ ok: true; id: string }> {
-  return request(
+): Promise<SpedizioneResponse> {
+  // Correggi il tipo di ritorno per usare la nuova interfaccia
+  return request<SpedizioneResponse>(
     '/api/spedizioni',
     {
       method: 'POST',
@@ -70,8 +78,6 @@ export async function getSpedizioni(
   if (Array.isArray(json?.results)) return json.results;
   return [];
 }
-
-// lib/api.ts (append)
 
 export function postSpedizioneAttachments(
   id: string,
@@ -99,5 +105,3 @@ export async function postSpedizioneNotify(id: string, getToken: () => Promise<s
   if (!r.ok) throw new Error('notify failed');
   return r.json();
 }
-
-
