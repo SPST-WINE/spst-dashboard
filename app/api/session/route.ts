@@ -27,20 +27,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verifica token ed estrai (se c’è) l’email
     const decoded = await adminAuth().verifyIdToken(idToken, true);
 
     let email: string | undefined =
       decoded.email || decoded.firebase?.identities?.email?.[0] || emailFromBody;
 
-    // Fallback: prova a leggere dal record utente
     if (!email) {
       const user = await adminAuth().getUser(decoded.uid);
       email = user.email || undefined;
     }
 
-    // Crea Session Cookie (5 giorni)
-    const expiresIn = 1000 * 60 * 60 * 24 * 5;
+    const expiresIn = 1000 * 60 * 60 * 24 * 5; // 5 giorni
     const sessionCookie = await adminAuth().createSessionCookie(idToken, { expiresIn });
 
     const res = NextResponse.json({ ok: true, email: email ?? null }, { headers: cors });
@@ -51,13 +48,12 @@ export async function POST(req: NextRequest) {
       path: '/',
       maxAge: expiresIn / 1000,
     });
-
     return res;
   } catch (e: any) {
-    // Log server (visibile su Vercel)
-    console.error('SESSION_POST_ERROR', e?.message || e);
+    console.error('SESSION_POST_ERROR', e);
+    // >>> Temporaneamente esponiamo il messaggio per debug
     return NextResponse.json(
-      { ok: false, error: 'SERVER_ERROR' },
+      { ok: false, error: e?.message || 'SERVER_ERROR' },
       { status: 500, headers: cors }
     );
   }
