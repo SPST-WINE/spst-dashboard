@@ -544,3 +544,34 @@ export async function upsertUtente(email: string, rawFields: Record<string, any>
     return { id: created[0].id };
   }
 }
+
+// --- Colli per spedizione (tabella figlia) --------------------
+export async function listColliBySpedizione(recId: string): Promise<Array<{
+  l?: number | null;
+  w?: number | null;
+  h?: number | null;
+  peso?: number | null;
+}>> {
+  const b = base();
+  const out: Array<{ l?: number | null; w?: number | null; h?: number | null; peso?: number | null }> = [];
+
+  // In Airtable il link è array -> filtro robusto con FIND su ARRAYJOIN
+  const filter = `FIND("${recId}", ARRAYJOIN({${FCOLLO.LinkSped}}))`;
+  await b(TABLE.COLLI)
+    .select({ filterByFormula: filter, pageSize: 50 })
+    .eachPage((records, next) => {
+      for (const r of records) {
+        const f = r.fields as Record<string, any>;
+        out.push({
+          l: f[FCOLLO.L] ?? null,
+          w: f[FCOLLO.W] ?? null,
+          h: f[FCOLLO.H] ?? null,
+          peso: f[FCOLLO.Peso] ?? null,
+        });
+      }
+      next();
+    });
+
+  return out;
+}
+
