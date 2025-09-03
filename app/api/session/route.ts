@@ -1,4 +1,4 @@
-// app/api/spedizioni/route.ts
+// app/api/session/route.ts
 import { NextResponse, type NextRequest } from 'next/server';
 import { buildCorsHeaders } from '@/lib/cors';
 import { adminAuth } from '@/lib/firebase-admin';
@@ -19,8 +19,10 @@ async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
   if (m) {
     try {
       const decoded = await adminAuth().verifyIdToken(m[1], true);
+      console.log('Token ID decodificato con successo:', decoded.email); // Debug Log
       return decoded.email || decoded.firebase?.identities?.email?.[0] || undefined;
-    } catch {
+    } catch (e) {
+      console.error('Errore nella verifica del token ID:', e); // Debug Log
       // continua coi fallback
     }
   }
@@ -30,8 +32,10 @@ async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
   if (session) {
     try {
       const decoded = await adminAuth().verifySessionCookie(session, true);
+      console.log('Session cookie decodificato con successo:', decoded.email); // Debug Log
       return decoded.email || decoded.firebase?.identities?.email?.[0] || undefined;
-    } catch {
+    } catch (e) {
+      console.error('Errore nella verifica del session cookie:', e); // Debug Log
       // ignore
     }
   }
@@ -48,6 +52,7 @@ export async function GET(req: NextRequest) {
     const rows = await listSpedizioni(email ? { email } : undefined);
     return NextResponse.json({ ok: true, rows }, { headers: cors });
   } catch (e: any) {
+    console.error('Errore nella GET request:', e); // Debug Log
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
       { status: 500, headers: cors }
@@ -60,7 +65,8 @@ export async function POST(req: NextRequest) {
   const cors = buildCorsHeaders(origin);
 
   try {
-    const payload: any = await req.json(); // SpedizionePayload
+    const payload: any = await req.json();
+    console.log('Payload ricevuto:', payload); // Debug Log
 
     // Se non arriva già dal client, prova a valorizzare createdByEmail dai token/cookie
     if (!payload.createdByEmail) {
@@ -69,8 +75,11 @@ export async function POST(req: NextRequest) {
     }
 
     const res = await createSpedizioneWebApp(payload);
+    console.log('Risposta da Airtable:', res); // Debug Log
     return NextResponse.json({ ok: true, id: res.id }, { headers: cors });
   } catch (e: any) {
+    // Questo log è il più importante e ti darà la causa esatta del 500.
+    console.error('Errore critico nella POST request:', e); 
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
       { status: 500, headers: cors }
