@@ -2,7 +2,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { Package, Boxes, Search, ArrowUpDown } from 'lucide-react';
 import Drawer from '@/components/Drawer';
 import ShipmentDetail from '@/components/ShipmentDetail';
@@ -10,7 +9,7 @@ import ShipmentDetail from '@/components/ShipmentDetail';
 type Row = {
   id: string;
   _createdTime?: string | null;
-  [key: string]: any; // campi flatten da /api/spedizioni
+  [key: string]: any;
 };
 
 function norm(s?: string) {
@@ -22,33 +21,22 @@ function norm(s?: string) {
 
 function StatusBadge({ value }: { value?: string }) {
   const v = (value || '').toLowerCase();
-  let cls = 'bg-amber-50 text-amber-700 ring-amber-200'; // default arancione
+  let cls = 'bg-amber-50 text-amber-700 ring-amber-200';
   let text = value || '—';
 
-  if (v.includes('in transito') || v.includes('intransit')) {
-    cls = 'bg-sky-50 text-sky-700 ring-sky-200'; // blu
-  } else if (v.includes('consegn')) {
-    cls = 'bg-emerald-50 text-emerald-700 ring-emerald-200'; // verde
-  } else if (v.includes('eccez') || v.includes('exception') || v.includes('failed')) {
-    cls = 'bg-rose-50 text-rose-700 ring-rose-200'; // rosso
-  } else if (v.includes('in consegna') || v.includes('outfordelivery')) {
-    cls = 'bg-amber-50 text-amber-700 ring-amber-200'; // arancione
-  }
+  if (v.includes('in transito') || v.includes('intransit')) cls = 'bg-sky-50 text-sky-700 ring-sky-200';
+  else if (v.includes('in consegna') || v.includes('outfordelivery')) cls = 'bg-amber-50 text-amber-700 ring-amber-200';
+  else if (v.includes('consegn')) cls = 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+  else if (v.includes('eccez') || v.includes('exception') || v.includes('failed')) cls = 'bg-rose-50 text-rose-700 ring-rose-200';
 
-  return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs ring-1 ${cls}`}>
-      {text}
-    </span>
-  );
+  return <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs ring-1 ${cls}`}>{text}</span>;
 }
 
-// --- "smart pick" allegati: trova il primo Attachment field che "sembra" LDV/Fattura/Packing ---
 type Att = { url: string; filename?: string };
 function firstAttachmentLike(fields: any, hints: string[]): Att | undefined {
   for (const [k, v] of Object.entries(fields || {})) {
     const key = k.toLowerCase();
     if (!Array.isArray(v)) continue;
-    // Heuristica: colonna attachment: array di oggetti con url
     const arr = v as any[];
     if (!arr.length || !arr[0]?.url) continue;
     if (hints.some(h => key.includes(h))) {
@@ -60,6 +48,7 @@ function firstAttachmentLike(fields: any, hints: string[]): Att | undefined {
 
 function DocButtons({ row }: { row: Row }) {
   const f = row as any;
+
   const ldv =
     firstAttachmentLike(f, ['ldv', 'awb', 'lettera', 'vettura']) ||
     (Array.isArray(f['LDV']) && f['LDV'][0]?.url ? { url: f['LDV'][0].url, filename: f['LDV'][0].filename } : undefined);
@@ -76,15 +65,7 @@ function DocButtons({ row }: { row: Row }) {
       ? { url: f['Packing List - Allegato Cliente'][0].url, filename: f['Packing List - Allegato Cliente'][0].filename }
       : undefined);
 
-  const Btn = ({
-    available,
-    href,
-    label,
-  }: {
-    available: boolean;
-    href?: string;
-    label: string;
-  }) =>
+  const Btn = ({ available, href, label }: { available: boolean; href?: string; label: string }) =>
     available && href ? (
       <a
         href={href}
@@ -114,7 +95,10 @@ function Card({ r, onDetails }: { r: Row; onDetails: () => void }) {
   const ref = r['ID Spedizione'] || r.id;
   const destCitta = r['Destinatario - Città'];
   const destPaese = r['Destinatario - Paese'];
-  const dest = destCitta || destPaese ? `${destCitta || ''}${destCitta && destPaese ? ' ' : ''}${destPaese ? `(${destPaese})` : ''}` : '—';
+  const dest =
+    destCitta || destPaese
+      ? `${destCitta || ''}${destCitta && destPaese ? ' ' : ''}${destPaese ? `(${destPaese})` : ''}`
+      : '—';
   const stato = r['Stato'] || r['Tracking Status'] || '—';
 
   return (
@@ -133,10 +117,7 @@ function Card({ r, onDetails }: { r: Row; onDetails: () => void }) {
         <DocButtons row={r} />
 
         <div className="mt-2">
-          <button
-            onClick={onDetails}
-            className="text-xs text-[#1c3e5e] underline"
-          >
+          <button onClick={onDetails} className="text-xs text-[#1c3e5e] underline">
             Mostra dettagli
           </button>
         </div>
@@ -149,7 +130,7 @@ export default function SpedizioniClient() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
-  const [sort, setSort] = useState<'created_desc'|'ritiro_desc'|'dest_az'|'status'>('created_desc');
+  const [sort, setSort] = useState<'created_desc' | 'ritiro_desc' | 'dest_az' | 'status'>('created_desc');
 
   const [open, setOpen] = useState(false);
   const [sel, setSel] = useState<Row | null>(null);
@@ -160,30 +141,47 @@ export default function SpedizioniClient() {
     const params = new URLSearchParams();
     if (q.trim()) params.set('q', q.trim());
     if (sort) params.set('sort', sort);
+
     fetch(`/api/spedizioni?${params.toString()}`, { cache: 'no-store' })
       .then(r => r.json())
       .then(j => {
         if (!alive) return;
-        if (j?.ok) setRows(j.rows || []);
-        else setRows([]);
+        if (j?.ok) {
+          // flatten: { id, _createdTime, ...fields }
+          const flat: Row[] = (j.rows || []).map((r: any) => ({
+            id: r.id,
+            _createdTime: r._createdTime ?? r.createdTime ?? r._rawJson?.createdTime ?? null,
+            ...(r.fields || r),
+          }));
+          setRows(flat);
+        } else {
+          setRows([]);
+        }
       })
       .catch(() => alive && setRows([]))
       .finally(() => alive && setLoading(false));
-    return () => { alive = false; };
+
+    return () => {
+      alive = false;
+    };
   }, [q, sort]);
 
   const filtered = useMemo(() => {
     const needle = norm(q);
-    const arr = !needle ? rows : rows.filter(r => {
-      const hay = [
-        r['ID Spedizione'],
-        r['Destinatario - Ragione Sociale'],
-        r['Destinatario - Città'],
-        r['Destinatario - Paese'],
-        r['Mittente - Ragione Sociale'],
-      ].map(norm).join(' | ');
-      return hay.includes(needle);
-    });
+    const arr = !needle
+      ? rows
+      : rows.filter(r => {
+          const hay = [
+            r['ID Spedizione'],
+            r['Destinatario - Ragione Sociale'],
+            r['Destinatario - Città'],
+            r['Destinatario - Paese'],
+            r['Mittente - Ragione Sociale'],
+          ]
+            .map(norm)
+            .join(' | ');
+          return hay.includes(needle);
+        });
 
     const copy = [...arr];
     copy.sort((a, b) => {
@@ -225,7 +223,7 @@ export default function SpedizioniClient() {
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
           <input
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={e => setQ(e.target.value)}
             placeholder="Cerca: destinatario, città, paese, ID…"
             className="pl-8 pr-3 py-2 text-sm rounded-lg border bg-white w-72"
           />
@@ -234,7 +232,7 @@ export default function SpedizioniClient() {
           <ArrowUpDown className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
           <select
             value={sort}
-            onChange={(e) => setSort(e.target.value as any)}
+            onChange={e => setSort(e.target.value as any)}
             className="pl-8 pr-3 py-2 text-sm rounded-lg border bg-white"
             title="Ordina per"
           >
@@ -254,18 +252,15 @@ export default function SpedizioniClient() {
       ) : (
         <div className="space-y-3">
           {filtered.map(r => (
-            <Card
-              key={r.id}
-              r={r}
-              onDetails={() => { setSel(r); setOpen(true); }}
-            />
+            <Card key={r.id} r={r} onDetails={() => { setSel(r); setOpen(true); }} />
           ))}
         </div>
       )}
 
       {/* Drawer dettagli */}
       <Drawer open={open} onClose={() => setOpen(false)} title={sel ? (sel['ID Spedizione'] || sel.id) : undefined}>
-        {sel ? <ShipmentDetail recId={sel.id} /> : null}
+        {/* ShipmentDetail nel tuo progetto vuole f: FMap */}
+        {sel ? <ShipmentDetail f={(sel as any).fields ?? (sel as any)} /> : null}
       </Drawer>
     </>
   );
