@@ -9,10 +9,9 @@ import RitiroCard from '@/components/nuova/RitiroCard';
 import FatturaCard from '@/components/nuova/FatturaCard';
 import PackingListVino, { RigaPL } from '@/components/nuova/PackingListVino';
 import { Select } from '@/components/nuova/Field';
-import { postSpedizione, postSpedizioneAttachments, postSpedizioneNotify } from '@/lib/api';
+import { postSpedizione, postSpedizioneAttachments, postSpedizioneNotify, ApiError, getUserProfile } from '@/lib/api';
 import { getIdToken } from '@/lib/firebase-client-auth';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { getUserProfile } from '@/lib/api';
 
 const blankParty: Party = {
   ragioneSociale: '',
@@ -27,7 +26,7 @@ const blankParty: Party = {
 
 type SuccessInfo = {
   recId: string;
-  idSped: string; // ID Spedizione "umano"
+  idSped: string;
   tipoSped: 'B2B' | 'B2C' | 'Sample';
   incoterm: 'DAP' | 'DDP' | 'EXW';
   dataRitiro?: string;
@@ -44,25 +43,24 @@ export default function NuovaVinoPage() {
   const [destAbilitato, setDestAbilitato] = useState(false);
 
   // Parti
-const [mittente, setMittente] = useState<Party>(blankParty);
-const [destinatario, setDestinatario] = useState<Party>(blankParty);
+  const [mittente, setMittente] = useState<Party>(blankParty);
+  const [destinatario, setDestinatario] = useState<Party>(blankParty);
 
-// Prefill mittente dai dati profilo (Airtable -> UTENTI)
-useEffect(() => {
-  let cancelled = false;
-  (async () => {
-    try {
-      const r = await getUserProfile(getIdToken);
-      if (!cancelled && r?.ok && r?.party) {
-        setMittente(prev => ({ ...prev, ...r.party })); // <-- ora setMittente esiste
+  // Prefill mittente dai dati profilo (Airtable -> UTENTI)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await getUserProfile(getIdToken);
+        if (!cancelled && r?.ok && r?.party) {
+          setMittente(prev => ({ ...prev, ...r.party }));
+        }
+      } catch {
+        /* noop */
       }
-    } catch {
-      // se fallisce, l’utente compila a mano
-    }
-  })();
-  return () => { cancelled = true; };
-}, []);
-
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Colli
   const [colli, setColli] = useState<Collo[]>([
@@ -111,8 +109,6 @@ useEffect(() => {
     }
   }, [errors.length]);
 
-  
-
   // ------- helper: fetch ID Spedizione "umano" dal meta endpoint -------
   async function fetchIdSpedizione(recId: string): Promise<string> {
     try {
@@ -156,8 +152,15 @@ useEffect(() => {
   function validate(): string[] {
     const errs: string[] = [];
 
+    // 🔐 requisito vino: CF/P.IVA DESTINATARIO obbligatorio
+    if (!destinatario.piva?.trim()) {
+      errs.push('Per le spedizioni vino è obbligatorio inserire la Partita IVA / Codice Fiscale del destinatario.');
+    }
+
+    // Mittente CF/P.IVA (utile per documenti)
     if (!mittente.piva?.trim()) errs.push('Partita IVA/Codice Fiscale del mittente mancante.');
 
+    // Colli
     colli.forEach((c, i) => {
       const miss =
         c.lunghezza_cm == null ||
@@ -174,6 +177,7 @@ useEffect(() => {
 
     if (!ritiroData) errs.push('Seleziona il giorno di ritiro.');
 
+    // Se NON alleghi fattura, alcuni dati fattura diventano obbligatori
     if (!fatturaFile) {
       const fatt = sameAsDest ? destinatario : fatturazione;
       if (!fatt.ragioneSociale?.trim()) errs.push('Dati fattura: ragione sociale mancante.');
@@ -220,19 +224,19 @@ useEffect(() => {
         packingList: pl,
       };
 
-      // 1) Crea spedizione
+      // 1) Crea spedizione (server blocca comunque se manca CF/P.IVA destinatario)
       const res = await postSpedizione(payload, getIdToken);
 
       // 2) Allegati
       await uploadAndAttach(res.id);
 
-      // 3) Email automatica (non blocca il flusso se fallisce)
+      // 3) Email automatica (best effort)
       try { await postSpedizioneNotify(res.id, getIdToken); } catch {}
 
       // 4) Recupera ID Spedizione "umano"
       const idSped = await fetchIdSpedizione(res.id);
 
-      // 5) schermata conferma
+      // 5) Success
       setSuccess({
         recId: res.id,
         idSped,
@@ -245,8 +249,13 @@ useEffect(() => {
       });
       if (topRef.current) topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
+      // Mostra messaggio specifico dal server se presente
+      const msg =
+        e instanceof ApiError
+          ? e.message
+          : 'Si è verificato un errore durante il salvataggio. Riprova più tardi.';
+      setErrors([msg]);
       console.error('Errore salvataggio/allegati', e);
-      setErrors(['Si è verificato un errore durante il salvataggio. Riprova più tardi.']);
     } finally {
       setSaving(false);
     }
@@ -257,8 +266,7 @@ useEffect(() => {
     const INFO_URL =
       process.env.NEXT_PUBLIC_INFO_URL || '/dashboard/informazioni-utili';
     const WHATSAPP_URL_BASE =
-      process.env.NEXT_PUBLIC_WHATSAPP_URL ||
-      'https://wa.me/393000000000';
+      process.env.NEXT_PUBLIC_WHATSAPP_URL || 'https://wa.me/393000000000';
     const whatsappHref = `${WHATSAPP_URL_BASE}?text=${encodeURIComponent(
       `Ciao SPST, ho bisogno di supporto sulla spedizione ${success.idSped}`
     )}`;
@@ -362,13 +370,7 @@ useEffect(() => {
         />
       </div>
 
-      <PackingListVino
-  value={pl}
-  onChange={setPl}
-  files={plFiles}
-  onFiles={setPlFiles}
-/>
-
+      <PackingListVino value={pl} onChange={setPl} files={plFiles} onFiles={setPlFiles} />
 
       <ColliCard
         colli={colli}
