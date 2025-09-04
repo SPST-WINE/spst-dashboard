@@ -38,7 +38,6 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const emailParam = searchParams.get('email') || undefined;
     const email = emailParam || (await getEmailFromAuth(req));
-
     const rows = await listPreventivi(email ? { email } : undefined);
     return NextResponse.json({ ok: true, rows }, { headers: cors });
   } catch (e: any) {
@@ -52,8 +51,6 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-
-    // fallback createdByEmail dall'auth
     if (!body.createdByEmail) {
       const email = await getEmailFromAuth(req);
       if (email) body.createdByEmail = email;
