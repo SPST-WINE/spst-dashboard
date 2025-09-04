@@ -41,10 +41,8 @@ export default function NuovaQuotazionePage() {
   const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
   const [ritiroNote, setRitiroNote] = useState('');
 
-  // Note generiche + flags documenti richiesti
+  // Note generiche
   const [noteGeneriche, setNoteGeneriche] = useState('');
-  const [docFatturaRichiesta, setDocFatturaRichiesta] = useState(false);
-  const [docPLRichiesta, setDocPLRichiesta] = useState(false);
 
   // UI
   const [saving, setSaving] = useState(false);
@@ -100,15 +98,19 @@ export default function NuovaQuotazionePage() {
     try {
       const t = await getIdToken();
 
+      // Unisco le note del ritiro alle note generiche, così arrivano in Airtable
+      const noteCombined = [noteGeneriche, ritiroNote?.trim() ? `Note ritiro: ${ritiroNote.trim()}` : '']
+        .filter(Boolean)
+        .join('\n');
+
       // Mappatura verso API /api/quotazioni (airtable.quotes)
       const payload = {
         createdByEmail: email || undefined,
         customerEmail: email || undefined, // popola Email_Cliente
         valuta: 'EUR' as const,
         ritiroData: ritiroData ? ritiroData.toISOString() : undefined,
-        noteGeneriche: noteGeneriche || undefined,
-        docFatturaRichiesta,
-        docPLRichiesta,
+        noteGeneriche: noteCombined || undefined,
+        // niente flag documenti: li decide il backoffice con le "rules"
         mittente: {
           ragioneSociale: mittente.ragioneSociale || undefined,
           indirizzo: mittente.indirizzo || undefined,
@@ -244,11 +246,13 @@ export default function NuovaQuotazionePage() {
         />
       </div>
 
-      {/* Note generiche & richieste documenti */}
+      {/* Note generiche */}
       <div className="rounded-2xl border bg-white p-4">
         <h2 className="mb-3 text-base font-semibold text-spst-blue">Note & documenti</h2>
 
-        <label className="mb-1 block text-sm font-medium text-slate-700">Note generiche sulla spedizione</label>
+        <label className="mb-1 block text-sm font-medium text-slate-700">
+          Note generiche sulla spedizione
+        </label>
         <textarea
           value={noteGeneriche}
           onChange={(e) => setNoteGeneriche(e.target.value)}
@@ -256,25 +260,6 @@ export default function NuovaQuotazionePage() {
           className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20"
           placeholder="Es. orari preferiti, vincoli, dettagli utili…"
         />
-
-        <div className="mt-3 flex flex-col gap-2 text-sm">
-          <label className="inline-flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={docFatturaRichiesta}
-              onChange={(e) => setDocFatturaRichiesta(e.target.checked)}
-            />
-            Richiedi fattura al cliente (Doc_Fattura_Richiesta)
-          </label>
-          <label className="inline-flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={docPLRichiesta}
-              onChange={(e) => setDocPLRichiesta(e.target.checked)}
-            />
-            Richiedi packing list (Doc_PL_Richiesta)
-          </label>
-        </div>
       </div>
 
       {/* CTA */}
