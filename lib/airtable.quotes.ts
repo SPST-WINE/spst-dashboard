@@ -12,7 +12,6 @@ function assertEnv() {
   if (!API_TOKEN) throw new Error('AIRTABLE_API_TOKEN (o AIRTABLE_API_KEY) mancante');
   if (!BASE_ID) throw new Error('AIRTABLE_BASE_ID_SPST mancante');
 }
-
 function base() {
   assertEnv();
   Airtable.configure({ apiKey: API_TOKEN });
@@ -52,11 +51,7 @@ export async function airtableQuotesStatus(): Promise<{
 // Utils
 function dateOnlyISO(d?: string | Date) {
   if (!d) return undefined;
-  try {
-    return new Date(d).toISOString().slice(0, 10);
-  } catch {
-    return undefined;
-  }
+  try { return new Date(d).toISOString().slice(0, 10); } catch { return undefined; }
 }
 function optional<T>(v: T | null | undefined) {
   return v == null ? undefined : v;
@@ -71,19 +66,20 @@ export type ColloQ = {
   peso_kg?: number | null;
 };
 export type PreventivoPayload = {
-  createdByEmail?: string;
-  customerEmail?: string;
+  createdByEmail?: string;   // email utente autenticato (facoltativa)
+  customerEmail?: string;    // email del cliente finale (facoltativa)
   valuta?: 'EUR' | 'USD' | 'GBP';
-  ritiroData?: string; // ISO
+  ritiroData?: string;       // ISO
   noteGeneriche?: string;
   colli?: ColloQ[];
 };
 
 // Campi “tolleranti” (alias) per PREVENTIVI
 const F = {
-  Stato: 'Stato', // Single select
+  // NB: tieni "Stato" se c’è, altrimenti verrà semplicemente saltato
+  Stato: ['Stato', 'Status'],
   EmailCliente: ['Email_Cliente', 'Email Cliente', 'Cliente_Email'],
-  CreatoDaEmail: ['CreatoDaEmail', 'Creato da (email)', 'Created By Email'],
+  CreatoDaEmail: ['CreatoDaEmail', 'Creato da (email)', 'Created By Email', 'Creato da Email'],
   Valuta: ['Valuta', 'Currency'],
   RitiroData: ['Ritiro_Data', 'Data_Ritiro', 'RitiroData', 'PickUp_Date'],
   NoteGeneriche: [
@@ -94,43 +90,50 @@ const F = {
   ],
 } as const;
 
-// ✅ accetta anche ReadonlyArray<string> (risolve l’errore TS)
-function setField(
-  obj: Record<string, any>,
-  aliases: string | ReadonlyArray<string>,
+// --- helper di update tollerante su più alias -----------------
+async function tryUpdateField(
+  b: ReturnType<typeof base>,
+  recId: string,
+  aliases: ReadonlyArray<string> | string,
   value: any
-) {
-  if (value == null) return;
+): Promise<boolean> {
+  if (value == null) return true;
   const keys = Array.isArray(aliases) ? aliases : [aliases];
   for (const k of keys) {
-    obj[k] = value;
-    return;
+    try {
+      await b(TB_PREVENTIVI).update(recId, { [k]: value });
+      return true;
+    } catch {
+      // passo al prossimo alias
+    }
   }
+  return false;
 }
 
-// CREATE
+// ---------------------------------------------------------------
+// CREATE preventivo (tollerante ai nomi campo)
+// ---------------------------------------------------------------
 export async function createPreventivo(payload: PreventivoPayload): Promise<{ id: string }> {
   const b = base();
-
-  // Campi base (tolleranti)
-  const fields: Record<string, any> = {};
-  setField(fields, F.Stato, 'Bozza');
-  if (payload.createdByEmail) setField(fields, F.CreatoDaEmail, payload.createdByEmail);
-  if (payload.customerEmail) setField(fields, F.EmailCliente, payload.customerEmail);
-  if (payload.valuta) setField(fields, F.Valuta, payload.valuta);
-  if (payload.ritiroData) setField(fields, F.RitiroData, dateOnlyISO(payload.ritiroData));
-  if (payload.noteGeneriche) setField(fields, F.NoteGeneriche, payload.noteGeneriche);
-
   try {
-    const created = await b(TB_PREVENTIVI).create([{ fields }]);
+    // 1) creo il record vuoto: evita errori UNKNOWN_FIELD_NAME in create
+    const created = await b(TB_PREVENTIVI).create([{ fields: {} }]);
     const recId = created[0].id;
 
-    // (FACOLTATIVO) gestione colli — sblocca appena mi confermi il nome del campo link in SPED_COLLI
+    // 2) aggiorno i campi uno a uno provando gli alias
+    await tryUpdateField(b, recId, F.Stato, 'Bozza');
+    if (payload.createdByEmail) await tryUpdateField(b, recId, F.CreatoDaEmail, payload.createdByEmail);
+    if (payload.customerEmail) await tryUpdateField(b, recId, F.EmailCliente, payload.customerEmail);
+    if (payload.valuta) await tryUpdateField(b, recId, F.Valuta, payload.valuta);
+    if (payload.ritiroData) await tryUpdateField(b, recId, F.RitiroData, dateOnlyISO(payload.ritiroData));
+    if (payload.noteGeneriche) await tryUpdateField(b, recId, F.NoteGeneriche, payload.noteGeneriche);
+
+    // 3) (FACOLTATIVO) gestione colli — attiva quando mi confermi il nome del campo link in SPED_COLLI
     // const LINK_FIELD = 'Preventivo'; // oppure 'Preventivo_Id'
     // if (payload.colli?.length) {
     //   const rows = payload.colli.map((c) => ({
     //     fields: {
-    //       [LINK_FIELD]: [recId], // se è un linked record
+    //       [LINK_FIELD]: [recId],             // se è un linked record
     //       Qty: optional(c.qty),
     //       L_cm: optional(c.l1_cm),
     //       W_cm: optional(c.l2_cm),
@@ -150,31 +153,27 @@ export async function createPreventivo(payload: PreventivoPayload): Promise<{ id
       message: e?.message,
       statusCode: e?.statusCode,
       airtable: e?.error,
-      fieldsTried: fields,
       tables: { TB_PREVENTIVI, TB_COLLI },
     });
     throw e;
   }
 }
 
-// LIST
-export async function listPreventivi(opts?: { email?: string }): Promise<Array<{ id: string; fields: any }>> {
+// ---------------------------------------------------------------
+// LIST preventivi (filtro lato Node per evitare formule rotte)
+// ---------------------------------------------------------------
+export async function listPreventivi(
+  opts?: { email?: string }
+): Promise<Array<{ id: string; fields: any }>> {
   const b = base();
-  const all: any[] = [];
-
-  const select: any = { pageSize: 50, sort: [{ field: 'Last modified time', direction: 'desc' }] };
-
-  if (opts?.email) {
-    const safe = String(opts.email).replace(/"/g, '\\"');
-    select.filterByFormula = `OR(
-      LOWER({Email_Cliente} & "") = LOWER("${safe}"),
-      LOWER({CreatoDaEmail} & "") = LOWER("${safe}")
-    )`;
-  }
+  const all: Array<{ id: string; fields: any }> = [];
 
   try {
     await b(TB_PREVENTIVI)
-      .select(select)
+      .select({
+        pageSize: 100,
+        sort: [{ field: 'Last modified time', direction: 'desc' }],
+      })
       .eachPage((records, next) => {
         for (const r of records) all.push({ id: r.id, fields: r.fields });
         next();
@@ -182,6 +181,26 @@ export async function listPreventivi(opts?: { email?: string }): Promise<Array<{
   } catch (e) {
     console.error('[airtable.quotes] listPreventivi failed', e);
     throw e;
+  }
+
+  if (opts?.email) {
+    const needle = String(opts.email).toLowerCase();
+    const emailFields = [
+      'Email_Cliente',
+      'Email Cliente',
+      'Cliente_Email',
+      'CreatoDaEmail',
+      'Creato da (email)',
+      'Created By Email',
+      'Creato da Email',
+    ];
+    return all.filter(({ fields }) => {
+      for (const k of emailFields) {
+        const v = (fields?.[k] ?? '') as string;
+        if (typeof v === 'string' && v.toLowerCase() === needle) return true;
+      }
+      return false;
+    });
   }
 
   return all;
