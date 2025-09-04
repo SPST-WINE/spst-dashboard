@@ -87,17 +87,18 @@ export default function NuovaQuotazionePage() {
           ...(t ? { Authorization: `Bearer ${t}` } : {}),
         },
         body: JSON.stringify({
-          sorgente: tipo,
-          tipoSped: sottotipo,
-          formato,
-          contenuto,
-          ritiroData: ritiroData ? ritiroData.toISOString() : undefined,
-          ritiroNote,
-          mittente,
-          destinatario,
-          noteGeneriche: noteGen,
-        }),
-      });
+  sorgente: tipo,
+  tipoSped: sottotipo,
+  formato,
+  contenuto,
+  ritiroData: ritiroData ? ritiroData.toISOString() : undefined,
+  ritiroNote,
+  mittente,
+  destinatario,
+  noteGeneriche: noteGen,
+  colli, // 👈 aggiunto
+}),
+
       const j = await r.json();
       if (!r.ok || !j?.ok) throw new Error(j?.error || 'SERVER_ERROR');
       setOk({ id: j.id });
