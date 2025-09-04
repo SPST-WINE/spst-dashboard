@@ -7,8 +7,12 @@ import { createPreventivo, listPreventivi } from '@/lib/airtable.quotes';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+export async function OPTIONS(req: NextRequest) {
+  const origin = req.headers.get('origin') ?? undefined;
+  return new NextResponse(null, { status: 204, headers: buildCorsHeaders(origin) });
+}
+
 async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
-  // Bearer
   const m = (req.headers.get('authorization') ?? '').match(/^Bearer\s+(.+)$/i);
   if (m) {
     try {
@@ -16,7 +20,6 @@ async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
       return decoded.email || decoded.firebase?.identities?.email?.[0] || undefined;
     } catch {}
   }
-  // Session cookie
   const session = req.cookies.get('spst_session')?.value;
   if (session) {
     try {
@@ -27,13 +30,6 @@ async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
   return undefined;
 }
 
-// --- CORS preflight
-export async function OPTIONS(req: NextRequest) {
-  const origin = req.headers.get('origin') ?? undefined;
-  return new NextResponse(null, { status: 204, headers: buildCorsHeaders(origin) });
-}
-
-// --- LIST
 export async function GET(req: NextRequest) {
   const origin = req.headers.get('origin') ?? undefined;
   const cors = buildCorsHeaders(origin);
@@ -46,28 +42,36 @@ export async function GET(req: NextRequest) {
     const rows = await listPreventivi(email ? { email } : undefined);
     return NextResponse.json({ ok: true, rows }, { headers: cors });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || 'SERVER_ERROR' },
-      { status: 500, headers: cors }
-    );
+    return NextResponse.json({ ok: false, error: e?.message || 'SERVER_ERROR' }, { status: 500, headers: cors });
   }
 }
 
-// --- CREATE
 export async function POST(req: NextRequest) {
   const origin = req.headers.get('origin') ?? undefined;
   const cors = buildCorsHeaders(origin);
 
   try {
-    const payload: any = await req.json();
+    const body = await req.json();
 
-    // completa email se manca
-    if (!payload.createdByEmail) {
+    // fallback createdByEmail dall'auth
+    if (!body.createdByEmail) {
       const email = await getEmailFromAuth(req);
-      if (email) payload.createdByEmail = email;
+      if (email) body.createdByEmail = email;
     }
 
-    const created = await createPreventivo(payload);
+    const created = await createPreventivo({
+      createdByEmail: body.createdByEmail,
+      customerEmail: body.customerEmail,
+      valuta: body.valuta,
+      ritiroData: body.ritiroData,
+      noteGeneriche: body.noteGeneriche,
+      docFatturaRichiesta: body.docFatturaRichiesta,
+      docPLRichiesta: body.docPLRichiesta,
+      mittente: body.mittente,
+      destinatario: body.destinatario,
+      colli: body.colli,
+    });
+
     return NextResponse.json({ ok: true, id: created.id }, { headers: cors });
   } catch (e: any) {
     console.error('POST /api/quotazioni error:', e);
