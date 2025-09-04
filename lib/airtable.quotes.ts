@@ -1,7 +1,7 @@
 // lib/airtable.quotes.ts
 import Airtable from 'airtable';
 
-// ENV
+// --- ENV ---
 const API_TOKEN =
   process.env.AIRTABLE_API_TOKEN || process.env.AIRTABLE_API_KEY || '';
 const BASE_ID = process.env.AIRTABLE_BASE_ID_SPST || '';
@@ -18,46 +18,23 @@ function base() {
   return new Airtable().base(BASE_ID);
 }
 
-// Debug helper (GET ?debug=env)
-export async function airtableQuotesStatus(): Promise<{
-  hasToken: boolean;
-  hasBaseId: boolean;
-  tables: { preventivi: boolean; colli: boolean };
-  probe?: { preventiviOk?: boolean; colliOk?: boolean };
-}> {
-  const b = base();
-  const out: any = {
-    hasToken: !!API_TOKEN,
-    hasBaseId: !!BASE_ID,
-    tables: { preventivi: !!TB_PREVENTIVI, colli: !!TB_COLLI },
-  };
-  try {
-    await b(TB_PREVENTIVI).select({ maxRecords: 1 }).firstPage();
-    out.probe = { ...(out.probe || {}), preventiviOk: true };
-  } catch (e) {
-    out.probe = { ...(out.probe || {}), preventiviOk: false };
-    console.error('[airtable.quotes] probe preventivi failed', e);
-  }
-  try {
-    await b(TB_COLLI).select({ maxRecords: 1 }).firstPage();
-    out.probe = { ...(out.probe || {}), colliOk: true };
-  } catch (e) {
-    out.probe = { ...(out.probe || {}), colliOk: false };
-    console.error('[airtable.quotes] probe colli failed', e);
-  }
-  return out;
-}
-
-// Utils
 function dateOnlyISO(d?: string | Date) {
   if (!d) return undefined;
   try { return new Date(d).toISOString().slice(0, 10); } catch { return undefined; }
 }
-function optional<T>(v: T | null | undefined) {
-  return v == null ? undefined : v;
-}
+function optional<T>(v: T | null | undefined) { return v == null ? undefined : v; }
 
-// Tipi minimi lato client
+// ---- Tipi payload UI ----
+export type PartyQ = {
+  ragioneSociale?: string;
+  indirizzo?: string;
+  cap?: string;
+  citta?: string;
+  paese?: string;
+  telefono?: string;
+  taxId?: string; // P.IVA/EORI/EIN
+};
+
 export type ColloQ = {
   qty?: number;
   l1_cm?: number | null;
@@ -65,20 +42,25 @@ export type ColloQ = {
   l3_cm?: number | null;
   peso_kg?: number | null;
 };
+
 export type PreventivoPayload = {
-  createdByEmail?: string;   // email utente autenticato (facoltativa)
-  customerEmail?: string;    // email del cliente finale (facoltativa)
+  createdByEmail?: string;
+  customerEmail?: string;   // email cliente finale (se la chiediamo nel portale, altrimenti vuota)
   valuta?: 'EUR' | 'USD' | 'GBP';
-  ritiroData?: string;       // ISO
+  ritiroData?: string;      // ISO date
   noteGeneriche?: string;
+  docFatturaRichiesta?: boolean;
+  docPLRichiesta?: boolean;
+
+  mittente?: PartyQ;
+  destinatario?: PartyQ;
   colli?: ColloQ[];
 };
 
-// Campi “tolleranti” (alias) per PREVENTIVI
+// ---- Alias campo PREVENTIVI (tolleranti) ----
 const F = {
-  // NB: tieni "Stato" se c’è, altrimenti verrà semplicemente saltato
   Stato: ['Stato', 'Status'],
-  EmailCliente: ['Email_Cliente', 'Email Cliente', 'Cliente_Email'],
+  EmailCliente: ['Email_Cliente', 'Email Cliente', 'Cliente_Email', 'Customer_Email'],
   CreatoDaEmail: ['CreatoDaEmail', 'Creato da (email)', 'Created By Email', 'Creato da Email'],
   Valuta: ['Valuta', 'Currency'],
   RitiroData: ['Ritiro_Data', 'Data_Ritiro', 'RitiroData', 'PickUp_Date'],
@@ -88,65 +70,157 @@ const F = {
     'Shipment_Notes',
     'Note spedizione',
   ],
+  // Flag documenti richiesti
+  DocFattRich: ['Doc_Fattura_Richiesta', 'Fattura_Richiesta', 'Richiesta Fattura'],
+  DocPLRich: ['Doc_PL_Richiesta', 'Packing_Richiesta', 'Richiesta PL'],
+  // Mittente
+  M_Nome: ['Mittente_Nome', 'Mittente', 'Ragione sociale Mittente', 'Mittente RS'],
+  M_Ind: ['Mittente_Indirizzo', 'Indirizzo Mittente', 'Mittente Indirizzo'],
+  M_CAP: ['Mittente_CAP', 'CAP Mittente'],
+  M_Citta: ['Mittente_Citta', 'Città Mittente', 'Mittente Citta'],
+  M_Paese: ['Mittente_Paese', 'Paese Mittente'],
+  M_Tel: ['Mittente_Telefono', 'Telefono Mittente'],
+  M_Tax: ['Mittente_Tax', 'Mittente_PIVA', 'Mittente_EORI', 'P.IVA Mittente', 'PIVA Mittente'],
+  // Destinatario
+  D_Nome: ['Destinatario_Nome', 'Destinatario', 'Ragione sociale Destinatario', 'Destinatario RS'],
+  D_Ind: ['Destinatario_Indirizzo', 'Indirizzo Destinatario'],
+  D_CAP: ['Destinatario_CAP', 'CAP Destinatario'],
+  D_Citta: ['Destinatario_Citta', 'Città Destinatario', 'Destinatario Citta'],
+  D_Paese: ['Destinatario_Paese', 'Paese Destinatario'],
+  D_Tel: ['Destinatario_Telefono', 'Telefono Destinatario'],
+  D_Tax: ['Destinatario_Tax', 'Destinatario_EORI', 'Dest_TaxID', 'TaxID Destinatario'],
 } as const;
 
-// --- helper di update tollerante su più alias -----------------
+// ---- Alias campo COLLI (tolleranti) ----
+const C = {
+  LinkPreventivo: ['Preventivo', 'Link Preventivo'],  // linked-record
+  PreventivoIdTxt: ['Preventivo_Id', 'Preventivo ID (testo)'],
+  Qty: ['Quantita', 'Quantità', 'Qty', 'Q.ta'],
+  L: ['Lato 1', 'Lato1', 'L_cm', 'Lunghezza', 'L'],
+  W: ['Lato 2', 'Lato2', 'W_cm', 'Larghezza', 'W'],
+  H: ['Lato 3', 'Lato3', 'H_cm', 'Altezza', 'H'],
+  Peso: ['Peso (Kg)', 'Peso_Kg', 'Peso', 'Kg', 'Weight'],
+} as const;
+
+// utility update con alias multipli
 async function tryUpdateField(
   b: ReturnType<typeof base>,
   recId: string,
   aliases: ReadonlyArray<string> | string,
-  value: any
+  value: any,
+  debug: string[],
 ): Promise<boolean> {
   if (value == null) return true;
-  const keys = Array.isArray(aliases) ? aliases : [aliases];
+  const keys = Array.isArray(aliases) ? [...aliases] : [aliases];
   for (const k of keys) {
     try {
       await b(TB_PREVENTIVI).update(recId, { [k]: value });
+      debug.push(`OK ${k}`);
       return true;
     } catch {
-      // passo al prossimo alias
+      // prova alias successivo
     }
   }
+  debug.push(`SKIP ${Array.isArray(aliases) ? aliases.join('|') : aliases}`);
   return false;
 }
 
+async function tryCreateColloRow(
+  b: ReturnType<typeof base>,
+  recId: string,
+  c: ColloQ
+) {
+  // prova prima come linked record, poi come id testo
+  const attempt = async (fields: Record<string, any>) => {
+    try {
+      await b(TB_COLLI).create([{ fields }]);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const baseFields = {
+    // dimensioni/peso con alias (primo che esiste vince)
+    [C.Qty[0]]: optional(c.qty),
+    [C.L[0]]: optional(c.l1_cm),
+    [C.W[0]]: optional(c.l2_cm),
+    [C.H[0]]: optional(c.l3_cm),
+    [C.Peso[0]]: optional(c.peso_kg),
+  };
+
+  // 1) tentativo con linked record
+  let ok = await attempt({
+    ...baseFields,
+    [C.LinkPreventivo[0]]: [recId],
+  });
+  if (ok) return;
+
+  // 2) tentativo con campo testo
+  ok = await attempt({
+    ...baseFields,
+    [C.PreventivoIdTxt[0]]: recId,
+  });
+  if (!ok) {
+    console.warn('[airtable.quotes] impossibile creare riga colli: nessun campo link/testo valido trovato');
+  }
+}
+
 // ---------------------------------------------------------------
-// CREATE preventivo (tollerante ai nomi campo)
+// CREATE preventivo
 // ---------------------------------------------------------------
 export async function createPreventivo(payload: PreventivoPayload): Promise<{ id: string }> {
   const b = base();
+  const debugSet: string[] = [];
+
   try {
-    // 1) creo il record vuoto: evita errori UNKNOWN_FIELD_NAME in create
+    // 1) record vuoto
     const created = await b(TB_PREVENTIVI).create([{ fields: {} }]);
     const recId = created[0].id;
 
-    // 2) aggiorno i campi uno a uno provando gli alias
-    await tryUpdateField(b, recId, F.Stato, 'Bozza');
-    if (payload.createdByEmail) await tryUpdateField(b, recId, F.CreatoDaEmail, payload.createdByEmail);
-    if (payload.customerEmail) await tryUpdateField(b, recId, F.EmailCliente, payload.customerEmail);
-    if (payload.valuta) await tryUpdateField(b, recId, F.Valuta, payload.valuta);
-    if (payload.ritiroData) await tryUpdateField(b, recId, F.RitiroData, dateOnlyISO(payload.ritiroData));
-    if (payload.noteGeneriche) await tryUpdateField(b, recId, F.NoteGeneriche, payload.noteGeneriche);
+    // 2) campi base
+    await tryUpdateField(b, recId, F.Stato, 'Bozza', debugSet);
+    if (payload.createdByEmail) await tryUpdateField(b, recId, F.CreatoDaEmail, payload.createdByEmail, debugSet);
+    if (payload.customerEmail) await tryUpdateField(b, recId, F.EmailCliente, payload.customerEmail, debugSet);
+    if (payload.valuta) await tryUpdateField(b, recId, F.Valuta, payload.valuta, debugSet);
+    if (payload.ritiroData) await tryUpdateField(b, recId, F.RitiroData, dateOnlyISO(payload.ritiroData), debugSet);
+    if (payload.noteGeneriche) await tryUpdateField(b, recId, F.NoteGeneriche, payload.noteGeneriche, debugSet);
 
-    // 3) (FACOLTATIVO) gestione colli — attiva quando mi confermi il nome del campo link in SPED_COLLI
-    // const LINK_FIELD = 'Preventivo'; // oppure 'Preventivo_Id'
-    // if (payload.colli?.length) {
-    //   const rows = payload.colli.map((c) => ({
-    //     fields: {
-    //       [LINK_FIELD]: [recId],             // se è un linked record
-    //       Qty: optional(c.qty),
-    //       L_cm: optional(c.l1_cm),
-    //       W_cm: optional(c.l2_cm),
-    //       H_cm: optional(c.l3_cm),
-    //       Peso_Kg: optional(c.peso_kg),
-    //     },
-    //   }));
-    //   const BATCH = 10;
-    //   for (let i = 0; i < rows.length; i += BATCH) {
-    //     await b(TB_COLLI).create(rows.slice(i, i + BATCH));
-    //   }
-    // }
+    if (typeof payload.docFatturaRichiesta === 'boolean') {
+      await tryUpdateField(b, recId, F.DocFattRich, !!payload.docFatturaRichiesta, debugSet);
+    }
+    if (typeof payload.docPLRichiesta === 'boolean') {
+      await tryUpdateField(b, recId, F.DocPLRich, !!payload.docPLRichiesta, debugSet);
+    }
 
+    // 3) mittente
+    const M = payload.mittente || {};
+    if (M.ragioneSociale) await tryUpdateField(b, recId, F.M_Nome, M.ragioneSociale, debugSet);
+    if (M.indirizzo) await tryUpdateField(b, recId, F.M_Ind, M.indirizzo, debugSet);
+    if (M.cap) await tryUpdateField(b, recId, F.M_CAP, M.cap, debugSet);
+    if (M.citta) await tryUpdateField(b, recId, F.M_Citta, M.citta, debugSet);
+    if (M.paese) await tryUpdateField(b, recId, F.M_Paese, M.paese, debugSet);
+    if (M.telefono) await tryUpdateField(b, recId, F.M_Tel, M.telefono, debugSet);
+    if (M.taxId) await tryUpdateField(b, recId, F.M_Tax, M.taxId, debugSet);
+
+    // 4) destinatario
+    const D = payload.destinatario || {};
+    if (D.ragioneSociale) await tryUpdateField(b, recId, F.D_Nome, D.ragioneSociale, debugSet);
+    if (D.indirizzo) await tryUpdateField(b, recId, F.D_Ind, D.indirizzo, debugSet);
+    if (D.cap) await tryUpdateField(b, recId, F.D_CAP, D.cap, debugSet);
+    if (D.citta) await tryUpdateField(b, recId, F.D_Citta, D.citta, debugSet);
+    if (D.paese) await tryUpdateField(b, recId, F.D_Paese, D.paese, debugSet);
+    if (D.telefono) await tryUpdateField(b, recId, F.D_Tel, D.telefono, debugSet);
+    if (D.taxId) await tryUpdateField(b, recId, F.D_Tax, D.taxId, debugSet);
+
+    // 5) colli
+    if (payload.colli?.length) {
+      for (const c of payload.colli) {
+        await tryCreateColloRow(b, recId, c);
+      }
+    }
+
+    console.log('[airtable.quotes] createPreventivo set fields:', debugSet);
     return { id: recId };
   } catch (e: any) {
     console.error('[airtable.quotes] createPreventivo failed', {
@@ -160,7 +234,7 @@ export async function createPreventivo(payload: PreventivoPayload): Promise<{ id
 }
 
 // ---------------------------------------------------------------
-// LIST preventivi (filtro lato Node per evitare formule rotte)
+// LIST preventivi per email (filtro lato Node)
 // ---------------------------------------------------------------
 export async function listPreventivi(
   opts?: { email?: string }
@@ -168,40 +242,25 @@ export async function listPreventivi(
   const b = base();
   const all: Array<{ id: string; fields: any }> = [];
 
-  try {
-    await b(TB_PREVENTIVI)
-      .select({
-        pageSize: 100,
-        sort: [{ field: 'Last modified time', direction: 'desc' }],
-      })
-      .eachPage((records, next) => {
-        for (const r of records) all.push({ id: r.id, fields: r.fields });
-        next();
-      });
-  } catch (e) {
-    console.error('[airtable.quotes] listPreventivi failed', e);
-    throw e;
-  }
-
-  if (opts?.email) {
-    const needle = String(opts.email).toLowerCase();
-    const emailFields = [
-      'Email_Cliente',
-      'Email Cliente',
-      'Cliente_Email',
-      'CreatoDaEmail',
-      'Creato da (email)',
-      'Created By Email',
-      'Creato da Email',
-    ];
-    return all.filter(({ fields }) => {
-      for (const k of emailFields) {
-        const v = (fields?.[k] ?? '') as string;
-        if (typeof v === 'string' && v.toLowerCase() === needle) return true;
-      }
-      return false;
+  await b(TB_PREVENTIVI)
+    .select({ pageSize: 100, sort: [{ field: 'Last modified time', direction: 'desc' }] })
+    .eachPage((recs, next) => {
+      for (const r of recs) all.push({ id: r.id, fields: r.fields });
+      next();
     });
-  }
 
-  return all;
+  if (!opts?.email) return all;
+
+  const needle = String(opts.email).toLowerCase();
+  const emailFields = [
+    ...F.EmailCliente,
+    ...F.CreatoDaEmail,
+  ];
+  return all.filter(({ fields }) => {
+    for (const k of emailFields) {
+      const v = (fields?.[k] ?? '') as string;
+      if (typeof v === 'string' && v.toLowerCase() === needle) return true;
+    }
+    return false;
+  });
 }
