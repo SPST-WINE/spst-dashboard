@@ -1,19 +1,46 @@
 // lib/tracking-links.ts
-export function buildTrackingUrl(carrier?: string | null, code?: string | null) {
-  const c = (carrier || "").toLowerCase().trim();
-  const n = (code || "").trim();
-  if (!c || !n) return null;
+// Costruisce l’URL pubblico di tracking a partire da corriere + numero.
+// Se in Airtable esiste già un "Tracking URL", usalo come priorità.
 
-  // mapping base (puoi ampliare quando serve)
-  if (c.includes("dhl"))    return `https://www.dhl.com/track?tracking-number=${encodeURIComponent(n)}`;
-  if (c.includes("ups"))    return `https://www.ups.com/track?loc=it_IT&tracknum=${encodeURIComponent(n)}`;
-  if (c.includes("fedex"))  return `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(n)}`;
-  if (c.includes("tnt"))    return `https://www.tnt.com/express/it_it/site/shipping-tools/tracking.html?cons=${encodeURIComponent(n)}`;
-  if (c.includes("gls"))    return `https://gls-group.com/track?match=${encodeURIComponent(n)}`;
-  if (c.includes("brt"))    return `https://vas.brt.it/vas/sped_numspe_par.htm?sped_num=${encodeURIComponent(n)}`;
-  if (c.includes("poste"))  return `https://www.poste.it/cerca/index.html#/risultati-spedizioni/${encodeURIComponent(n)}`;
-  if (c.includes("sda"))    return `https://www.sda.it/wps/portal/Servizi_online/ricerca_spedizioni?locale=it&tracing-codes=${encodeURIComponent(n)}`;
+export function clean(s?: string | null) {
+  return (s || '').toString().trim();
+}
 
-  // privato/altro → nessun link esterno
-  return null;
+export function buildTrackingUrl(carrierRaw?: string | null, numRaw?: string | null, fallbackUrlRaw?: string | null) {
+  const carrier = clean(carrierRaw).toLowerCase();
+  const num = clean(numRaw);
+  const fallback = clean(fallbackUrlRaw);
+
+  // 1) se c'è un Tracking URL in Airtable lo usiamo così com'è
+  if (fallback) return fallback;
+
+  // 2) altrimenti proviamo a costruire in base al corriere
+  if (!carrier) return undefined;
+
+  try {
+    switch (carrier) {
+      case 'dhl':
+        return num ? `https://www.dhl.com/it-it/home/tracking.html?tracking-id=${encodeURIComponent(num)}` : 'https://www.dhl.com/it-it/home/tracking.html';
+      case 'fedex':
+        return num ? `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(num)}` : 'https://www.fedex.com/fedextrack/';
+      case 'ups':
+        return num ? `https://www.ups.com/track?tracknum=${encodeURIComponent(num)}` : 'https://www.ups.com/track';
+      case 'tnt':
+        // ✅ TNT Italia: pagina locale (il form non accetta una query affidabile)
+        // Meglio atterrare sulla pagina italiana ufficiale.
+        return 'https://www.tnt.it/tracking/Tracking.do';
+      case 'gls':
+        // Sito GLS Italy con match se disponibile
+        return num ? `https://www.gls-italy.com/it/servizi-online/ricerca-spedizioni?match=${encodeURIComponent(num)}` : 'https://www.gls-italy.com/it/servizi-online/ricerca-spedizioni';
+      case 'tnt it':
+      case 'tnt-italia':
+      case 'tnt_it':
+        return 'https://www.tnt.it/tracking/Tracking.do';
+      case 'privato':
+      default:
+        return undefined;
+    }
+  } catch {
+    return undefined;
+  }
 }
