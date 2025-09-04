@@ -81,23 +81,24 @@ export default function NuovaQuotazionePage() {
     try {
       const t = await getIdToken();
       const r = await fetch('/api/quotazioni', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(t ? { Authorization: `Bearer ${t}` } : {}),
-        },
-        body: JSON.stringify({
-  sorgente: tipo,
-  tipoSped: sottotipo,
-  formato,
-  contenuto,
-  ritiroData: ritiroData ? ritiroData.toISOString() : undefined,
-  ritiroNote,
-  mittente,
-  destinatario,
-  noteGeneriche: noteGen,
-  colli, // 👈 aggiunto
-}),
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    ...(t ? { Authorization: `Bearer ${t}` } : {}),
+  },
+  body: JSON.stringify({
+    sorgente: tipo,
+    tipoSped: sottotipo,
+    formato,
+    contenuto,
+    ritiroData: ritiroData ? ritiroData.toISOString() : undefined,
+    ritiroNote,
+    mittente,
+    destinatario,
+    noteGeneriche: noteGen,
+    colli, // 👈 aggiunto
+  }),
+}); //  <-- niente virgola qui
 
       const j = await r.json();
       if (!r.ok || !j?.ok) throw new Error(j?.error || 'SERVER_ERROR');
