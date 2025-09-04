@@ -13,7 +13,6 @@ export async function OPTIONS(req: NextRequest) {
 }
 
 async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
-  // 1) Bearer token
   const m = (req.headers.get('authorization') ?? '').match(/^Bearer\s+(.+)$/i);
   if (m) {
     try {
@@ -21,7 +20,6 @@ async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
       return decoded.email || decoded.firebase?.identities?.email?.[0] || undefined;
     } catch {}
   }
-  // 2) Session cookie
   const session = req.cookies.get('spst_session')?.value;
   if (session) {
     try {
@@ -65,7 +63,7 @@ export async function POST(req: NextRequest) {
   try {
     const payload: any = await req.json();
 
-    // Se arriva un token, crea session cookie
+    // Opzione: creazione session cookie da token
     if (payload.token) {
       const sessionCookie = await adminAuth().createSessionCookie(payload.token, {
         expiresIn: 60 * 60 * 24 * 5 * 1000,
@@ -82,21 +80,26 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    // 🔒 VALIDAZIONE: per spedizioni "vino" il CF/P.IVA del DESTINATARIO è obbligatorio
+    // ✅ Regola aggiornata: P.IVA/CF del DESTINATARIO obbligatoria solo per VINO + (B2B|Sample)
     const isVino = String(payload?.sorgente || '').toLowerCase() === 'vino';
-    const destPiva = String(payload?.destinatario?.piva || '').trim();
-    if (isVino && !destPiva) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: 'DEST_PIVA_REQUIRED',
-          message: 'Per le spedizioni vino è obbligatorio compilare il campo “P.IVA / Codice fiscale” del destinatario.',
-        },
-        { status: 400, headers: cors }
-      );
+    const tipo: string = payload?.tipoSped || '';
+    const richiedePivaDest = isVino && (tipo === 'B2B' || tipo === 'Sample');
+    if (richiedePivaDest) {
+      const pivaDest = String(payload?.destinatario?.piva || '').trim();
+      if (!pivaDest) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'DEST_PIVA_REQUIRED',
+            message:
+              'Per le spedizioni vino di tipo B2B o Sample è obbligatoria la Partita IVA / Codice Fiscale del destinatario.',
+          },
+          { status: 400, headers: cors }
+        );
+      }
     }
 
-    // Fallback: valorizza createdByEmail se mancante
+    // Fallback: createdByEmail da auth se non presente
     if (!payload.createdByEmail) {
       const email = await getEmailFromAuth(req);
       if (email) payload.createdByEmail = email;
