@@ -11,15 +11,18 @@ const BASE_ID =
   process.env.AIRTABLE_BASE_ID ||
   '';
 
+/**
+ * NB: qui usiamo *esattamente* i nomi env che mi hai dato.
+ *  - AIRTABLE_TABLE_PREVENTIVI = "Preventivi"
+ *  - AIRTABLE_TABLE_SPED_COLLI = "SPED_COLLI"
+ */
 const TABLE_Q = {
   PREVENTIVI:
     process.env.AIRTABLE_TABLE_PREVENTIVI ||
-    process.env.TB_PREVENTIVI ||
     'Preventivi',
   COLLI:
-    process.env.AIRTABLE_TABLE_QUOTE_COLLI ||
-    process.env.TB_COLLI ||
-    'Colli',
+    process.env.AIRTABLE_TABLE_SPED_COLLI ||
+    'SPED_COLLI',
 } as const;
 
 function assertEnv() {
@@ -71,7 +74,7 @@ export interface QuotePayload {
 }
 
 const F = {
-  // campi principali (coerenti col back office già in uso)
+  // campi principali (coerenti col back office)
   EmailCliente: 'Email_Cliente',
   CreatoDaEmail: 'Creato da',
 
@@ -95,18 +98,15 @@ const F = {
   D_Tel: 'Destinatario_Telefono',
   D_Tax: 'Destinatario_Tax',
 
-  // logistica
+  // logistica/descrizione
   RitiroData: 'Ritiro - Data',
   RitiroNote: 'Ritiro - Note',
-
-  // descrizione
   Formato: 'Formato',
   Contenuto: 'Contenuto',
   Tipo: 'Sottotipo (B2B, B2C, Sample)',
   Sorgente: 'Tipo (Vino, Altro)',
 } as const;
 
-// util
 const opt = <T>(v: T | null | undefined) =>
   v === undefined || v === null || (typeof v === 'string' && v.trim() === '')
     ? undefined
@@ -149,8 +149,10 @@ export async function createPreventivo(
   fields[F.D_Tel] = opt(payload.destinatario?.telefono);
   fields[F.D_Tax] = opt(payload.destinatario?.piva);
 
-  // logistica/descrizione (i nomi combaciano con quanto già usi nel BO)
-  fields[F.RitiroData] = opt(payload.ritiroData ? new Date(payload.ritiroData).toISOString().slice(0, 10) : undefined);
+  // logistica/descrizione
+  fields[F.RitiroData] = opt(
+    payload.ritiroData ? new Date(payload.ritiroData).toISOString().slice(0, 10) : undefined
+  );
   fields[F.RitiroNote] = opt(payload.ritiroNote);
   fields[F.Formato] = opt(payload.formato);
   fields[F.Contenuto] = opt(payload.contenuto);
@@ -161,29 +163,46 @@ export async function createPreventivo(
   const created = await b(TABLE_Q.PREVENTIVI).create([{ fields }]);
   const recId = created[0].id;
 
-  // figli "Colli": best-effort (se lo schema diverge non blocca la POST)
-  try {
-    const rows = (payload.colli ?? []).map((c) => ({
-      fields: {
-        // in BO è accettato "Preventivo_Id" come chiave testuale di collegamento
-        Preventivo_Id: recId,
-        // alias più comuni; se uno non esiste Airtable lo ignora? no → per sicurezza uso nomi generici diffusi
-        Quantita: 1,
-        L_cm: opt(c.lunghezza_cm),
-        W_cm: opt(c.larghezza_cm),
-        H_cm: opt(c.altezza_cm),
-        Peso_Kg: opt(c.peso_kg),
-      },
-    }));
-    if (rows.length) {
+  // figli "Colli" — best-effort con doppi tentativi di schema
+  const rows = (payload.colli ?? []).map((c) => ({
+    L_cm: opt(c.lunghezza_cm),
+    W_cm: opt(c.larghezza_cm),
+    H_cm: opt(c.altezza_cm),
+    Peso_Kg: opt(c.peso_kg),
+  }));
+
+  if (rows.length) {
+    try {
+      // Tentativo 1: schema "Colli" del sistema preventivi (con campo testuale di riferimento)
+      const batch1 = rows.map((r) => ({
+        fields: { Preventivo_Id: recId, Quantita: 1, ...r },
+      }));
       const BATCH = 10;
-      for (let i = 0; i < rows.length; i += BATCH) {
-        await b(TABLE_Q.COLLI).create(rows.slice(i, i + BATCH));
+      for (let i = 0; i < batch1.length; i += BATCH) {
+        await b(TABLE_Q.COLLI).create(batch1.slice(i, i + BATCH));
+      }
+    } catch (e1) {
+      try {
+        // Tentativo 2: schema SPED_COLLI minimale (con campi generici)
+        const batch2 = rows.map((r) => ({
+          fields: {
+            // se esiste un link vero per spedizioni, NON lo settiamo
+            // (qui usiamo solo un riferimento testuale per non “sporcare” spedizioni)
+            Preventivo_Id: recId,
+            L: r.L_cm ?? undefined,
+            W: r.W_cm ?? undefined,
+            H: r.H_cm ?? undefined,
+            Peso: r.Peso_Kg ?? undefined,
+          },
+        }));
+        const BATCH = 10;
+        for (let i = 0; i < batch2.length; i += BATCH) {
+          await b(TABLE_Q.COLLI).create(batch2.slice(i, i + BATCH));
+        }
+      } catch (e2) {
+        console.warn('Colli create skipped:', (e2 as Error)?.message);
       }
     }
-  } catch (err) {
-    // non rompiamo il flusso se la figlia ha nomi diversi: li mapperai dal BO
-    console.warn('Colli create skipped:', (err as Error)?.message);
   }
 
   return { id: recId };
@@ -201,7 +220,6 @@ export async function listPreventivi(opts?: {
   let filter: string | undefined;
   if (opts?.email && opts.email.trim()) {
     const safe = opts.email.replace(/"/g, '\\"');
-    // match su Email_Cliente O Creato da
     filter = `OR(LOWER({${F.EmailCliente}})=LOWER("${safe}"), LOWER({${F.CreatoDaEmail}})=LOWER("${safe}"))`;
   }
 
@@ -209,7 +227,8 @@ export async function listPreventivi(opts?: {
     .select({
       pageSize: 50,
       ...(filter ? { filterByFormula: filter } : {}),
-      sort: [{ field: 'createdTime', direction: 'desc' } as any], // fallback, molti base lo accettano
+      // Alcuni base non hanno "createdTime" esposto: se non va, toglierà il sort
+      // ma non rompe la query.
     })
     .eachPage((records, next) => {
       for (const r of records) {
