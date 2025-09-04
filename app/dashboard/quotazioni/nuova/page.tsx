@@ -1,232 +1,243 @@
 // app/dashboard/quotazioni/nuova/page.tsx
 'use client';
 
-import Link from 'next/link';
 import { useRef, useState } from 'react';
-import { FilePlus2, ArrowLeft } from 'lucide-react';
-
-import PartyCard, { Party } from '@/components/nuova/PartyCard';
-import ColliCard, { Collo } from '@/components/nuova/ColliCard';
-import RitiroCard from '@/components/nuova/RitiroCard';
-import { Select } from '@/components/nuova/Field';
+import Link from 'next/link';
 import { getIdToken } from '@/lib/firebase-client-auth';
 
-const blankParty: Party = {
-  ragioneSociale: '',
-  referente: '',
-  paese: '',
-  citta: '',
-  cap: '',
-  indirizzo: '',
-  telefono: '',
-  piva: '',
+type PartyQ = {
+  ragioneSociale?: string;
+  indirizzo?: string;
+  cap?: string;
+  citta?: string;
+  paese?: string;
+  telefono?: string;
+  taxId?: string; // P.IVA / EORI / EIN
+};
+
+type ColloQ = {
+  qty?: number;
+  l1_cm?: number | null;
+  l2_cm?: number | null;
+  l3_cm?: number | null;
+  peso_kg?: number | null;
 };
 
 export default function NuovaQuotazionePage() {
   const topRef = useRef<HTMLDivElement>(null);
 
-  // Tipologie
-  const [tipo, setTipo] = useState<'vino' | 'altro'>('vino');
-  const [sottotipo, setSottotipo] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
+  const [mittente, setMittente] = useState<PartyQ>({});
+  const [destinatario, setDestinatario] = useState<PartyQ>({});
+  const [valuta, setValuta] = useState<'EUR' | 'USD' | 'GBP'>('EUR');
+  const [ritiroData, setRitiroData] = useState<string>('');
+  const [noteGeneriche, setNoteGeneriche] = useState<string>('');
+  const [docFatturaRichiesta, setDocFatturaRichiesta] = useState(false);
+  const [docPLRichiesta, setDocPLRichiesta] = useState(false);
 
-  // Parti
-  const [mittente, setMittente] = useState<Party>(blankParty);
-  const [destinatario, setDestinatario] = useState<Party>(blankParty);
-
-  // Colli / contenuto
-  const [colli, setColli] = useState<Collo[]>([
-    { lunghezza_cm: null, larghezza_cm: null, altezza_cm: null, peso_kg: null },
+  const [colli, setColli] = useState<ColloQ[]>([
+    { qty: 1, l1_cm: null, l2_cm: null, l3_cm: null, peso_kg: null },
   ]);
-  const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
-  const [contenuto, setContenuto] = useState<string>('');
 
-  // Ritiro
-  const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
-  const [ritiroNote, setRitiroNote] = useState('');
-
-  // Note generiche
-  const [noteGen, setNoteGen] = useState('');
-
-  // UI state
   const [saving, setSaving] = useState(false);
-  const [errors, setErrors] = useState<string[] | null>(null);
   const [ok, setOk] = useState<{ id: string } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  function validate(): string[] {
-    const errs: string[] = [];
-    if (!mittente.ragioneSociale?.trim()) errs.push('Mittente: ragione sociale obbligatoria.');
-    if (!destinatario.ragioneSociale?.trim()) errs.push('Destinatario: ragione sociale obbligatoria.');
-    colli.forEach((c, i) => {
-      const miss = c.lunghezza_cm == null || c.larghezza_cm == null || c.altezza_cm == null || c.peso_kg == null;
-      const nonPos =
-        (c.lunghezza_cm ?? 0) <= 0 ||
-        (c.larghezza_cm ?? 0) <= 0 ||
-        (c.altezza_cm ?? 0) <= 0 ||
-        (c.peso_kg ?? 0) <= 0;
-      if (miss || nonPos) errs.push(`Collo #${i + 1}: inserire tutte le misure e un peso > 0.`);
-    });
-    return errs;
-  }
+  const addCollo = () =>
+    setColli((v) => [...v, { qty: 1, l1_cm: null, l2_cm: null, l3_cm: null, peso_kg: null }]);
 
-  async function salva() {
-    if (saving) return;
-    const v = validate();
-    if (v.length) {
-      setErrors(v);
-      topRef.current?.scrollIntoView({ behavior: 'smooth' });
-      return;
-    }
-    setErrors(null);
+  async function onSubmit() {
+    setErr(null);
     setSaving(true);
     try {
-      const t = await getIdToken();
+      const token = await getIdToken();
+
+      const payload = {
+        valuta,
+        ritiroData: ritiroData || undefined,
+        noteGeneriche: noteGeneriche || undefined,
+        docFatturaRichiesta,
+        docPLRichiesta,
+        mittente,       // <- contiene taxId
+        destinatario,   // <- contiene taxId
+        colli,
+      };
+
       const r = await fetch('/api/quotazioni', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    ...(t ? { Authorization: `Bearer ${t}` } : {}),
-  },
-  body: JSON.stringify({
-    sorgente: tipo,
-    tipoSped: sottotipo,
-    formato,
-    contenuto,
-    ritiroData: ritiroData ? ritiroData.toISOString() : undefined,
-    ritiroNote,
-    mittente,
-    destinatario,
-    noteGeneriche: noteGen,
-    colli, // 👈 aggiunto
-  }),
-}); //  <-- niente virgola qui
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
 
       const j = await r.json();
       if (!r.ok || !j?.ok) throw new Error(j?.error || 'SERVER_ERROR');
       setOk({ id: j.id });
       topRef.current?.scrollIntoView({ behavior: 'smooth' });
-    } catch {
-      setErrors(['Errore durante il salvataggio della quotazione.']);
+    } catch (e: any) {
+      setErr(e?.message || 'Errore durante il salvataggio');
     } finally {
       setSaving(false);
     }
   }
 
-  // --- SUCCESS ---
   if (ok) {
     return (
-      <div ref={topRef} className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold text-slate-800">Quotazione salvata</h1>
-          <Link
-            href="/dashboard/quotazioni"
-            className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-[#1c3e5e] hover:bg-slate-50"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Torna alle quotazioni
-          </Link>
-        </div>
-
+      <div ref={topRef} className="space-y-6">
+        <h1 className="text-2xl font-semibold">Quotazione creata</h1>
         <div className="rounded-2xl border bg-white p-4">
-          <div className="text-sm">
-            ID preventivo: <span className="font-mono">{ok.id}</span>
+          <div className="text-sm mb-2">ID record Airtable</div>
+          <div className="font-mono text-sm">{ok.id}</div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link href="/dashboard/quotazioni" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">
+              Le mie quotazioni
+            </Link>
           </div>
-          <p className="mt-2 text-sm text-slate-600">
-            Il back office potrà ora elaborare le opzioni e inviarti il link pubblico.
-          </p>
         </div>
       </div>
     );
   }
 
-  // --- FORM ---
   return (
     <div ref={topRef} className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-slate-800">Nuova quotazione</h1>
-        <Link
-          href="/dashboard/quotazioni"
-          className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-[#1c3e5e] hover:bg-slate-50"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Torna alle quotazioni
+        <Link href="/dashboard/quotazioni" className="text-sm underline underline-offset-4 text-slate-600">
+          Vedi tutte
         </Link>
       </div>
 
-      {!!errors?.length && (
-        <div className="rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
-          <div className="font-medium mb-1">Controlla questi campi:</div>
-          <ul className="list-disc ml-5 space-y-1">
-            {errors.map((e, i) => (
-              <li key={i}>{e}</li>
-            ))}
-          </ul>
+      {err && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          {err}
         </div>
       )}
 
-      <div className="rounded-2xl border bg-white p-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <Select
-            label="Tipologia"
-            value={tipo}
-            onChange={(v) => setTipo(v as 'vino' | 'altro')}
-            options={[
-              { label: 'Vino', value: 'vino' },
-              { label: 'Altro', value: 'altro' },
-            ]}
-          />
-          <Select
-            label="Categoria"
-            value={sottotipo}
-            onChange={(v) => setSottotipo(v as 'B2B' | 'B2C' | 'Sample')}
-            options={[
-              { label: 'B2B — azienda', value: 'B2B' },
-              { label: 'B2C — privato', value: 'B2C' },
-              { label: 'Sample — campionatura', value: 'Sample' },
-            ]}
-          />
+      {/* Mittente */}
+      <div className="rounded-2xl border bg-white p-4 space-y-3">
+        <h2 className="text-base font-semibold">Mittente</h2>
+        <div className="grid gap-3 md:grid-cols-2">
+          <input placeholder="Ragione sociale"
+            className="rounded-lg border px-3 py-2 text-sm"
+            value={mittente.ragioneSociale || ''} onChange={e => setMittente(v => ({ ...v, ragioneSociale: e.target.value }))} />
+          <input placeholder="Indirizzo"
+            className="rounded-lg border px-3 py-2 text-sm"
+            value={mittente.indirizzo || ''} onChange={e => setMittente(v => ({ ...v, indirizzo: e.target.value }))} />
+          <input placeholder="CAP"
+            className="rounded-lg border px-3 py-2 text-sm"
+            value={mittente.cap || ''} onChange={e => setMittente(v => ({ ...v, cap: e.target.value }))} />
+          <input placeholder="Città"
+            className="rounded-lg border px-3 py-2 text-sm"
+            value={mittente.citta || ''} onChange={e => setMittente(v => ({ ...v, citta: e.target.value }))} />
+          <input placeholder="Paese (es. IT)"
+            className="rounded-lg border px-3 py-2 text-sm"
+            value={mittente.paese || ''} onChange={e => setMittente(v => ({ ...v, paese: e.target.value }))} />
+          <input placeholder="Telefono"
+            className="rounded-lg border px-3 py-2 text-sm"
+            value={mittente.telefono || ''} onChange={e => setMittente(v => ({ ...v, telefono: e.target.value }))} />
+          <input placeholder="P.IVA / Tax ID (Mittente)"
+            className="rounded-lg border px-3 py-2 text-sm md:col-span-2"
+            value={mittente.taxId || ''} onChange={e => setMittente(v => ({ ...v, taxId: e.target.value }))} />
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <PartyCard title="Mittente" value={mittente} onChange={setMittente} />
-        <PartyCard title="Destinatario" value={destinatario} onChange={setDestinatario} />
+      {/* Destinatario */}
+      <div className="rounded-2xl border bg-white p-4 space-y-3">
+        <h2 className="text-base font-semibold">Destinatario</h2>
+        <div className="grid gap-3 md:grid-cols-2">
+          <input placeholder="Ragione sociale"
+            className="rounded-lg border px-3 py-2 text-sm"
+            value={destinatario.ragioneSociale || ''} onChange={e => setDestinatario(v => ({ ...v, ragioneSociale: e.target.value }))} />
+          <input placeholder="Indirizzo"
+            className="rounded-lg border px-3 py-2 text-sm"
+            value={destinatario.indirizzo || ''} onChange={e => setDestinatario(v => ({ ...v, indirizzo: e.target.value }))} />
+          <input placeholder="CAP"
+            className="rounded-lg border px-3 py-2 text-sm"
+            value={destinatario.cap || ''} onChange={e => setDestinatario(v => ({ ...v, cap: e.target.value }))} />
+          <input placeholder="Città"
+            className="rounded-lg border px-3 py-2 text-sm"
+            value={destinatario.citta || ''} onChange={e => setDestinatario(v => ({ ...v, citta: e.target.value }))} />
+          <input placeholder="Paese (es. FR)"
+            className="rounded-lg border px-3 py-2 text-sm"
+            value={destinatario.paese || ''} onChange={e => setDestinatario(v => ({ ...v, paese: e.target.value }))} />
+          <input placeholder="Telefono"
+            className="rounded-lg border px-3 py-2 text-sm"
+            value={destinatario.telefono || ''} onChange={e => setDestinatario(v => ({ ...v, telefono: e.target.value }))} />
+          <input placeholder="P.IVA / Tax ID (Destinatario)"
+            className="rounded-lg border px-3 py-2 text-sm md:col-span-2"
+            value={destinatario.taxId || ''} onChange={e => setDestinatario(v => ({ ...v, taxId: e.target.value }))} />
+        </div>
       </div>
 
-      <ColliCard
-        colli={colli}
-        onChange={setColli}
-        formato={formato}
-        setFormato={setFormato}
-        contenuto={contenuto}
-        setContenuto={setContenuto}
-      />
+      {/* Colli */}
+      <div className="rounded-2xl border bg-white p-4 space-y-3">
+        <h2 className="text-base font-semibold">Colli</h2>
+        <div className="space-y-3">
+          {colli.map((c, i) => (
+            <div key={i} className="grid gap-2 md:grid-cols-5">
+              <input type="number" placeholder="Q.tà"
+                className="rounded-lg border px-3 py-2 text-sm"
+                value={c.qty ?? ''} onChange={e => setColli(v => v.map((x, k) => k===i ? { ...x, qty: Number(e.target.value) || undefined } : x))} />
+              <input type="number" placeholder="L1 (cm)"
+                className="rounded-lg border px-3 py-2 text-sm"
+                value={c.l1_cm ?? ''} onChange={e => setColli(v => v.map((x, k) => k===i ? { ...x, l1_cm: e.target.value ? Number(e.target.value) : null } : x))} />
+              <input type="number" placeholder="L2 (cm)"
+                className="rounded-lg border px-3 py-2 text-sm"
+                value={c.l2_cm ?? ''} onChange={e => setColli(v => v.map((x, k) => k===i ? { ...x, l2_cm: e.target.value ? Number(e.target.value) : null } : x))} />
+              <input type="number" placeholder="L3 (cm)"
+                className="rounded-lg border px-3 py-2 text-sm"
+                value={c.l3_cm ?? ''} onChange={e => setColli(v => v.map((x, k) => k===i ? { ...x, l3_cm: e.target.value ? Number(e.target.value) : null } : x))} />
+              <input type="number" placeholder="Peso (kg)"
+                className="rounded-lg border px-3 py-2 text-sm"
+                value={c.peso_kg ?? ''} onChange={e => setColli(v => v.map((x, k) => k===i ? { ...x, peso_kg: e.target.value ? Number(e.target.value) : null } : x))} />
+            </div>
+          ))}
+        </div>
+        <button type="button" onClick={addCollo} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50">
+          + Aggiungi collo
+        </button>
+      </div>
 
-      <RitiroCard date={ritiroData} setDate={setRitiroData} note={ritiroNote} setNote={setRitiroNote} />
-
-      <div className="rounded-2xl border bg-white p-4">
-        <label className="mb-1 block text-sm font-medium text-slate-700">Note generiche sulla spedizione</label>
+      {/* Altri dettagli */}
+      <div className="rounded-2xl border bg-white p-4 space-y-3">
+        <h2 className="text-base font-semibold">Dettagli</h2>
+        <div className="grid gap-3 md:grid-cols-2">
+          <select value={valuta} onChange={e => setValuta(e.target.value as any)}
+            className="rounded-lg border px-3 py-2 text-sm">
+            <option value="EUR">Valuta: EUR</option>
+            <option value="USD">Valuta: USD</option>
+            <option value="GBP">Valuta: GBP</option>
+          </select>
+          <input type="date" value={ritiroData} onChange={e => setRitiroData(e.target.value)}
+            className="rounded-lg border px-3 py-2 text-sm" />
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={docFatturaRichiesta} onChange={e => setDocFatturaRichiesta(e.target.checked)} />
+            Richiedi Fattura al cliente
+          </label>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={docPLRichiesta} onChange={e => setDocPLRichiesta(e.target.checked)} />
+            Richiedi Packing List
+          </label>
+        </div>
         <textarea
-          className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20"
-          rows={3}
-          value={noteGen}
-          onChange={(e) => setNoteGen(e.target.value)}
-          placeholder="Informazioni utili per il preventivo..."
+          placeholder="Note generiche sulla spedizione"
+          className="mt-2 w-full rounded-lg border px-3 py-2 text-sm"
+          rows={4}
+          value={noteGeneriche}
+          onChange={e => setNoteGeneriche(e.target.value)}
         />
       </div>
 
       <div className="flex justify-end">
         <button
           type="button"
-          onClick={salva}
+          onClick={onSubmit}
           disabled={saving}
-          aria-busy={saving}
-          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 inline-flex items-center gap-2"
+          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
         >
-          {saving && (
-            <span className="inline-block h-4 w-4 animate-spin rounded-full border border-slate-400 border-t-transparent" />
-          )}
-          <FilePlus2 className="h-4 w-4" />
-          {saving ? 'Salvataggio…' : 'Salva quotazione'}
+          {saving ? 'Salvataggio…' : 'Crea preventivo'}
         </button>
       </div>
     </div>
