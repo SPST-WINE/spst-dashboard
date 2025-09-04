@@ -24,23 +24,30 @@ const blankParty: Party = {
 
 export default function NuovaQuotazionePage() {
   const topRef = useRef<HTMLDivElement>(null);
+
+  // Tipologie
   const [tipo, setTipo] = useState<'vino' | 'altro'>('vino');
   const [sottotipo, setSottotipo] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
 
+  // Parti
   const [mittente, setMittente] = useState<Party>(blankParty);
   const [destinatario, setDestinatario] = useState<Party>(blankParty);
 
+  // Colli / contenuto
   const [colli, setColli] = useState<Collo[]>([
     { lunghezza_cm: null, larghezza_cm: null, altezza_cm: null, peso_kg: null },
   ]);
   const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
   const [contenuto, setContenuto] = useState<string>('');
 
+  // Ritiro
   const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
   const [ritiroNote, setRitiroNote] = useState('');
 
+  // Note generiche
   const [noteGen, setNoteGen] = useState('');
 
+  // UI state
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[] | null>(null);
   const [ok, setOk] = useState<{ id: string } | null>(null);
@@ -95,14 +102,14 @@ export default function NuovaQuotazionePage() {
       if (!r.ok || !j?.ok) throw new Error(j?.error || 'SERVER_ERROR');
       setOk({ id: j.id });
       topRef.current?.scrollIntoView({ behavior: 'smooth' });
-    } catch (e) {
+    } catch {
       setErrors(['Errore durante il salvataggio della quotazione.']);
     } finally {
       setSaving(false);
     }
   }
 
-  // SUCCESS
+  // --- SUCCESS ---
   if (ok) {
     return (
       <div ref={topRef} className="space-y-4">
@@ -129,7 +136,7 @@ export default function NuovaQuotazionePage() {
     );
   }
 
-  // FORM
+  // --- FORM ---
   return (
     <div ref={topRef} className="space-y-6">
       <div className="flex items-center justify-between">
@@ -147,7 +154,9 @@ export default function NuovaQuotazionePage() {
         <div className="rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
           <div className="font-medium mb-1">Controlla questi campi:</div>
           <ul className="list-disc ml-5 space-y-1">
-            {errors.map((e, i) => <li key={i}>{e}</li>)}
+            {errors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
           </ul>
         </div>
       )}
@@ -190,12 +199,7 @@ export default function NuovaQuotazionePage() {
         setContenuto={setContenuto}
       />
 
-      <RitiroCard
-        date={ritiroData}
-        setDate={setRitiroData}
-        note={ritiroNote}
-        setNote={setRitiroNote}
-      />
+      <RitiroCard date={ritiroData} setDate={setRitiroData} note={ritiroNote} setNote={setRitiroNote} />
 
       <div className="rounded-2xl border bg-white p-4">
         <label className="mb-1 block text-sm font-medium text-slate-700">Note generiche sulla spedizione</label>
@@ -219,4 +223,10 @@ export default function NuovaQuotazionePage() {
           {saving && (
             <span className="inline-block h-4 w-4 animate-spin rounded-full border border-slate-400 border-t-transparent" />
           )}
-          {saving ? 'Sal
+          <FilePlus2 className="h-4 w-4" />
+          {saving ? 'Salvataggio…' : 'Salva quotazione'}
+        </button>
+      </div>
+    </div>
+  );
+}
