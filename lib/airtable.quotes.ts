@@ -71,7 +71,7 @@ export type ColloQ = {
   peso_kg?: number | null;
 };
 export type PreventivoPayload = {
-  createdByEmail?: string; // impostato da route se assente
+  createdByEmail?: string;
   customerEmail?: string;
   valuta?: 'EUR' | 'USD' | 'GBP';
   ritiroData?: string; // ISO
@@ -94,8 +94,12 @@ const F = {
   ],
 } as const;
 
-// helper: set campo con lista alias
-function setField(obj: Record<string, any>, aliases: string | string[], value: any) {
+// ✅ accetta anche ReadonlyArray<string> (risolve l’errore TS)
+function setField(
+  obj: Record<string, any>,
+  aliases: string | ReadonlyArray<string>,
+  value: any
+) {
   if (value == null) return;
   const keys = Array.isArray(aliases) ? aliases : [aliases];
   for (const k of keys) {
@@ -121,13 +125,12 @@ export async function createPreventivo(payload: PreventivoPayload): Promise<{ id
     const created = await b(TB_PREVENTIVI).create([{ fields }]);
     const recId = created[0].id;
 
-    // (FACOLTATIVO) gestione colli — abilitalo solo se il link è certo
-    // Se in SPED_COLLI hai un campo link al preventivo, definiscilo qui:
-    // const LINK_FIELD = 'Preventivo'; // oppure 'Preventivo_Id' (testo)
+    // (FACOLTATIVO) gestione colli — sblocca appena mi confermi il nome del campo link in SPED_COLLI
+    // const LINK_FIELD = 'Preventivo'; // oppure 'Preventivo_Id'
     // if (payload.colli?.length) {
     //   const rows = payload.colli.map((c) => ({
     //     fields: {
-    //       [LINK_FIELD]: [recId],        // se è un linked record
+    //       [LINK_FIELD]: [recId], // se è un linked record
     //       Qty: optional(c.qty),
     //       L_cm: optional(c.l1_cm),
     //       W_cm: optional(c.l2_cm),
@@ -143,7 +146,6 @@ export async function createPreventivo(payload: PreventivoPayload): Promise<{ id
 
     return { id: recId };
   } catch (e: any) {
-    // Log esteso lato server
     console.error('[airtable.quotes] createPreventivo failed', {
       message: e?.message,
       statusCode: e?.statusCode,
@@ -164,10 +166,9 @@ export async function listPreventivi(opts?: { email?: string }): Promise<Array<{
 
   if (opts?.email) {
     const safe = String(opts.email).replace(/"/g, '\\"');
-    // filtro su email cliente O creatore — adattalo alla tua base
     select.filterByFormula = `OR(
-      LOWER({Email_Cliente}) = LOWER("${safe}"),
-      LOWER({CreatoDaEmail}) = LOWER("${safe}")
+      LOWER({Email_Cliente} & "") = LOWER("${safe}"),
+      LOWER({CreatoDaEmail} & "") = LOWER("${safe}")
     )`;
   }
 
