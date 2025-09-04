@@ -8,7 +8,7 @@ import ColliCard, { Collo } from '@/components/nuova/ColliCard';
 import RitiroCard from '@/components/nuova/RitiroCard';
 import { getIdToken } from '@/lib/firebase-client-auth';
 import { getUserProfile } from '@/lib/api';
-import { Select } from '@/components/nuova/Field'; // 👈 usiamo lo stesso Select delle spedizioni
+import { Select } from '@/components/nuova/Field';
 
 const blankParty: Party = {
   ragioneSociale: '',
@@ -19,6 +19,20 @@ const blankParty: Party = {
   indirizzo: '',
   telefono: '',
   piva: '',
+};
+
+type SuccessInfo = {
+  recId: string;
+  displayId: string;
+  tipoSped: 'B2B' | 'B2C' | 'Sample';
+  incoterm: 'DAP' | 'DDP' | 'EXW';
+  dataRitiro?: string;
+  colli: number;
+  formato: 'Pacco' | 'Pallet';
+  contenuto?: string;
+  mittente: Party;
+  destinatario: Party;
+  note?: string;
 };
 
 export default function NuovaQuotazionePage() {
@@ -44,15 +58,15 @@ export default function NuovaQuotazionePage() {
 
   // Parametri commerciali
   const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
-  const [incoterm, setIncoterm] = useState<'DAP' | 'DDP' | 'EXW'>('DAP'); // DDP (non DPP)
+  const [incoterm, setIncoterm] = useState<'DAP' | 'DDP' | 'EXW'>('DAP');
 
-  // Note generiche
+  // Note
   const [noteGeneriche, setNoteGeneriche] = useState('');
 
   // UI
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
-  const [okId, setOkId] = useState<string | null>(null);
+  const [success, setSuccess] = useState<SuccessInfo | null>(null);
 
   // Prefill mittente da profilo & email utente
   useEffect(() => {
@@ -69,7 +83,7 @@ export default function NuovaQuotazionePage() {
     return () => { cancelled = true; };
   }, []);
 
-  // Validazione minima per la quotazione
+  // Validazione minima
   function validate(): string[] {
     const errs: string[] = [];
     if (!mittente.ragioneSociale?.trim()) errs.push('Inserisci la ragione sociale del mittente.');
@@ -90,26 +104,22 @@ export default function NuovaQuotazionePage() {
       setErrors(v);
       topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
-    } else {
-      setErrors([]);
     }
-
+    setErrors([]);
     setSaving(true);
+
     try {
       const t = await getIdToken();
-
-      // Unisco le note del ritiro alle note generiche, così arrivano in Airtable
       const noteCombined = [noteGeneriche, ritiroNote?.trim() ? `Note ritiro: ${ritiroNote.trim()}` : '']
         .filter(Boolean)
         .join('\n');
 
-      // Payload per /api/quotazioni
       const payload = {
         createdByEmail: email || undefined,
         customerEmail: email || undefined,
         valuta: 'EUR' as const,
-        tipoSped,                 // 👈 nuovo
-        incoterm,                 // 👈 nuovo
+        tipoSped,
+        incoterm,
         ritiroData: ritiroData ? ritiroData.toISOString() : undefined,
         noteGeneriche: noteCombined || undefined,
         mittente: {
@@ -147,10 +157,23 @@ export default function NuovaQuotazionePage() {
         },
         body: JSON.stringify(payload),
       });
-
       const j = await res.json();
+
       if (!res.ok || !j?.ok) throw new Error(j?.error || 'SERVER_ERROR');
-      setOkId(j.id as string);
+
+      setSuccess({
+        recId: j.id,
+        displayId: j.displayId || j.id,
+        tipoSped,
+        incoterm,
+        dataRitiro: ritiroData?.toLocaleDateString(),
+        colli: colli.length,
+        formato,
+        contenuto,
+        mittente,
+        destinatario,
+        note: noteCombined || undefined,
+      });
       topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
       console.error('Errore creazione preventivo', e);
@@ -160,15 +183,50 @@ export default function NuovaQuotazionePage() {
     }
   }
 
-  // Success UI
-  if (okId) {
+  // Success UI con ID_Preventivo (formula)
+  if (success) {
     return (
       <div ref={topRef} className="space-y-4">
         <h2 className="text-lg font-semibold">Quotazione inviata</h2>
+
         <div className="rounded-2xl border bg-white p-4">
-          <p className="text-sm">
-            Il tuo preventivo è stato creato (ID: <span className="font-mono">{okId}</span>).
-          </p>
+          <div className="mb-3 text-sm">
+            <div className="font-medium">ID Preventivo</div>
+            <div className="font-mono">{success.displayId}</div>
+            <div className="text-xs text-slate-500">Record: {success.recId}</div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 text-sm">
+            <div><span className="text-slate-500">Tipo spedizione:</span> {success.tipoSped}</div>
+            <div><span className="text-slate-500">Incoterm:</span> {success.incoterm}</div>
+            <div><span className="text-slate-500">Data ritiro:</span> {success.dataRitiro ?? '—'}</div>
+            <div><span className="text-slate-500">Colli:</span> {success.colli} ({success.formato})</div>
+            <div><span className="text-slate-500">Contenuto:</span> {success.contenuto || '—'}</div>
+
+            <div className="md:col-span-2 mt-2 text-slate-700">
+              <div className="font-medium mb-1">Mittente</div>
+              <div>{success.mittente.ragioneSociale || '—'}</div>
+              <div className="text-xs text-slate-500">
+                {success.mittente.indirizzo || '—'}{success.mittente.citta ? `, ${success.mittente.citta}` : ''} {success.mittente.cap || ''} {success.mittente.paese || ''}
+              </div>
+            </div>
+
+            <div className="md:col-span-2 text-slate-700">
+              <div className="font-medium mb-1">Destinatario</div>
+              <div>{success.destinatario.ragioneSociale || '—'}</div>
+              <div className="text-xs text-slate-500">
+                {success.destinatario.indirizzo || '—'}{success.destinatario.citta ? `, ${success.destinatario.citta}` : ''} {success.destinatario.cap || ''} {success.destinatario.paese || ''}
+              </div>
+            </div>
+
+            {success.note && (
+              <div className="md:col-span-2">
+                <div className="text-slate-500">Note:</div>
+                <pre className="whitespace-pre-wrap text-xs">{success.note}</pre>
+              </div>
+            )}
+          </div>
+
           <div className="mt-4 flex flex-wrap gap-2">
             <Link href="/dashboard/quotazioni" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">Le mie quotazioni</Link>
             <Link href="/dashboard/quotazioni/nuova" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">Nuova quotazione</Link>
@@ -183,7 +241,9 @@ export default function NuovaQuotazionePage() {
     <div ref={topRef} className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-slate-800">Nuova quotazione</h1>
-        <Link href="/dashboard/quotazioni" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">Le mie quotazioni</Link>
+        <Link href="/dashboard/quotazioni" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">
+          Le mie quotazioni
+        </Link>
       </div>
 
       {!!errors.length && (
@@ -212,9 +272,9 @@ export default function NuovaQuotazionePage() {
             value={incoterm}
             onChange={(v) => setIncoterm(v as 'DAP' | 'DDP' | 'EXW')}
             options={[
-              { label: 'DAP — Spedizione a carico del mittente, dazi ed oneri a carico del destinatario', value: 'DAP' },
-              { label: 'DDP — Tutte le spese a carico del mittente', value: 'DDP' }, // 👈 non "DPP"
-              { label: 'EXW — Tutte le spese a carico del destinatario', value: 'EXW' },
+              { label: 'DAP — Delivered At Place', value: 'DAP' },
+              { label: 'DDP — Delivered Duty Paid', value: 'DDP' },
+              { label: 'EXW — Ex Works', value: 'EXW' },
             ]}
           />
         </div>
@@ -251,7 +311,7 @@ export default function NuovaQuotazionePage() {
         <RitiroCard date={ritiroData} setDate={setRitiroData} note={ritiroNote} setNote={setRitiroNote} />
       </div>
 
-      {/* Note generiche */}
+      {/* Note */}
       <div className="rounded-2xl border bg-white p-4">
         <h2 className="mb-3 text-base font-semibold text-spst-blue">Note & documenti</h2>
         <label className="mb-1 block text-sm font-medium text-slate-700">Note generiche sulla spedizione</label>
