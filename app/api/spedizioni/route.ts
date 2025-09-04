@@ -43,17 +43,13 @@ export async function GET(req: NextRequest) {
     const sort = (searchParams.get('sort') as any) || undefined;
 
     const email = emailParam || (await getEmailFromAuth(req));
-    const rows = await listSpedizioni({ email, q, sort });
+    const rows = await listSpedizioni({
+      ...(email ? { email } : {}),
+      ...(q ? { q } : {}),
+      ...(sort ? { sort } : {}),
+    });
 
-    // flatten + mantieni _createdTime per il sort client
-    const data = rows.map((r: any) => ({
-      id: r.id,
-      _createdTime: r._createdTime || null,
-      ...(r.fields || {}),
-      fields: r.fields || {},
-    }));
-
-    return NextResponse.json({ ok: true, rows: data }, { headers: cors });
+    return NextResponse.json({ ok: true, rows }, { headers: cors });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
@@ -72,7 +68,7 @@ export async function POST(req: NextRequest) {
     // Se arriva un token, crea session cookie
     if (payload.token) {
       const sessionCookie = await adminAuth().createSessionCookie(payload.token, {
-        expiresIn: 60 * 60 * 24 * 5 * 1000, // 5 giorni
+        expiresIn: 60 * 60 * 24 * 5 * 1000,
       });
       const res = NextResponse.json({ ok: true, message: 'Sessione creata' }, { headers: cors });
       res.cookies.set({
@@ -84,6 +80,20 @@ export async function POST(req: NextRequest) {
         path: '/',
       });
       return res;
+    }
+
+    // 🔒 VALIDAZIONE: per spedizioni "vino" il CF/P.IVA del DESTINATARIO è obbligatorio
+    const isVino = String(payload?.sorgente || '').toLowerCase() === 'vino';
+    const destPiva = String(payload?.destinatario?.piva || '').trim();
+    if (isVino && !destPiva) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'DEST_PIVA_REQUIRED',
+          message: 'Per le spedizioni vino è obbligatorio compilare il campo “P.IVA / Codice fiscale” del destinatario.',
+        },
+        { status: 400, headers: cors }
+      );
     }
 
     // Fallback: valorizza createdByEmail se mancante
