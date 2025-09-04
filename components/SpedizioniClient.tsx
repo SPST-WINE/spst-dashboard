@@ -1,246 +1,271 @@
+// components/SpedizioniClient.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { getIdToken } from '@/lib/firebase-client-auth';
+import Link from 'next/link';
+import { Package, Boxes, Search, ArrowUpDown } from 'lucide-react';
 import Drawer from '@/components/Drawer';
 import ShipmentDetail from '@/components/ShipmentDetail';
 
-type Row = { id: string; [k: string]: any };
-type Att = { url: string; filename?: string };
-
-const ATT_FIELDS = {
-  LDV: ['LDV', 'Lettera di Vettura', 'Lettera di vettura', 'AWB'],
-  FATT: ['Fattura - Allegato Cliente', 'Fattura – Allegato Cliente', 'Fattura Cliente', 'Fattura', 'Invoice'],
-  PL: ['Packing List - Allegato Cliente', 'Packing List', 'PL - Allegato Cliente'],
+type Row = {
+  id: string;
+  _createdTime?: string | null;
+  [key: string]: any; // campi flatten da /api/spedizioni
 };
 
-function getDisplayId(r: Row) {
-  return r['ID Spedizione'] || r['ID SPST'] || r['ID Spedizione (custom)'] || r.id;
+function norm(s?: string) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '');
 }
 
-function isAttArray(v: any): v is Att[] {
-  return Array.isArray(v) && v.length > 0 && typeof v[0]?.url === 'string';
-}
+function StatusBadge({ value }: { value?: string }) {
+  const v = (value || '').toLowerCase();
+  let cls = 'bg-amber-50 text-amber-700 ring-amber-200'; // default arancione
+  let text = value || '—';
 
-// tenta lista nomi, altrimenti scan “furba” delle chiavi
-function pickAttSmart(r: Row, preferredNames: string[], fallbackTokens: string[]): Att[] {
-  for (const n of preferredNames) {
-    const v = r?.[n];
-    if (isAttArray(v)) return v;
+  if (v.includes('in transito') || v.includes('intransit')) {
+    cls = 'bg-sky-50 text-sky-700 ring-sky-200'; // blu
+  } else if (v.includes('consegn')) {
+    cls = 'bg-emerald-50 text-emerald-700 ring-emerald-200'; // verde
+  } else if (v.includes('eccez') || v.includes('exception') || v.includes('failed')) {
+    cls = 'bg-rose-50 text-rose-700 ring-rose-200'; // rosso
+  } else if (v.includes('in consegna') || v.includes('outfordelivery')) {
+    cls = 'bg-amber-50 text-amber-700 ring-amber-200'; // arancione
   }
-  for (const [k, v] of Object.entries(r)) {
-    const key = String(k).toLowerCase();
-    if (fallbackTokens.some(tok => key.includes(tok)) && isAttArray(v)) {
-      return v;
+
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs ring-1 ${cls}`}>
+      {text}
+    </span>
+  );
+}
+
+// --- "smart pick" allegati: trova il primo Attachment field che "sembra" LDV/Fattura/Packing ---
+type Att = { url: string; filename?: string };
+function firstAttachmentLike(fields: any, hints: string[]): Att | undefined {
+  for (const [k, v] of Object.entries(fields || {})) {
+    const key = k.toLowerCase();
+    if (!Array.isArray(v)) continue;
+    // Heuristica: colonna attachment: array di oggetti con url
+    const arr = v as any[];
+    if (!arr.length || !arr[0]?.url) continue;
+    if (hints.some(h => key.includes(h))) {
+      return { url: arr[0].url as string, filename: arr[0].filename as string | undefined };
     }
   }
-  return [];
+  return undefined;
 }
 
-/** timestamp dalla data dentro l’ID SP-YYYY-MM-DD-xxxx (UTC) */
-function tsFromIdSped(r: Row): number {
-  const id = String(getDisplayId(r));
-  const m = id.match(/SP-(\d{4})-(\d{2})-(\d{2})-/i);
-  if (!m) return 0;
-  const [_, y, mo, d] = m;
-  return Date.UTC(Number(y), Number(mo) - 1, Number(d));
+function DocButtons({ row }: { row: Row }) {
+  const f = row as any;
+  const ldv =
+    firstAttachmentLike(f, ['ldv', 'awb', 'lettera', 'vettura']) ||
+    (Array.isArray(f['LDV']) && f['LDV'][0]?.url ? { url: f['LDV'][0].url, filename: f['LDV'][0].filename } : undefined);
+
+  const fatt =
+    firstAttachmentLike(f, ['fatt', 'invoice']) ||
+    (Array.isArray(f['Fattura - Allegato Cliente']) && f['Fattura - Allegato Cliente'][0]?.url
+      ? { url: f['Fattura - Allegato Cliente'][0].url, filename: f['Fattura - Allegato Cliente'][0].filename }
+      : undefined);
+
+  const pack =
+    firstAttachmentLike(f, ['pack', 'pl']) ||
+    (Array.isArray(f['Packing List - Allegato Cliente']) && f['Packing List - Allegato Cliente'][0]?.url
+      ? { url: f['Packing List - Allegato Cliente'][0].url, filename: f['Packing List - Allegato Cliente'][0].filename }
+      : undefined);
+
+  const Btn = ({
+    available,
+    href,
+    label,
+  }: {
+    available: boolean;
+    href?: string;
+    label: string;
+  }) =>
+    available && href ? (
+      <a
+        href={href}
+        target="_blank"
+        className="inline-flex items-center rounded-md bg-[#1c3e5e] px-2.5 py-1 text-xs font-medium text-white hover:opacity-95"
+      >
+        {label}
+      </a>
+    ) : (
+      <span className="inline-flex items-center rounded-md border px-2.5 py-1 text-xs text-slate-500">
+        {label} non disponibile
+      </span>
+    );
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      <Btn available={!!ldv} href={ldv?.url} label="LDV" />
+      <Btn available={!!fatt} href={fatt?.url} label="Fattura" />
+      <Btn available={!!pack} href={pack?.url} label="Packing List" />
+    </div>
+  );
 }
 
-/** timestamp da “Ritiro - Data” (fallback) */
-function tsFromRitiro(r: Row): number {
-  const s = r['Ritiro - Data'] || r['Ritiro Data'] || '';
-  const t = s ? Date.parse(s) : NaN;
-  return isNaN(t) ? 0 : t;
+function Card({ r, onDetails }: { r: Row; onDetails: () => void }) {
+  const formato: string = r['Formato'] || '';
+  const isPallet = /pallet/i.test(formato);
+  const ref = r['ID Spedizione'] || r.id;
+  const destCitta = r['Destinatario - Città'];
+  const destPaese = r['Destinatario - Paese'];
+  const dest = destCitta || destPaese ? `${destCitta || ''}${destCitta && destPaese ? ' ' : ''}${destPaese ? `(${destPaese})` : ''}` : '—';
+  const stato = r['Stato'] || r['Tracking Status'] || '—';
+
+  return (
+    <div className="rounded-2xl border bg-white p-4 flex items-start gap-3">
+      <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-700 shrink-0">
+        {isPallet ? <Boxes className="h-5 w-5" /> : <Package className="h-5 w-5" />}
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <div className="font-medium text-slate-900 truncate">{ref}</div>
+          <StatusBadge value={stato} />
+        </div>
+        <div className="text-sm text-slate-600 truncate">{dest}</div>
+
+        <DocButtons row={r} />
+
+        <div className="mt-2">
+          <button
+            onClick={onDetails}
+            className="text-xs text-[#1c3e5e] underline"
+          >
+            Mostra dettagli
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function SpedizioniClient() {
-  const [q, setQ] = useState('');
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Row | null>(null);
+  const [q, setQ] = useState('');
+  const [sort, setSort] = useState<'created_desc'|'ritiro_desc'|'dest_az'|'status'>('created_desc');
+
+  const [open, setOpen] = useState(false);
+  const [sel, setSel] = useState<Row | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        setLoading(true);
-        setErr(null);
+    let alive = true;
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (q.trim()) params.set('q', q.trim());
+    if (sort) params.set('sort', sort);
+    fetch(`/api/spedizioni?${params.toString()}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(j => {
+        if (!alive) return;
+        if (j?.ok) setRows(j.rows || []);
+        else setRows([]);
+      })
+      .catch(() => alive && setRows([]))
+      .finally(() => alive && setLoading(false));
+    return () => { alive = false; };
+  }, [q, sort]);
 
-        const emailLS =
-          (typeof window !== 'undefined' && localStorage.getItem('userEmail')?.trim()) || '';
-        const token = await getIdToken().catch(() => undefined);
-
-        const url = emailLS
-          ? `/api/spedizioni?email=${encodeURIComponent(emailLS)}`
-          : `/api/spedizioni`;
-
-        const res = await fetch(url, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          cache: 'no-store',
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        const j = await res.json();
-        const list: Row[] = Array.isArray(j?.rows)
-          ? j.rows
-          : Array.isArray(j?.data)
-          ? j.data
-          : Array.isArray(j)
-          ? j
-          : [];
-
-        if (!cancelled) setRows(list);
-      } catch (e: any) {
-        if (!cancelled) setErr(e?.message || 'Errore di caricamento');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // 🔽 ORDINAMENTO: più recenti prima (ID -> data; fallback ritiro)
-  const sorted = useMemo(() => {
-    const copy = [...rows];
-    copy.sort((a, b) => {
-      const byId = tsFromIdSped(b) - tsFromIdSped(a);
-      if (byId !== 0) return byId;
-      return tsFromRitiro(b) - tsFromRitiro(a);
-    });
-    return copy;
-  }, [rows]);
-
-  // 🔽 FILTRO su lista ordinata
   const filtered = useMemo(() => {
-    const k = q.trim().toLowerCase();
-    if (!k) return sorted;
-
-    const pick = (r: Row, keys: string[]) =>
-      keys
-        .map((kk) => String(r?.[kk] ?? '').toLowerCase())
-        .find((s) => s);
-
-    return sorted.filter((r) => {
-      const id = String(getDisplayId(r)).toLowerCase();
-      const dRS = pick(r, ['Destinatario - Ragione Sociale', 'Destinatario']) || '';
-      const dCity = pick(r, ['Destinatario - Città', 'Città Destinatario']) || '';
-      const dCountry = pick(r, ['Destinatario - Paese', 'Paese Destinatario']) || '';
-      return id.includes(k) || dRS.includes(k) || dCity.includes(k) || dCountry.includes(k);
+    const needle = norm(q);
+    const arr = !needle ? rows : rows.filter(r => {
+      const hay = [
+        r['ID Spedizione'],
+        r['Destinatario - Ragione Sociale'],
+        r['Destinatario - Città'],
+        r['Destinatario - Paese'],
+        r['Mittente - Ragione Sociale'],
+      ].map(norm).join(' | ');
+      return hay.includes(needle);
     });
-  }, [sorted, q]);
 
-  if (err) return <div className="text-sm text-rose-700">Errore: {err}</div>;
+    const copy = [...arr];
+    copy.sort((a, b) => {
+      if (sort === 'ritiro_desc') {
+        const da = a['Ritiro - Data'] ? new Date(a['Ritiro - Data']).getTime() : 0;
+        const db = b['Ritiro - Data'] ? new Date(b['Ritiro - Data']).getTime() : 0;
+        return db - da;
+      }
+      if (sort === 'dest_az') {
+        const aa = `${a['Destinatario - Città'] || ''} ${a['Destinatario - Paese'] || ''}`.toLowerCase();
+        const bb = `${b['Destinatario - Città'] || ''} ${b['Destinatario - Paese'] || ''}`.toLowerCase();
+        return aa.localeCompare(bb);
+      }
+      if (sort === 'status') {
+        const order = (s?: string) => {
+          const v = (s || '').toLowerCase();
+          if (v.includes('in transito') || v.includes('intransit')) return 2;
+          if (v.includes('in consegna') || v.includes('outfordelivery')) return 1;
+          if (v.includes('consegn')) return 0;
+          if (v.includes('eccez') || v.includes('exception') || v.includes('failed')) return 3;
+          return 4;
+        };
+        return order(a['Stato']) - order(b['Stato']);
+      }
+      // created_desc
+      const ca = a._createdTime ? new Date(a._createdTime).getTime() : 0;
+      const cb = b._createdTime ? new Date(b._createdTime).getTime() : 0;
+      return cb - ca;
+    });
+
+    return copy;
+  }, [rows, q, sort]);
 
   return (
     <>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <input
-          placeholder="Cerca per ID, destinatario, città, paese…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          className="w-full max-w-xl rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20"
-        />
-        <div className="text-sm text-slate-500">
-          {loading ? 'Caricamento…' : `${filtered.length} risultati`}
+      {/* Toolbar */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Cerca: destinatario, città, paese, ID…"
+            className="pl-8 pr-3 py-2 text-sm rounded-lg border bg-white w-72"
+          />
+        </div>
+        <div className="relative">
+          <ArrowUpDown className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as any)}
+            className="pl-8 pr-3 py-2 text-sm rounded-lg border bg-white"
+            title="Ordina per"
+          >
+            <option value="created_desc">Data creazione (nuove prima)</option>
+            <option value="ritiro_desc">Data ritiro (recenti prima)</option>
+            <option value="dest_az">Destinazione A → Z</option>
+            <option value="status">Stato</option>
+          </select>
         </div>
       </div>
 
+      {/* Lista 1 card per riga */}
       {loading ? (
-        <div className="text-sm text-slate-500">Recupero spedizioni…</div>
+        <div className="text-sm text-slate-500">Caricamento…</div>
       ) : filtered.length === 0 ? (
-        <div className="text-sm text-slate-500">0 risultati</div>
+        <div className="text-sm text-slate-500">Nessuna spedizione trovata.</div>
       ) : (
-        <div className="grid gap-3">
-          {filtered.map((r) => {
-            const id = getDisplayId(r);
-            const stato = r['Stato'] || '—';
-            const destRS = r['Destinatario - Ragione Sociale'] || r['Destinatario'] || '—';
-            const destCity = r['Destinatario - Città'] || r['Città Destinatario'] || '';
-            const destCountry = r['Destinatario - Paese'] || r['Paese Destinatario'] || '';
-            const ritiro = r['Ritiro - Data'] || r['Ritiro Data'] || '—';
-
-            // Allegati: smart pick
-            const ldv = pickAttSmart(r, ATT_FIELDS.LDV, ['ldv', 'vettura', 'awb', 'lettera']);
-            const fatt = pickAttSmart(r, ATT_FIELDS.FATT, ['fatt', 'invoice']);
-            const pl = pickAttSmart(r, ATT_FIELDS.PL, ['packing', 'pl']);
-
-            return (
-              <div key={r.id} className="rounded-xl border bg-white p-4 text-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="font-mono font-medium">{id}</div>
-                  <div className="rounded-md border px-2 py-0.5 text-xs">{stato}</div>
-                </div>
-
-                <div className="mt-2 text-slate-700">
-                  <span className="text-slate-500">Destinatario: </span>
-                  {destRS}
-                  {destCity ? ` — ${destCity}` : ''}
-                  {destCountry ? `, ${destCountry}` : ''}
-                </div>
-
-                <div className="mt-1 text-slate-700">
-                  <span className="text-slate-500">Ritiro: </span>
-                  {ritiro}
-                </div>
-
-                {/* Allegati */}
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {ldv.length ? (
-                    <a
-                      href={ldv[0].url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded-md border px-3 py-1 text-xs hover:bg-slate-50"
-                    >
-                      Scarica LDV
-                    </a>
-                  ) : (
-                    <span className="rounded-md border px-3 py-1 text-xs text-slate-500">
-                      LDV non disponibile
-                    </span>
-                  )}
-
-                  {fatt.length > 0 && (
-                    <a
-                      href={fatt[0].url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded-md border px-3 py-1 text-xs hover:bg-slate-50"
-                    >
-                      Fattura{fatt.length > 1 ? ` (${fatt.length})` : ''}
-                    </a>
-                  )}
-
-                  {pl.length > 0 && (
-                    <a
-                      href={pl[0].url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded-md border px-3 py-1 text-xs hover:bg-slate-50"
-                    >
-                      Packing List{pl.length > 1 ? ` (${pl.length})` : ''}
-                    </a>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => setSelected(r)}
-                    className="ml-auto rounded-md border px-3 py-1 text-xs hover:bg-slate-50"
-                  >
-                    Mostra dettagli
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+        <div className="space-y-3">
+          {filtered.map(r => (
+            <Card
+              key={r.id}
+              r={r}
+              onDetails={() => { setSel(r); setOpen(true); }}
+            />
+          ))}
         </div>
       )}
 
-      <Drawer open={!!selected} onClose={() => setSelected(null)} title="Dettagli spedizione">
-        {selected && <ShipmentDetail f={selected} />}
+      {/* Drawer dettagli */}
+      <Drawer open={open} onClose={() => setOpen(false)} title={sel ? (sel['ID Spedizione'] || sel.id) : undefined}>
+        {sel ? <ShipmentDetail recId={sel.id} /> : null}
       </Drawer>
     </>
   );
