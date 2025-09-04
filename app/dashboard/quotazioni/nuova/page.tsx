@@ -212,9 +212,9 @@ export default function NuovaQuotazionePage() {
             value={incoterm}
             onChange={(v) => setIncoterm(v as 'DAP' | 'DDP' | 'EXW')}
             options={[
-              { label: 'DAP — Delivered At Place', value: 'DAP' },
-              { label: 'DDP — Delivered Duty Paid', value: 'DDP' }, // 👈 non "DPP"
-              { label: 'EXW — Ex Works', value: 'EXW' },
+              { label: 'DAP — Spedizione a carico del mittente, dazi ed oneri a carico del destinatario', value: 'DAP' },
+              { label: 'DDP — Tutte le spese a carico del mittente', value: 'DDP' }, // 👈 non "DPP"
+              { label: 'EXW — Tutte le spese a carico del destinatario', value: 'EXW' },
             ]}
           />
         </div>
