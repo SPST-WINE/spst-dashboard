@@ -35,6 +35,10 @@ type SuccessInfo = {
   destinatario: Party;
 };
 
+// messaggio usato per la validazione P.IVA/CF destinatario (B2B/Sample)
+const DEST_PIVA_MSG =
+  'Per le spedizioni vino di tipo B2B o Sample è obbligatoria la Partita IVA / Codice Fiscale del destinatario.';
+
 export default function NuovaVinoPage() {
   const router = useRouter();
 
@@ -44,6 +48,7 @@ export default function NuovaVinoPage() {
   const [mittente, setMittente] = useState<Party>(blankParty);
   const [destinatario, setDestinatario] = useState<Party>(blankParty);
 
+  // Prefill mittente da UTENTI (Airtable)
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -84,11 +89,19 @@ export default function NuovaVinoPage() {
   const [success, setSuccess] = useState<SuccessInfo | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
 
+  // se ho errori scorro su
   useEffect(() => {
     if (errors.length && topRef.current) {
       topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [errors.length]);
+
+  // ✅ pulizia automatica del messaggio P.IVA destinatario quando passo a B2C
+  useEffect(() => {
+    if (tipoSped === 'B2C') {
+      setErrors(prev => prev.filter(msg => msg !== DEST_PIVA_MSG));
+    }
+  }, [tipoSped, destinatario.piva]);
 
   async function fetchIdSpedizione(recId: string): Promise<string> {
     try {
@@ -130,9 +143,9 @@ export default function NuovaVinoPage() {
   function validate(): string[] {
     const errs: string[] = [];
 
-    // ✅ CF/P.IVA DESTINATARIO obbligatoria SOLO per B2B e Sample
+    // ✅ CF/P.IVA DESTINATARIO solo per B2B e Sample (non B2C)
     if ((tipoSped === 'B2B' || tipoSped === 'Sample') && !destinatario.piva?.trim()) {
-      errs.push('Per le spedizioni vino di tipo B2B o Sample è obbligatoria la Partita IVA / Codice Fiscale del destinatario.');
+      errs.push(DEST_PIVA_MSG);
     }
 
     if (!mittente.piva?.trim()) errs.push('Partita IVA/Codice Fiscale del mittente mancante.');
@@ -145,7 +158,7 @@ export default function NuovaVinoPage() {
 
     if (!ritiroData) errs.push('Seleziona il giorno di ritiro.');
 
-    // Se NON alleghi fattura, alcuni dati fattura diventano obbligatori
+    // Se NON alleghi fattura, alcuni dati fattura sono obbligatori
     if (!fatturaFile) {
       const fatt = sameAsDest ? destinatario : fatturazione;
       if (!fatt.ragioneSociale?.trim()) errs.push('Dati fattura: ragione sociale mancante.');
