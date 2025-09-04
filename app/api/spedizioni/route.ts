@@ -37,16 +37,18 @@ export async function GET(req: NextRequest) {
   const cors = buildCorsHeaders(origin);
 
   try {
-    // override via query string (?email=...)
     const { searchParams } = new URL(req.url);
     const emailParam = searchParams.get('email') || undefined;
+    const q = searchParams.get('q') || undefined;
+    const sort = (searchParams.get('sort') as any) || undefined;
 
     const email = emailParam || (await getEmailFromAuth(req));
-    const rows = await listSpedizioni(email ? { email } : undefined);
+    const rows = await listSpedizioni({ email, q, sort });
 
-    // 🔧 Flatten per retrocompatibilità UI: { id, ...fields, fields }
+    // flatten + mantieni _createdTime per il sort client
     const data = rows.map((r: any) => ({
       id: r.id,
+      _createdTime: r._createdTime || null,
       ...(r.fields || {}),
       fields: r.fields || {},
     }));
