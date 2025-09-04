@@ -8,6 +8,7 @@ import ColliCard, { Collo } from '@/components/nuova/ColliCard';
 import RitiroCard from '@/components/nuova/RitiroCard';
 import { getIdToken } from '@/lib/firebase-client-auth';
 import { getUserProfile } from '@/lib/api';
+import { Select } from '@/components/nuova/Field'; // 👈 usiamo lo stesso Select delle spedizioni
 
 const blankParty: Party = {
   ragioneSociale: '',
@@ -41,6 +42,10 @@ export default function NuovaQuotazionePage() {
   const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
   const [ritiroNote, setRitiroNote] = useState('');
 
+  // Parametri commerciali
+  const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
+  const [incoterm, setIncoterm] = useState<'DAP' | 'DDP' | 'EXW'>('DAP'); // DDP (non DPP)
+
   // Note generiche
   const [noteGeneriche, setNoteGeneriche] = useState('');
 
@@ -57,13 +62,9 @@ export default function NuovaQuotazionePage() {
         const r = await getUserProfile(getIdToken);
         if (!cancelled && r?.ok) {
           if (r.email) setEmail(r.email);
-          if (r.party) {
-            setMittente(prev => ({ ...prev, ...r.party }));
-          }
+          if (r.party) setMittente(prev => ({ ...prev, ...r.party }));
         }
-      } catch {
-        // Ignora, utente compila a mano
-      }
+      } catch {}
     })();
     return () => { cancelled = true; };
   }, []);
@@ -74,7 +75,6 @@ export default function NuovaQuotazionePage() {
     if (!mittente.ragioneSociale?.trim()) errs.push('Inserisci la ragione sociale del mittente.');
     if (!destinatario.ragioneSociale?.trim()) errs.push('Inserisci la ragione sociale del destinatario.');
     if (!ritiroData) errs.push('Seleziona il giorno di ritiro.');
-    // Almeno un collo completo
     const invalid = colli.some(c =>
       c.lunghezza_cm == null || c.larghezza_cm == null || c.altezza_cm == null || c.peso_kg == null ||
       (c.lunghezza_cm ?? 0) <= 0 || (c.larghezza_cm ?? 0) <= 0 || (c.altezza_cm ?? 0) <= 0 || (c.peso_kg ?? 0) <= 0
@@ -103,14 +103,15 @@ export default function NuovaQuotazionePage() {
         .filter(Boolean)
         .join('\n');
 
-      // Mappatura verso API /api/quotazioni (airtable.quotes)
+      // Payload per /api/quotazioni
       const payload = {
         createdByEmail: email || undefined,
-        customerEmail: email || undefined, // popola Email_Cliente
+        customerEmail: email || undefined,
         valuta: 'EUR' as const,
+        tipoSped,                 // 👈 nuovo
+        incoterm,                 // 👈 nuovo
         ritiroData: ritiroData ? ritiroData.toISOString() : undefined,
         noteGeneriche: noteCombined || undefined,
-        // niente flag documenti: li decide il backoffice con le "rules"
         mittente: {
           ragioneSociale: mittente.ragioneSociale || undefined,
           indirizzo: mittente.indirizzo || undefined,
@@ -149,7 +150,6 @@ export default function NuovaQuotazionePage() {
 
       const j = await res.json();
       if (!res.ok || !j?.ok) throw new Error(j?.error || 'SERVER_ERROR');
-
       setOkId(j.id as string);
       topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
@@ -170,45 +170,55 @@ export default function NuovaQuotazionePage() {
             Il tuo preventivo è stato creato (ID: <span className="font-mono">{okId}</span>).
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Link
-              href="/dashboard/quotazioni"
-              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
-            >
-              Le mie quotazioni
-            </Link>
-            <Link
-              href="/dashboard/quotazioni/nuova"
-              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
-            >
-              Nuova quotazione
-            </Link>
+            <Link href="/dashboard/quotazioni" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">Le mie quotazioni</Link>
+            <Link href="/dashboard/quotazioni/nuova" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">Nuova quotazione</Link>
           </div>
         </div>
       </div>
     );
   }
 
-  // FORM (layout “di prima” + titoli blu)
+  // FORM
   return (
     <div ref={topRef} className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-slate-800">Nuova quotazione</h1>
-        <Link
-          href="/dashboard/quotazioni"
-          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
-        >
-          Le mie quotazioni
-        </Link>
+        <Link href="/dashboard/quotazioni" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">Le mie quotazioni</Link>
       </div>
 
       {!!errors.length && (
         <div className="rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
           <div className="font-medium mb-1">Controlla questi campi:</div>
-          <ul className="list-disc ml-5 space-y-1">
-            {errors.map((e, i) => <li key={i}>{e}</li>)}
-          </ul>
+          <ul className="list-disc ml-5 space-y-1">{errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
         </div>
       )}
+
+      {/* Parametri: tipo + incoterm */}
+      <div className="rounded-2xl border bg-white p-4">
+        <h2 className="mb-3 text-base font-semibold text-spst-blue">Parametri spedizione</h2>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Select
+            label="Stai spedendo ad un privato? O ad una azienda?"
+            value={tipoSped}
+            onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Sample')}
+            options={[
+              { label: 'B2C — privato / cliente', value: 'B2C' },
+              { label: 'B2B — azienda', value: 'B2B' },
+              { label: 'Sample — campionatura', value: 'Sample' },
+            ]}
+          />
+          <Select
+            label="Incoterm"
+            value={incoterm}
+            onChange={(v) => setIncoterm(v as 'DAP' | 'DDP' | 'EXW')}
+            options={[
+              { label: 'DAP — Delivered At Place', value: 'DAP' },
+              { label: 'DDP — Delivered Duty Paid', value: 'DDP' }, // 👈 non "DPP"
+              { label: 'EXW — Ex Works', value: 'EXW' },
+            ]}
+          />
+        </div>
+      </div>
 
       {/* Mittente / Destinatario */}
       <div className="grid gap-4 md:grid-cols-2">
@@ -238,21 +248,13 @@ export default function NuovaQuotazionePage() {
       {/* Ritiro */}
       <div className="rounded-2xl border bg-white p-4">
         <h2 className="mb-3 text-base font-semibold text-spst-blue">Ritiro</h2>
-        <RitiroCard
-          date={ritiroData}
-          setDate={setRitiroData}
-          note={ritiroNote}
-          setNote={setRitiroNote}
-        />
+        <RitiroCard date={ritiroData} setDate={setRitiroData} note={ritiroNote} setNote={setRitiroNote} />
       </div>
 
       {/* Note generiche */}
       <div className="rounded-2xl border bg-white p-4">
         <h2 className="mb-3 text-base font-semibold text-spst-blue">Note & documenti</h2>
-
-        <label className="mb-1 block text-sm font-medium text-slate-700">
-          Note generiche sulla spedizione
-        </label>
+        <label className="mb-1 block text-sm font-medium text-slate-700">Note generiche sulla spedizione</label>
         <textarea
           value={noteGeneriche}
           onChange={(e) => setNoteGeneriche(e.target.value)}
@@ -271,9 +273,7 @@ export default function NuovaQuotazionePage() {
           aria-busy={saving}
           className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
         >
-          {saving && (
-            <span className="inline-block h-4 w-4 animate-spin rounded-full border border-slate-400 border-t-transparent" />
-          )}
+          {saving && <span className="inline-block h-4 w-4 animate-spin rounded-full border border-slate-400 border-t-transparent" />}
           {saving ? 'Invio…' : 'Invia richiesta'}
         </button>
       </div>
