@@ -45,7 +45,7 @@ export type ColloQ = {
 
 export type PreventivoPayload = {
   createdByEmail?: string;
-  customerEmail?: string;   // email cliente finale (se la chiediamo nel portale, altrimenti vuota)
+  customerEmail?: string;   // email cliente finale
   valuta?: 'EUR' | 'USD' | 'GBP';
   ritiroData?: string;      // ISO date
   noteGeneriche?: string;
@@ -60,7 +60,7 @@ export type PreventivoPayload = {
 // ---- Alias campo PREVENTIVI (tolleranti) ----
 const F = {
   Stato: ['Stato', 'Status'],
-  EmailCliente: ['Email_Cliente', 'Email Cliente', 'Cliente_Email', 'Customer_Email'],
+  EmailCliente: ['Email_Cliente', 'Email Cliente', 'Cliente_Email', 'Customer_Email', 'Email'],
   CreatoDaEmail: ['CreatoDaEmail', 'Creato da (email)', 'Created By Email', 'Creato da Email'],
   Valuta: ['Valuta', 'Currency'],
   RitiroData: ['Ritiro_Data', 'Data_Ritiro', 'RitiroData', 'PickUp_Date'],
@@ -102,68 +102,64 @@ const C = {
   Peso: ['Peso (Kg)', 'Peso_Kg', 'Peso', 'Kg', 'Weight'],
 } as const;
 
-// utility update con alias multipli
+// ---- update tollerante (table parametrica) ----
 async function tryUpdateField(
   b: ReturnType<typeof base>,
+  tableName: string,
   recId: string,
   aliases: ReadonlyArray<string> | string,
   value: any,
   debug: string[],
 ): Promise<boolean> {
-  if (value == null) return true;
+  if (value == null || value === '') return true;
   const keys = Array.isArray(aliases) ? [...aliases] : [aliases];
   for (const k of keys) {
     try {
-      await b(TB_PREVENTIVI).update(recId, { [k]: value });
-      debug.push(`OK ${k}`);
+      await b(tableName).update(recId, { [k]: value });
+      debug.push(`${tableName}: OK ${k}`);
       return true;
     } catch {
-      // prova alias successivo
+      // next alias
     }
   }
-  debug.push(`SKIP ${Array.isArray(aliases) ? aliases.join('|') : aliases}`);
+  debug.push(`${tableName}: SKIP ${Array.isArray(aliases) ? aliases.join('|') : aliases}`);
   return false;
 }
 
+// ---- crea riga COLLI robusta: prima link, poi update campi con alias ----
 async function tryCreateColloRow(
   b: ReturnType<typeof base>,
-  recId: string,
-  c: ColloQ
+  parentId: string,
+  c: ColloQ,
+  debug: string[],
 ) {
-  // prova prima come linked record, poi come id testo
-  const attempt = async (fields: Record<string, any>) => {
+  // 1) crea con link (o, se fallisce, con id testuale)
+  let createdId: string | undefined;
+
+  const attemptCreate = async (fields: Record<string, any>) => {
     try {
-      await b(TB_COLLI).create([{ fields }]);
-      return true;
+      const created = await b(TB_COLLI).create([{ fields }]);
+      return created[0].id as string;
     } catch {
-      return false;
+      return undefined;
     }
   };
 
-  const baseFields = {
-    // dimensioni/peso con alias (primo che esiste vince)
-    [C.Qty[0]]: optional(c.qty),
-    [C.L[0]]: optional(c.l1_cm),
-    [C.W[0]]: optional(c.l2_cm),
-    [C.H[0]]: optional(c.l3_cm),
-    [C.Peso[0]]: optional(c.peso_kg),
-  };
-
-  // 1) tentativo con linked record
-  let ok = await attempt({
-    ...baseFields,
-    [C.LinkPreventivo[0]]: [recId],
-  });
-  if (ok) return;
-
-  // 2) tentativo con campo testo
-  ok = await attempt({
-    ...baseFields,
-    [C.PreventivoIdTxt[0]]: recId,
-  });
-  if (!ok) {
-    console.warn('[airtable.quotes] impossibile creare riga colli: nessun campo link/testo valido trovato');
+  createdId = await attemptCreate({ [C.LinkPreventivo[0]]: [parentId] });
+  if (!createdId) {
+    createdId = await attemptCreate({ [C.PreventivoIdTxt[0]]: parentId });
   }
+  if (!createdId) {
+    console.warn('[airtable.quotes] impossibile creare riga colli (link/text falliti)');
+    return;
+  }
+
+  // 2) aggiorna dimensioni/peso con alias tolleranti
+  await tryUpdateField(b, TB_COLLI, createdId, C.Qty, optional(c.qty), debug);
+  await tryUpdateField(b, TB_COLLI, createdId, C.L, optional(c.l1_cm), debug);
+  await tryUpdateField(b, TB_COLLI, createdId, C.W, optional(c.l2_cm), debug);
+  await tryUpdateField(b, TB_COLLI, createdId, C.H, optional(c.l3_cm), debug);
+  await tryUpdateField(b, TB_COLLI, createdId, C.Peso, optional(c.peso_kg), debug);
 }
 
 // ---------------------------------------------------------------
@@ -179,44 +175,57 @@ export async function createPreventivo(payload: PreventivoPayload): Promise<{ id
     const recId = created[0].id;
 
     // 2) campi base
-    await tryUpdateField(b, recId, F.Stato, 'Bozza', debugSet);
-    if (payload.createdByEmail) await tryUpdateField(b, recId, F.CreatoDaEmail, payload.createdByEmail, debugSet);
-    if (payload.customerEmail) await tryUpdateField(b, recId, F.EmailCliente, payload.customerEmail, debugSet);
-    if (payload.valuta) await tryUpdateField(b, recId, F.Valuta, payload.valuta, debugSet);
-    if (payload.ritiroData) await tryUpdateField(b, recId, F.RitiroData, dateOnlyISO(payload.ritiroData), debugSet);
-    if (payload.noteGeneriche) await tryUpdateField(b, recId, F.NoteGeneriche, payload.noteGeneriche, debugSet);
+    await tryUpdateField(b, TB_PREVENTIVI, recId, F.Stato, 'Bozza', debugSet);
 
+    if (payload.createdByEmail) {
+      await tryUpdateField(b, TB_PREVENTIVI, recId, F.CreatoDaEmail, payload.createdByEmail, debugSet);
+    }
+
+    const emailCliente = payload.customerEmail || payload.createdByEmail;
+    if (emailCliente) {
+      await tryUpdateField(b, TB_PREVENTIVI, recId, F.EmailCliente, emailCliente, debugSet);
+    }
+
+    if (payload.valuta) {
+      await tryUpdateField(b, TB_PREVENTIVI, recId, F.Valuta, payload.valuta, debugSet);
+    }
+    if (payload.ritiroData) {
+      await tryUpdateField(b, TB_PREVENTIVI, recId, F.RitiroData, dateOnlyISO(payload.ritiroData), debugSet);
+    }
+    if (payload.noteGeneriche) {
+      await tryUpdateField(b, TB_PREVENTIVI, recId, F.NoteGeneriche, payload.noteGeneriche, debugSet);
+    }
     if (typeof payload.docFatturaRichiesta === 'boolean') {
-      await tryUpdateField(b, recId, F.DocFattRich, !!payload.docFatturaRichiesta, debugSet);
+      await tryUpdateField(b, TB_PREVENTIVI, recId, F.DocFattRich, !!payload.docFatturaRichiesta, debugSet);
     }
     if (typeof payload.docPLRichiesta === 'boolean') {
-      await tryUpdateField(b, recId, F.DocPLRich, !!payload.docPLRichiesta, debugSet);
+      await tryUpdateField(b, TB_PREVENTIVI, recId, F.DocPLRich, !!payload.docPLRichiesta, debugSet);
     }
 
     // 3) mittente
     const M = payload.mittente || {};
-    if (M.ragioneSociale) await tryUpdateField(b, recId, F.M_Nome, M.ragioneSociale, debugSet);
-    if (M.indirizzo) await tryUpdateField(b, recId, F.M_Ind, M.indirizzo, debugSet);
-    if (M.cap) await tryUpdateField(b, recId, F.M_CAP, M.cap, debugSet);
-    if (M.citta) await tryUpdateField(b, recId, F.M_Citta, M.citta, debugSet);
-    if (M.paese) await tryUpdateField(b, recId, F.M_Paese, M.paese, debugSet);
-    if (M.telefono) await tryUpdateField(b, recId, F.M_Tel, M.telefono, debugSet);
-    if (M.taxId) await tryUpdateField(b, recId, F.M_Tax, M.taxId, debugSet);
+    if (M.ragioneSociale) await tryUpdateField(b, TB_PREVENTIVI, recId, F.M_Nome, M.ragioneSociale, debugSet);
+    if (M.indirizzo)     await tryUpdateField(b, TB_PREVENTIVI, recId, F.M_Ind,  M.indirizzo,     debugSet);
+    if (M.cap)           await tryUpdateField(b, TB_PREVENTIVI, recId, F.M_CAP,  M.cap,           debugSet);
+    if (M.citta)         await tryUpdateField(b, TB_PREVENTIVI, recId, F.M_Citta,M.citta,         debugSet);
+    if (M.paese)         await tryUpdateField(b, TB_PREVENTIVI, recId, F.M_Paese,M.paese,         debugSet);
+    if (M.telefono)      await tryUpdateField(b, TB_PREVENTIVI, recId, F.M_Tel,  M.telefono,      debugSet);
+    if (M.taxId)         await tryUpdateField(b, TB_PREVENTIVI, recId, F.M_Tax,  M.taxId,         debugSet);
 
     // 4) destinatario
     const D = payload.destinatario || {};
-    if (D.ragioneSociale) await tryUpdateField(b, recId, F.D_Nome, D.ragioneSociale, debugSet);
-    if (D.indirizzo) await tryUpdateField(b, recId, F.D_Ind, D.indirizzo, debugSet);
-    if (D.cap) await tryUpdateField(b, recId, F.D_CAP, D.cap, debugSet);
-    if (D.citta) await tryUpdateField(b, recId, F.D_Citta, D.citta, debugSet);
-    if (D.paese) await tryUpdateField(b, recId, F.D_Paese, D.paese, debugSet);
-    if (D.telefono) await tryUpdateField(b, recId, F.D_Tel, D.telefono, debugSet);
-    if (D.taxId) await tryUpdateField(b, recId, F.D_Tax, D.taxId, debugSet);
+    if (D.ragioneSociale) await tryUpdateField(b, TB_PREVENTIVI, recId, F.D_Nome, D.ragioneSociale, debugSet);
+    if (D.indirizzo)      await tryUpdateField(b, TB_PREVENTIVI, recId, F.D_Ind,  D.indirizzo,      debugSet);
+    if (D.cap)            await tryUpdateField(b, TB_PREVENTIVI, recId, F.D_CAP,  D.cap,            debugSet);
+    if (D.citta)          await tryUpdateField(b, TB_PREVENTIVI, recId, F.D_Citta,D.citta,          debugSet);
+    if (D.paese)          await tryUpdateField(b, TB_PREVENTIVI, recId, F.D_Paese,D.paese,          debugSet);
+    if (D.telefono)       await tryUpdateField(b, TB_PREVENTIVI, recId, F.D_Tel,  D.telefono,       debugSet);
+    if (D.taxId)          await tryUpdateField(b, TB_PREVENTIVI, recId, F.D_Tax,  D.taxId,          debugSet);
 
     // 5) colli
     if (payload.colli?.length) {
       for (const c of payload.colli) {
-        await tryCreateColloRow(b, recId, c);
+        await tryCreateColloRow(b, recId, c, debugSet);
       }
     }
 
@@ -243,7 +252,7 @@ export async function listPreventivi(
   const all: Array<{ id: string; fields: any }> = [];
 
   await b(TB_PREVENTIVI)
-    .select({ pageSize: 100, sort: [{ field: 'Last modified time', direction: 'desc' }] })
+    .select({ pageSize: 100 })
     .eachPage((recs, next) => {
       for (const r of recs) all.push({ id: r.id, fields: r.fields });
       next();
@@ -252,10 +261,7 @@ export async function listPreventivi(
   if (!opts?.email) return all;
 
   const needle = String(opts.email).toLowerCase();
-  const emailFields = [
-    ...F.EmailCliente,
-    ...F.CreatoDaEmail,
-  ];
+  const emailFields = [...F.EmailCliente, ...F.CreatoDaEmail];
   return all.filter(({ fields }) => {
     for (const k of emailFields) {
       const v = (fields?.[k] ?? '') as string;
