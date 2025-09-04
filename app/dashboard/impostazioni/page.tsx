@@ -1,3 +1,4 @@
+// app/dashboard/impostazioni/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -31,47 +32,42 @@ export default function ImpostazioniPage() {
   const [saving, setSaving] = useState<boolean>(false);
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
-  // Prefill: prova a leggere email + dati mittente da /api/profile (autenticato)
+  // Load profilo (solo client → niente schermata “buggy”)
   useEffect(() => {
     let aborted = false;
     (async () => {
       try {
         setLoading(true);
-        // 1) prova da backend (cookie sessione / bearer idToken)
         const r = await getUserProfile(getIdToken);
-        if (!aborted && r?.ok) {
-          if (r.email) setEmail(r.email);
-          if (r.party) {
-            setForm({
-              paese: r.party.paese ?? '',
-              mittente: r.party.ragioneSociale ?? '',
-              citta: r.party.citta ?? '',
-              cap: r.party.cap ?? '',
-              indirizzo: r.party.indirizzo ?? '',
-              telefono: r.party.telefono ?? '',
-              piva: r.party.piva ?? '',
-            });
-          }
+        if (aborted) return;
+        if (r?.email) setEmail(r.email);
+        if (r?.party) {
+          setForm({
+            paese: r.party.paese ?? '',
+            mittente: r.party.ragioneSociale ?? '',
+            citta: r.party.citta ?? '',
+            cap: r.party.cap ?? '',
+            indirizzo: r.party.indirizzo ?? '',
+            telefono: r.party.telefono ?? '',
+            piva: r.party.piva ?? '',
+          });
         }
-
-        // 2) fallback (solo UI): localStorage -> mantiene il tuo comportamento
-        if (!aborted && !r?.email) {
-          const stored = typeof window !== 'undefined' ? localStorage.getItem('userEmail') : null;
+        // fallback soft: mostra eventuale email salvata localmente (read-only)
+        if (!r?.email && typeof window !== 'undefined') {
+          const stored = localStorage.getItem('userEmail');
           if (stored) setEmail(stored);
         }
       } finally {
         if (!aborted) setLoading(false);
       }
     })();
-    return () => {
-      aborted = true;
-    };
+    return () => { aborted = true; };
   }, []);
 
-  // abilita Salva se c'è email e almeno un campo base
+  // si può salvare se c'è almeno un campo base (non vincoliamo più all'email UI)
   const canSave = useMemo(() => {
-    return !!email && (form.mittente.trim().length > 0 || form.indirizzo.trim().length > 0);
-  }, [email, form]);
+    return (form.mittente.trim().length > 0 || form.indirizzo.trim().length > 0);
+  }, [form]);
 
   function onChange<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -80,16 +76,9 @@ export default function ImpostazioniPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email) {
-      setMessage({ type: 'err', text: 'Inserisci/recupera la tua email prima di salvare.' });
-      return;
-    }
-
     try {
       setSaving(true);
       setMessage(null);
-
-      // Mappa il form al tipo Party usato dal backend
       const party = {
         ragioneSociale: form.mittente,
         referente: '',
@@ -100,12 +89,9 @@ export default function ImpostazioniPage() {
         telefono: form.telefono,
         piva: form.piva,
       };
-
       await saveUserProfile(party, getIdToken);
-
-      // conserva l’email come fallback UI, se vuoi
-      if (typeof window !== 'undefined') localStorage.setItem('userEmail', email);
-
+      // conserva email in locale solo per display futuro (read-only)
+      if (email && typeof window !== 'undefined') localStorage.setItem('userEmail', email);
       setMessage({ type: 'ok', text: 'Dati salvati correttamente.' });
     } catch {
       setMessage({ type: 'err', text: 'Errore durante il salvataggio.' });
@@ -114,24 +100,48 @@ export default function ImpostazioniPage() {
     }
   }
 
+  // Skeleton durante il load
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-2xl border bg-white p-4">
+          <div className="mb-3 h-4 w-40 animate-pulse rounded bg-slate-200" />
+          <div className="h-9 w-full animate-pulse rounded bg-slate-200" />
+        </div>
+        <div className="rounded-2xl border bg-white p-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="h-20 animate-pulse rounded bg-slate-200" />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    // wrapper centrato SOLO per questa pagina
     <div className="mx-auto w-full max-w-4xl space-y-4">
-      {!email && (
-        <div className="rounded-lg border bg-white p-4">
-          <label className="mb-1 block text-sm font-medium text-slate-700">Email account</label>
+      {/* Email account (sempre visibile, read-only) */}
+      <section className="rounded-2xl border bg-white p-4">
+        <h2 className="mb-3 text-sm font-semibold text-[#f7911e]">Email account</h2>
+        <label className="block">
+          <div className="mb-1 text-xs font-medium text-slate-600">Email</div>
           <input
             type="email"
-            placeholder="email@azienda.it"
-            className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20"
-            onChange={(e) => setEmail(e.target.value.trim())}
+            value={email}
+            disabled
+            placeholder="—"
+            className="w-full rounded-lg border px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-500"
           />
-          <p className="mt-2 text-xs text-slate-500">(Per l’MVP l’email identifica il tuo profilo.)</p>
-        </div>
-      )}
+        </label>
+        <p className="mt-2 text-xs text-slate-500">
+          L’email identifica il tuo profilo e non è modificabile da questa pagina.
+        </p>
+      </section>
 
+      {/* Form impostazioni mittente */}
       <form onSubmit={onSubmit} className="space-y-4">
-        <div className="rounded-xl border bg-white p-4">
+        <div className="rounded-2xl border bg-white p-4">
           <h2 className="mb-4 text-base font-semibold tracking-tight">Impostazioni mittente</h2>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
