@@ -202,25 +202,27 @@ export async function createPreventivo(payload: PreventivoPayload): Promise<{ id
       await tryUpdateField(b, TB_PREVENTIVI, recId, F.DocPLRich, !!payload.docPLRichiesta, debugSet);
     }
 
-    // 3) mittente
+    // 3) mittente (accetto sia .taxId che .piva)
     const M = payload.mittente || {};
+    const mTax = (M as any).taxId ?? (M as any).piva ?? undefined;
     if (M.ragioneSociale) await tryUpdateField(b, TB_PREVENTIVI, recId, F.M_Nome, M.ragioneSociale, debugSet);
     if (M.indirizzo)     await tryUpdateField(b, TB_PREVENTIVI, recId, F.M_Ind,  M.indirizzo,     debugSet);
     if (M.cap)           await tryUpdateField(b, TB_PREVENTIVI, recId, F.M_CAP,  M.cap,           debugSet);
     if (M.citta)         await tryUpdateField(b, TB_PREVENTIVI, recId, F.M_Citta,M.citta,         debugSet);
     if (M.paese)         await tryUpdateField(b, TB_PREVENTIVI, recId, F.M_Paese,M.paese,         debugSet);
     if (M.telefono)      await tryUpdateField(b, TB_PREVENTIVI, recId, F.M_Tel,  M.telefono,      debugSet);
-    if (M.taxId)         await tryUpdateField(b, TB_PREVENTIVI, recId, F.M_Tax,  M.taxId,         debugSet);
+    if (mTax)            await tryUpdateField(b, TB_PREVENTIVI, recId, F.M_Tax,  mTax,            debugSet);
 
-    // 4) destinatario
+    // 4) destinatario (accetto sia .taxId che .piva)
     const D = payload.destinatario || {};
+    const dTax = (D as any).taxId ?? (D as any).piva ?? undefined;
     if (D.ragioneSociale) await tryUpdateField(b, TB_PREVENTIVI, recId, F.D_Nome, D.ragioneSociale, debugSet);
     if (D.indirizzo)      await tryUpdateField(b, TB_PREVENTIVI, recId, F.D_Ind,  D.indirizzo,      debugSet);
     if (D.cap)            await tryUpdateField(b, TB_PREVENTIVI, recId, F.D_CAP,  D.cap,            debugSet);
     if (D.citta)          await tryUpdateField(b, TB_PREVENTIVI, recId, F.D_Citta,D.citta,          debugSet);
     if (D.paese)          await tryUpdateField(b, TB_PREVENTIVI, recId, F.D_Paese,D.paese,          debugSet);
     if (D.telefono)       await tryUpdateField(b, TB_PREVENTIVI, recId, F.D_Tel,  D.telefono,       debugSet);
-    if (D.taxId)          await tryUpdateField(b, TB_PREVENTIVI, recId, F.D_Tax,  D.taxId,          debugSet);
+    if (dTax)             await tryUpdateField(b, TB_PREVENTIVI, recId, F.D_Tax,  dTax,             debugSet);
 
     // 5) colli
     if (payload.colli?.length) {
@@ -241,6 +243,7 @@ export async function createPreventivo(payload: PreventivoPayload): Promise<{ id
     throw e;
   }
 }
+
 
 // ---------------------------------------------------------------
 // LIST preventivi per email (filtro lato Node)
