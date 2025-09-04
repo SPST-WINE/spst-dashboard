@@ -2,7 +2,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { buildCorsHeaders } from '@/lib/cors';
 import { adminAuth } from '@/lib/firebase-admin';
-import { createPreventivo, listPreventivi } from '@/lib/airtable.quotes';
+import {
+  createPreventivo,
+  listPreventivi,
+  airtableQuotesStatus, // 👈 debug
+} from '@/lib/airtable.quotes';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,7 +17,6 @@ export async function OPTIONS(req: NextRequest) {
 }
 
 async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
-  // 1) Bearer
   const m = (req.headers.get('authorization') ?? '').match(/^Bearer\s+(.+)$/i);
   if (m) {
     try {
@@ -21,7 +24,6 @@ async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
       return decoded.email || decoded.firebase?.identities?.email?.[0] || undefined;
     } catch {}
   }
-  // 2) Session cookie
   const session = req.cookies.get('spst_session')?.value;
   if (session) {
     try {
@@ -38,12 +40,23 @@ export async function GET(req: NextRequest) {
 
   try {
     const { searchParams } = new URL(req.url);
+
+    // 👇 Debug rapido: /api/quotes?debug=env
+    if ((searchParams.get('debug') || '').toLowerCase() === 'env') {
+      const status = await airtableQuotesStatus();
+      return NextResponse.json({ ok: true, debug: status }, { headers: cors });
+    }
+
     const emailParam = searchParams.get('email') || undefined;
     const email = emailParam || (await getEmailFromAuth(req));
 
     const rows = await listPreventivi(email ? { email } : undefined);
     return NextResponse.json({ ok: true, rows }, { headers: cors });
   } catch (e: any) {
+    console.error('[quotes:GET] error', {
+      message: e?.message,
+      stack: e?.stack,
+    });
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
       { status: 500, headers: cors }
@@ -58,7 +71,7 @@ export async function POST(req: NextRequest) {
   try {
     const payload: any = await req.json();
 
-    // Opzionale: bootstrap sessione
+    // Bootstrap sessione via token (facoltativo)
     if (payload?.token) {
       const sessionCookie = await adminAuth().createSessionCookie(payload.token, {
         expiresIn: 60 * 60 * 24 * 5 * 1000,
@@ -75,7 +88,6 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    // Fallback: valorizza createdByEmail da auth se mancante
     if (!payload.createdByEmail) {
       const email = await getEmailFromAuth(req);
       if (email) payload.createdByEmail = email;
@@ -84,6 +96,13 @@ export async function POST(req: NextRequest) {
     const created = await createPreventivo(payload);
     return NextResponse.json({ ok: true, id: created.id }, { headers: cors });
   } catch (e: any) {
+    // 👇 Log esteso (lo vedi nei logs Vercel)
+    console.error('[quotes:POST] creation failed', {
+      errMessage: e?.message,
+      errType: e?.error?.type,
+      errStatus: e?.statusCode,
+      airtable: e?.error,
+    });
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
       { status: 500, headers: cors }
