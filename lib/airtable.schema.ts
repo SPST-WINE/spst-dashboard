@@ -110,3 +110,58 @@ export const FPL = {
   PesoNettoBott: 'Peso netto bott. (kg)',
   PesoLordoBott: 'Peso lordo bott. (kg)',
 } as const;
+
+// --- Tabelle preventivi (portale) ------------------------------------------
+export const QTABLE = {
+  PREVENTIVI: process.env.AIRTABLE_TABLE_PREVENTIVI || 'Preventivi',
+  OPZIONI: process.env.AIRTABLE_TABLE_OPZIONI_PREVENTIVO || 'OpzioniPreventivo',
+  COLLI: process.env.AIRTABLE_TABLE_COLLI_PREVENTIVI || 'Colli',
+} as const;
+
+// --- Campi tabella Preventivi ----------------------------------------------
+export const QF = {
+  // meta
+  EmailCliente: 'Email_Cliente',
+  Stato: 'Stato',                       // es. Bozza (cliente) | Pubblicato | Accettato | Convertito ...
+  SlugPubblico: 'Slug_Pubblico',
+  Valuta: 'Valuta',
+  Validita: 'Valido_Fino_Al',
+  NoteGlobali: 'Note_Globali',
+  NoteSpedizione: 'Note generiche sulla spedizione',
+
+  // link alla spedizione creata post-accettazione
+  SpedizioneCreata: 'Spedizione_Creata',
+
+  // richieste documenti
+  DocFatturaRichiesta: 'Doc_Fattura_Richiesta',
+  DocPLRichiesta: 'Doc_PL_Richiesta',
+
+  // Mittente
+  M_RS: 'Mittente_Nome',
+  M_PAESE: 'Mittente_Paese',
+  M_CITTA: 'Mittente_Citta',
+  M_CAP: 'Mittente_CAP',
+  M_INDIRIZZO: 'Mittente_Indirizzo',
+  M_TEL: 'Mittente_Telefono',
+  M_TAX: 'Mittente_Tax',                // PIVA / EORI
+
+  // Destinatario
+  D_RS: 'Destinatario_Nome',
+  D_PAESE: 'Destinatario_Paese',
+  D_CITTA: 'Destinatario_Citta',
+  D_CAP: 'Destinatario_CAP',
+  D_INDIRIZZO: 'Destinatario_Indirizzo',
+  D_TEL: 'Destinatario_Telefono',
+  D_TAX: 'Destinatario_Tax',            // Tax ID / EORI / EIN
+} as const;
+
+// --- Campi tabella Colli (per preventivi) ----------------------------------
+export const QCOLLO = {
+  LinkPreventivo: 'Preventivo',         // linked record al parent
+  Quantita: 'Quantita',
+  L: 'Lunghezza',
+  W: 'Larghezza',
+  H: 'Altezza',
+  Peso: 'Peso_Kg',
+} as const;
+
