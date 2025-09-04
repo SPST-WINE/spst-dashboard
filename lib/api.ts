@@ -179,3 +179,45 @@ try {
   }
 }
 */
+
+// ---- QUOTES (portale) ------------------------------------------------------
+
+export type QuoteParty = {
+  ragioneSociale: string;
+  paese: string;
+  citta: string;
+  cap: string;
+  indirizzo: string;
+  telefono?: string;
+  taxId?: string;
+};
+
+export type QuoteCollo = {
+  quantita?: number;
+  lunghezza_cm?: number|null;
+  larghezza_cm?: number|null;
+  altezza_cm?: number|null;
+  peso_kg?: number|null;
+};
+
+export async function postPreventivo(
+  payload: {
+    mittente: QuoteParty;
+    destinatario: QuoteParty;
+    colli: QuoteCollo[];
+    valuta: 'EUR'|'USD'|'GBP';
+    note?: string;
+  },
+  getIdToken?: GetIdToken
+): Promise<{ ok: true; id: string }> {
+  return request('/api/quotes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }, getIdToken);
+}
+
+export async function getPreventivi(getIdToken?: GetIdToken): Promise<any[]> {
+  const json = await request<{ ok: boolean; rows: any[] }>('/api/quotes', { method: 'GET' }, getIdToken);
+  return Array.isArray(json?.rows) ? json.rows : [];
+}
