@@ -1,13 +1,19 @@
+// app/api/quotes/route.ts
 import { NextResponse, type NextRequest } from 'next/server';
 import { buildCorsHeaders } from '@/lib/cors';
 import { adminAuth } from '@/lib/firebase-admin';
-import { createPreventivoBozza, listPreventiviByEmail } from '@/lib/airtable.quotes';
+import { createPreventivo, listPreventivi } from '@/lib/airtable.quotes';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+export async function OPTIONS(req: NextRequest) {
+  const origin = req.headers.get('origin') ?? undefined;
+  return new NextResponse(null, { status: 204, headers: buildCorsHeaders(origin) });
+}
+
 async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
-  // Bearer
+  // 1) Bearer
   const m = (req.headers.get('authorization') ?? '').match(/^Bearer\s+(.+)$/i);
   if (m) {
     try {
@@ -15,7 +21,7 @@ async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
       return decoded.email || decoded.firebase?.identities?.email?.[0] || undefined;
     } catch {}
   }
-  // Cookie
+  // 2) Session cookie
   const session = req.cookies.get('spst_session')?.value;
   if (session) {
     try {
@@ -29,34 +35,58 @@ async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
 export async function GET(req: NextRequest) {
   const origin = req.headers.get('origin') ?? undefined;
   const cors = buildCorsHeaders(origin);
+
   try {
     const { searchParams } = new URL(req.url);
-    const email = searchParams.get('email') || (await getEmailFromAuth(req));
-    if (!email) return NextResponse.json({ ok: true, rows: [] }, { headers: cors });
+    const emailParam = searchParams.get('email') || undefined;
+    const email = emailParam || (await getEmailFromAuth(req));
 
-    const rows = await listPreventiviByEmail(email);
+    const rows = await listPreventivi(email ? { email } : undefined);
     return NextResponse.json({ ok: true, rows }, { headers: cors });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || 'SERVER_ERROR' }, { status: 500, headers: cors });
+    return NextResponse.json(
+      { ok: false, error: e?.message || 'SERVER_ERROR' },
+      { status: 500, headers: cors }
+    );
   }
 }
 
 export async function POST(req: NextRequest) {
   const origin = req.headers.get('origin') ?? undefined;
   const cors = buildCorsHeaders(origin);
+
   try {
-    const body = await req.json();
-    const email = body.createdByEmail || (await getEmailFromAuth(req));
-    if (!email) return NextResponse.json({ ok: false, error: 'MISSING_EMAIL' }, { status: 400, headers: cors });
+    const payload: any = await req.json();
 
-    const { id } = await createPreventivoBozza(body, email);
-    return NextResponse.json({ ok: true, id }, { headers: cors });
+    // Opzionale: bootstrap sessione
+    if (payload?.token) {
+      const sessionCookie = await adminAuth().createSessionCookie(payload.token, {
+        expiresIn: 60 * 60 * 24 * 5 * 1000,
+      });
+      const res = NextResponse.json({ ok: true, message: 'Sessione creata' }, { headers: cors });
+      res.cookies.set({
+        name: 'spst_session',
+        value: sessionCookie,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        path: '/',
+      });
+      return res;
+    }
+
+    // Fallback: valorizza createdByEmail da auth se mancante
+    if (!payload.createdByEmail) {
+      const email = await getEmailFromAuth(req);
+      if (email) payload.createdByEmail = email;
+    }
+
+    const created = await createPreventivo(payload);
+    return NextResponse.json({ ok: true, id: created.id }, { headers: cors });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || 'SERVER_ERROR' }, { status: 500, headers: cors });
+    return NextResponse.json(
+      { ok: false, error: e?.message || 'SERVER_ERROR' },
+      { status: 500, headers: cors }
+    );
   }
-}
-
-export async function OPTIONS(req: NextRequest) {
-  const origin = req.headers.get('origin') ?? undefined;
-  return new NextResponse(null, { status: 204, headers: buildCorsHeaders(origin) });
 }
