@@ -38,15 +38,12 @@ type SuccessInfo = {
 export default function NuovaVinoPage() {
   const router = useRouter();
 
-  // Tipologia
   const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
   const [destAbilitato, setDestAbilitato] = useState(false);
 
-  // Parti
   const [mittente, setMittente] = useState<Party>(blankParty);
   const [destinatario, setDestinatario] = useState<Party>(blankParty);
 
-  // Prefill mittente dai dati profilo (Airtable -> UTENTI)
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -55,25 +52,20 @@ export default function NuovaVinoPage() {
         if (!cancelled && r?.ok && r?.party) {
           setMittente(prev => ({ ...prev, ...r.party }));
         }
-      } catch {
-        /* noop */
-      }
+      } catch {}
     })();
     return () => { cancelled = true; };
   }, []);
 
-  // Colli
   const [colli, setColli] = useState<Collo[]>([
     { lunghezza_cm: null, larghezza_cm: null, altezza_cm: null, peso_kg: null },
   ]);
   const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
   const [contenuto, setContenuto] = useState<string>('');
 
-  // Ritiro
   const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
   const [ritiroNote, setRitiroNote] = useState('');
 
-  // Fattura
   const [incoterm, setIncoterm] = useState<'DAP' | 'DDP' | 'EXW'>('DAP');
   const [valuta, setValuta] = useState<'EUR' | 'USD' | 'GBP'>('EUR');
   const [noteFatt, setNoteFatt] = useState('');
@@ -82,22 +74,11 @@ export default function NuovaVinoPage() {
   const [sameAsDest, setSameAsDest] = useState(false);
   const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined);
 
-  // Packing list (righe + file)
   const [pl, setPl] = useState<RigaPL[]>([
-    {
-      etichetta: '',
-      bottiglie: 1,
-      formato_litri: 0.75,
-      gradazione: 12,
-      prezzo: 0,
-      valuta: 'EUR',
-      peso_netto_bott: 0.75,
-      peso_lordo_bott: 1.3,
-    },
+    { etichetta: '', bottiglie: 1, formato_litri: 0.75, gradazione: 12, prezzo: 0, valuta: 'EUR', peso_netto_bott: 0.75, peso_lordo_bott: 1.3 },
   ]);
   const [plFiles, setPlFiles] = useState<File[]>([]);
 
-  // UI state
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [success, setSuccess] = useState<SuccessInfo | null>(null);
@@ -109,7 +90,6 @@ export default function NuovaVinoPage() {
     }
   }, [errors.length]);
 
-  // ------- helper: fetch ID Spedizione "umano" dal meta endpoint -------
   async function fetchIdSpedizione(recId: string): Promise<string> {
     try {
       const t = await getIdToken();
@@ -123,7 +103,6 @@ export default function NuovaVinoPage() {
     }
   }
 
-  // ------- Upload allegati (Firebase) + attach su Airtable -------
   async function uploadAndAttach(spedId: string) {
     const storage = getStorage();
     const fattura: { url: string; filename?: string }[] = [];
@@ -148,30 +127,19 @@ export default function NuovaVinoPage() {
     }
   }
 
-  // ------- Validazione client -------
   function validate(): string[] {
     const errs: string[] = [];
 
-    // 🔐 requisito vino: CF/P.IVA DESTINATARIO obbligatorio
-    if (!destinatario.piva?.trim()) {
-      errs.push('Per le spedizioni vino è obbligatorio inserire la Partita IVA / Codice Fiscale del destinatario.');
+    // ✅ CF/P.IVA DESTINATARIO obbligatoria SOLO per B2B e Sample
+    if ((tipoSped === 'B2B' || tipoSped === 'Sample') && !destinatario.piva?.trim()) {
+      errs.push('Per le spedizioni vino di tipo B2B o Sample è obbligatoria la Partita IVA / Codice Fiscale del destinatario.');
     }
 
-    // Mittente CF/P.IVA (utile per documenti)
     if (!mittente.piva?.trim()) errs.push('Partita IVA/Codice Fiscale del mittente mancante.');
 
-    // Colli
     colli.forEach((c, i) => {
-      const miss =
-        c.lunghezza_cm == null ||
-        c.larghezza_cm == null ||
-        c.altezza_cm == null ||
-        c.peso_kg == null;
-      const nonPos =
-        (c.lunghezza_cm ?? 0) <= 0 ||
-        (c.larghezza_cm ?? 0) <= 0 ||
-        (c.altezza_cm ?? 0) <= 0 ||
-        (c.peso_kg ?? 0) <= 0;
+      const miss = c.lunghezza_cm == null || c.larghezza_cm == null || c.altezza_cm == null || c.peso_kg == null;
+      const nonPos = (c.lunghezza_cm ?? 0) <= 0 || (c.larghezza_cm ?? 0) <= 0 || (c.altezza_cm ?? 0) <= 0 || (c.peso_kg ?? 0) <= 0;
       if (miss || nonPos) errs.push(`Collo #${i + 1}: inserire tutte le misure e un peso > 0.`);
     });
 
@@ -189,7 +157,6 @@ export default function NuovaVinoPage() {
     return errs;
   }
 
-  // ------- Salva -------
   const salva = async () => {
     if (saving) return;
 
@@ -224,19 +191,12 @@ export default function NuovaVinoPage() {
         packingList: pl,
       };
 
-      // 1) Crea spedizione (server blocca comunque se manca CF/P.IVA destinatario)
       const res = await postSpedizione(payload, getIdToken);
-
-      // 2) Allegati
       await uploadAndAttach(res.id);
-
-      // 3) Email automatica (best effort)
       try { await postSpedizioneNotify(res.id, getIdToken); } catch {}
 
-      // 4) Recupera ID Spedizione "umano"
       const idSped = await fetchIdSpedizione(res.id);
 
-      // 5) Success
       setSuccess({
         recId: res.id,
         idSped,
@@ -249,7 +209,6 @@ export default function NuovaVinoPage() {
       });
       if (topRef.current) topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
-      // Mostra messaggio specifico dal server se presente
       const msg =
         e instanceof ApiError
           ? e.message
@@ -261,12 +220,9 @@ export default function NuovaVinoPage() {
     }
   };
 
-  // ------- UI success -------
   if (success) {
-    const INFO_URL =
-      process.env.NEXT_PUBLIC_INFO_URL || '/dashboard/informazioni-utili';
-    const WHATSAPP_URL_BASE =
-      process.env.NEXT_PUBLIC_WHATSAPP_URL || 'https://wa.me/393000000000';
+    const INFO_URL = process.env.NEXT_PUBLIC_INFO_URL || '/dashboard/informazioni-utili';
+    const WHATSAPP_URL_BASE = process.env.NEXT_PUBLIC_WHATSAPP_URL || 'https://wa.me/393000000000';
     const whatsappHref = `${WHATSAPP_URL_BASE}?text=${encodeURIComponent(
       `Ciao SPST, ho bisogno di supporto sulla spedizione ${success.idSped}`
     )}`;
@@ -301,10 +257,7 @@ export default function NuovaVinoPage() {
               Le mie spedizioni
             </button>
 
-            <a
-              href={INFO_URL}
-              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
-            >
+            <a href={INFO_URL} className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">
               Documenti & info utili
             </a>
 
@@ -329,7 +282,6 @@ export default function NuovaVinoPage() {
     );
   }
 
-  // ------- UI form -------
   return (
     <div className="space-y-4" ref={topRef}>
       <h2 className="text-lg font-semibold">Nuova spedizione — vino</h2>
@@ -381,12 +333,7 @@ export default function NuovaVinoPage() {
         setContenuto={setContenuto}
       />
 
-      <RitiroCard
-        date={ritiroData}
-        setDate={setRitiroData}
-        note={ritiroNote}
-        setNote={setRitiroNote}
-      />
+      <RitiroCard date={ritiroData} setDate={setRitiroData} note={ritiroNote} setNote={setRitiroNote} />
 
       <FatturaCard
         incoterm={incoterm}
@@ -414,9 +361,7 @@ export default function NuovaVinoPage() {
           aria-busy={saving}
           className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
         >
-          {saving && (
-            <span className="inline-block h-4 w-4 animate-spin rounded-full border border-slate-400 border-t-transparent" />
-          )}
+          {saving && <span className="inline-block h-4 w-4 animate-spin rounded-full border border-slate-400 border-t-transparent" />}
           {saving ? 'Salvataggio…' : 'Salva'}
         </button>
       </div>
