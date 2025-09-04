@@ -11,6 +11,8 @@ import {
   ShieldCheck,
   Settings,
   Info,
+  ReceiptText,
+  FilePlus2,
 } from 'lucide-react';
 
 type NavItem = {
@@ -25,7 +27,8 @@ const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Overview', icon: Home, exact: true },
   { href: '/dashboard/spedizioni', label: 'Le mie spedizioni', icon: Package },
   { href: '/dashboard/nuova', label: 'Nuova spedizione', icon: FileText },
-  
+  { href: '/dashboard/quotazioni', label: 'Quotazioni', icon: ReceiptText },        // 👈
+  { href: '/dashboard/quotazioni/nuova', label: 'Nuova quotazione', icon: FilePlus2 }, // 👈
   { href: '/dashboard/impostazioni', label: 'Impostazioni', icon: Settings },
   { href: '/dashboard/informazioni-utili', label: 'Informazioni utili', icon: Info },
 ];
