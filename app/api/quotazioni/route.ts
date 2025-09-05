@@ -33,12 +33,38 @@ async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
 export async function GET(req: NextRequest) {
   const origin = req.headers.get('origin') ?? undefined;
   const cors = buildCorsHeaders(origin);
+
+  // alias comodi lato API (così il client è pulito)
+  const ID_ALIASES = ['ID_Preventivo', 'ID Preventivo', 'ID'];
+  const DEST_COUNTRY_ALIASES = [
+    'Destinatario_Paese',
+    'Destinatario Paese',
+    'Paese Destinatario',
+    'DestinatarioPaese',
+  ];
+
+  const pick = (obj: any, keys: string[]) => {
+    for (const k of keys) {
+      const v = obj?.[k];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+    }
+    return undefined;
+  };
+
   try {
     const { searchParams } = new URL(req.url);
     const emailParam = searchParams.get('email') || undefined;
     const email = emailParam || (await getEmailFromAuth(req));
 
-    const rows = await listPreventivi(email ? { email } : undefined);
+    const raw = await listPreventivi(email ? { email } : undefined);
+
+    // arricchisco ogni riga con displayId e destination
+    const rows = raw.map((r) => ({
+      ...r,
+      displayId: pick(r.fields, ID_ALIASES),
+      destination: pick(r.fields, DEST_COUNTRY_ALIASES),
+    }));
+
     return NextResponse.json({ ok: true, rows }, { headers: cors });
   } catch (e: any) {
     console.error('GET /api/quotazioni error:', {
