@@ -2,18 +2,15 @@
 import Airtable from 'airtable';
 
 // --- ENV ---
-// --- ENV ---
 const API_TOKEN =
   process.env.AIRTABLE_API_TOKEN || process.env.AIRTABLE_API_KEY || '';
 const BASE_ID = process.env.AIRTABLE_BASE_ID_SPST || '';
 const TB_PREVENTIVI = process.env.AIRTABLE_TABLE_PREVENTIVI || 'Preventivi';
-
-// ⬅️ per i COLLI dei PREVENTIVI usiamo la tabella "Colli"
+// Tabella colli dei PREVENTIVI
 const TB_COLLI =
   process.env.AIRTABLE_TABLE_PREVENTIVI_COLLI ||
   process.env.AIRTABLE_TABLE_COLLI ||
   'Colli';
-
 
 function assertEnv() {
   if (!API_TOKEN) throw new Error('AIRTABLE_API_TOKEN (o AIRTABLE_API_KEY) mancante');
@@ -27,9 +24,15 @@ function base() {
 
 function dateOnlyISO(d?: string | Date) {
   if (!d) return undefined;
-  try { return new Date(d).toISOString().slice(0, 10); } catch { return undefined; }
+  try {
+    return new Date(d).toISOString().slice(0, 10);
+  } catch {
+    return undefined;
+  }
 }
-function optional<T>(v: T | null | undefined) { return v == null ? undefined : v; }
+function optional<T>(v: T | null | undefined) {
+  return v == null ? undefined : v;
+}
 
 // ---- Tipi payload UI ----
 export type PartyQ = {
@@ -52,9 +55,9 @@ export type ColloQ = {
 
 export type PreventivoPayload = {
   createdByEmail?: string;
-  customerEmail?: string;   // email cliente finale
+  customerEmail?: string; // email cliente finale
   valuta?: 'EUR' | 'USD' | 'GBP';
-  ritiroData?: string;      // ISO date
+  ritiroData?: string; // ISO date
   noteGeneriche?: string;
 
   // campi aggiuntivi
@@ -73,7 +76,7 @@ const F = {
   CreatoDaEmail: ['CreatoDaEmail', 'Creato da (email)', 'Created By Email', 'Creato da Email'],
   Valuta: ['Valuta', 'Currency'],
 
-  // ⬅️ include anche "Data ritiro" (con spazio)
+  // includo varianti comuni
   RitiroData: ['Ritiro_Data', 'Data_Ritiro', 'RitiroData', 'PickUp_Date', 'Data ritiro'],
 
   NoteGeneriche: [
@@ -105,28 +108,16 @@ const F = {
   D_Tax: ['Destinatario_Tax', 'Destinatario_EORI', 'Dest_TaxID', 'TaxID Destinatario'],
 } as const;
 
+// ---- Alias campo COLLI (tolleranti) ----
 const C = {
-  // ⬅️ nomi ESATTI della tabella Colli
+  // nomi ESATTI/alias della tabella Colli
   LinkPreventivo: ['Preventivi', 'Preventivo', 'Link Preventivo'],
   PreventivoIdTxt: ['Preventivo_Id', 'Preventivo ID (testo)'],
-
   Qty: ['Quantita', 'Quantità', 'Qty', 'Q.ta'],
   L: ['L_cm', 'Lato 1', 'Lato1', 'Lunghezza', 'L'],
   W: ['W_cm', 'Lato 2', 'Lato2', 'Larghezza', 'W'],
   H: ['H_cm', 'Lato 3', 'Lato3', 'Altezza', 'H'],
   Peso: ['Peso', 'Peso (Kg)', 'Peso_Kg', 'Kg', 'Weight'],
-} as const;
-
-
-// ---- Alias campo COLLI (tolleranti) ----
-const C = {
-  LinkPreventivo: ['Preventivo', 'Link Preventivo'],  // linked-record
-  PreventivoIdTxt: ['Preventivo_Id', 'Preventivo ID (testo)'],
-  Qty: ['Quantita', 'Quantità', 'Qty', 'Q.ta'],
-  L: ['Lato 1', 'Lato1', 'L_cm', 'Lunghezza', 'L'],
-  W: ['Lato 2', 'Lato2', 'W_cm', 'Larghezza', 'W'],
-  H: ['Lato 3', 'Lato3', 'H_cm', 'Altezza', 'H'],
-  Peso: ['Peso (Kg)', 'Peso_Kg', 'Peso', 'Kg', 'Weight'],
 } as const;
 
 // utility update con alias multipli
@@ -152,54 +143,35 @@ async function tryUpdateField(
   return false;
 }
 
+// crea 1 riga in Colli per un collo
 async function tryCreateColloRow(
   b: ReturnType<typeof base>,
   recId: string,
   c: ColloQ
 ) {
-  // Creo con i nomi esatti (e alias tolleranti) in un colpo solo
   const fields: Record<string, any> = {
-    [C.LinkPreventivo[0]]: [recId],                  // linked: Preventivi
-    [C.PreventivoIdTxt[0]]: recId,                   // testo: Preventivo_Id (salvo il recordId)
-    [C.Qty[0]]: optional(c.qty ?? 1),                // Quantita
-    [C.L[0]]: optional(c.l1_cm),                     // L_cm
-    [C.W[0]]: optional(c.l2_cm),                     // W_cm
-    [C.H[0]]: optional(c.l3_cm),                     // H_cm
-    [C.Peso[0]]: optional(c.peso_kg),                // Peso
+    [C.LinkPreventivo[0]]: [recId],             // linked: Preventivi
+    [C.PreventivoIdTxt[0]]: recId,              // testo: Preventivo_Id
+    [C.Qty[0]]: optional(c.qty ?? 1),           // Quantita
+    [C.L[0]]: optional(c.l1_cm),                // L_cm
+    [C.W[0]]: optional(c.l2_cm),                // W_cm
+    [C.H[0]]: optional(c.l3_cm),                // H_cm
+    [C.Peso[0]]: optional(c.peso_kg),           // Peso
   };
 
-  // 1) tentativo con i nomi principali
+  // 1) tentativo completo
   try {
     await b(TB_COLLI).create([{ fields }]);
     return;
   } catch {
-    // 2) fallback minimo: senza linked (qualche base potrebbe non avere il campo)
+    // 2) fallback: senza linked (se il campo non esistesse)
     try {
       const { [C.LinkPreventivo[0]]: _omit, ...noLink } = fields;
       await b(TB_COLLI).create([{ fields: noLink }]);
-      return;
     } catch (e) {
       console.warn('[airtable.quotes] impossibile creare riga colli', e);
     }
   }
-}
-
-
-  const baseFields = {
-    [C.Qty[0]]: optional(c.qty),
-    [C.L[0]]: optional(c.l1_cm),
-    [C.W[0]]: optional(c.l2_cm),
-    [C.H[0]]: optional(c.l3_cm),
-    [C.Peso[0]]: optional(c.peso_kg),
-  };
-
-  // 1) linked record
-  let ok = await attempt({ ...baseFields, [C.LinkPreventivo[0]]: [recId] });
-  if (ok) return;
-
-  // 2) id testo
-  ok = await attempt({ ...baseFields, [C.PreventivoIdTxt[0]]: recId });
-  if (!ok) console.warn('[airtable.quotes] impossibile creare riga colli');
 }
 
 // ---------------------------------------------------------------
@@ -285,7 +257,7 @@ export async function listPreventivi(opts?: { email?: string }): Promise<Array<{
   const b = base();
   const all: Array<{ id: string; fields: any }> = [];
 
-  // NIENTE sort lato Airtable: alcune basi non hanno "Last modified time"
+  // niente sort lato Airtable (alcune basi non hanno "Last modified time")
   await b(TB_PREVENTIVI)
     .select({ pageSize: 100 })
     .eachPage((recs, next) => {
@@ -293,7 +265,7 @@ export async function listPreventivi(opts?: { email?: string }): Promise<Array<{
       next();
     });
 
-  // Filtro per email se richiesto
+  // filtro per email se richiesto
   const filtered = (() => {
     if (!opts?.email) return all;
     const needle = String(opts.email).toLowerCase();
@@ -309,7 +281,7 @@ export async function listPreventivi(opts?: { email?: string }): Promise<Array<{
     );
   })();
 
-  // Arricchisco con displayId
+  // arricchisco con displayId
   const rows = filtered.map((r) => ({
     id: r.id,
     displayId:
@@ -319,7 +291,7 @@ export async function listPreventivi(opts?: { email?: string }): Promise<Array<{
     fields: r.fields,
   }));
 
-  // Ordine robusto: prima per Seq (se presente), poi per displayId, poi per id
+  // ordine robusto: Seq (desc) -> displayId (desc) -> id (desc)
   rows.sort((a, b) => {
     const sa = typeof a.fields?.Seq === 'number' ? (a.fields.Seq as number) : null;
     const sb = typeof b.fields?.Seq === 'number' ? (b.fields.Seq as number) : null;
@@ -369,38 +341,7 @@ export async function getPreventivo(idOrDisplayId: string): Promise<{
     } catch {}
   }
 
-  // dentro getPreventivo, dopo aver caricato `rec` e calcolato `displayId`
-const colli: Array<{ id: string; fields: any }> = [];
-await b(TB_COLLI)
-  .select({ pageSize: 100 })
-  .eachPage((rows, next) => {
-    for (const r of rows) {
-      const f = r.fields || {};
-
-      const linkedArr: string[] = Array.isArray(f['Preventivi'])
-        ? (f['Preventivi'] as string[])
-        : Array.isArray(f['Preventivo'])
-        ? (f['Preventivo'] as string[])
-        : Array.isArray(f['Link Preventivo'])
-        ? (f['Link Preventivo'] as string[])
-        : [];
-
-      const linked = linkedArr.includes(rec.id);
-
-      const txt = String(
-        f['Preventivo_Id'] ??
-        f['Preventivo ID (testo)'] ??
-        ''
-      ).trim();
-
-      const txtMatch = !!txt && (txt === rec.id || (displayId && txt === displayId));
-
-      if (linked || txtMatch) colli.push({ id: r.id, fields: r.fields });
-    }
-    next();
-  });
-
-  // 3) fallback finale: scan e match lato Node
+  // 3) fallback finale: scan completo e match lato Node su displayId
   if (!rec) {
     const all: any[] = [];
     await b(TB_PREVENTIVI)
@@ -423,29 +364,41 @@ await b(TB_COLLI)
 
   if (!rec) return null;
 
-  
+  const displayId =
+    (rec.fields['ID_Preventivo'] as string) ||
+    (rec.fields['ID Preventivo'] as string) ||
+    undefined;
 
-  // colli collegati (via linked record o campo testo)
+  // colli collegati (via linked record o via campo testo)
   const colli: Array<{ id: string; fields: any }> = [];
   await b(TB_COLLI)
     .select({ pageSize: 100 })
     .eachPage((rows, next) => {
       for (const r of rows) {
         const f = r.fields || {};
-        const linkedArr: string[] = Array.isArray(f[C.LinkPreventivo[0]])
-          ? (f[C.LinkPreventivo[0]] as string[])
+
+        const linkedArr: string[] = Array.isArray(f['Preventivi'])
+          ? (f['Preventivi'] as string[])
+          : Array.isArray(f['Preventivo'])
+          ? (f['Preventivo'] as string[])
+          : Array.isArray(f['Link Preventivo'])
+          ? (f['Link Preventivo'] as string[])
           : [];
+
         const linked = linkedArr.includes(rec.id);
-        const txtId = (f[C.PreventivoIdTxt[0]] as string) === rec.id;
-        if (linked || txtId) colli.push({ id: r.id, fields: r.fields });
+
+        const txt = String(
+          f['Preventivo_Id'] ??
+            f['Preventivo ID (testo)'] ??
+            ''
+        ).trim();
+
+        const txtMatch = !!txt && (txt === rec.id || (displayId && txt === displayId));
+
+        if (linked || txtMatch) colli.push({ id: r.id, fields: r.fields });
       }
       next();
     });
-
-  const displayId =
-    (rec.fields['ID_Preventivo'] as string) ||
-    (rec.fields['ID Preventivo'] as string) ||
-    undefined;
 
   return { id: rec.id, displayId, fields: rec.fields, colli };
 }
