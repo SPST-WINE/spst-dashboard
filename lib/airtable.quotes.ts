@@ -2,7 +2,8 @@
 import Airtable from 'airtable';
 
 // --- ENV ---
-const API_TOKEN = process.env.AIRTABLE_API_TOKEN || process.env.AIRTABLE_API_KEY || '';
+const API_TOKEN =
+  process.env.AIRTABLE_API_TOKEN || process.env.AIRTABLE_API_KEY || '';
 const BASE_ID = process.env.AIRTABLE_BASE_ID_SPST || '';
 const TB_PREVENTIVI = process.env.AIRTABLE_TABLE_PREVENTIVI || 'Preventivi';
 const TB_COLLI = process.env.AIRTABLE_TABLE_SPED_COLLI || 'SPED_COLLI';
@@ -19,15 +20,9 @@ function base() {
 
 function dateOnlyISO(d?: string | Date) {
   if (!d) return undefined;
-  try {
-    return new Date(d).toISOString().slice(0, 10);
-  } catch {
-    return undefined;
-  }
+  try { return new Date(d).toISOString().slice(0, 10); } catch { return undefined; }
 }
-function optional<T>(v: T | null | undefined) {
-  return v == null ? undefined : v;
-}
+function optional<T>(v: T | null | undefined) { return v == null ? undefined : v; }
 
 // ---- Tipi payload UI ----
 export type PartyQ = {
@@ -55,7 +50,7 @@ export type PreventivoPayload = {
   ritiroData?: string;      // ISO date
   noteGeneriche?: string;
 
-  // nuovi campi
+  // campi aggiuntivi
   tipoSped?: 'B2B' | 'B2C' | 'Sample';
   incoterm?: 'DAP' | 'DDP' | 'EXW';
 
@@ -77,8 +72,6 @@ const F = {
     'Shipment_Notes',
     'Note spedizione',
   ],
-
-  // nuovi alias
   TipoSped: ['Tipo_Spedizione', 'Tipo spedizione', 'Tipo Spedizione', 'Tipologia', 'Tipo', 'TipoSped'],
   Incoterm: ['Incoterm', 'Incoterms', 'Incoterm_Selezionato', 'Incoterm Selezionato'],
 
@@ -169,9 +162,7 @@ async function tryCreateColloRow(
 // ---------------------------------------------------------------
 // CREATE preventivo
 // ---------------------------------------------------------------
-export async function createPreventivo(
-  payload: PreventivoPayload
-): Promise<{ id: string; displayId?: string }> {
+export async function createPreventivo(payload: PreventivoPayload): Promise<{ id: string; displayId?: string }> {
   const b = base();
   const debugSet: string[] = [];
 
@@ -181,14 +172,16 @@ export async function createPreventivo(
     const recId = created[0].id;
 
     // 2) campi base
-    await tryUpdateField(b, recId, F.Stato, 'Bozza', debugSet);
+    // 👇 NUOVO: settiamo direttamente "In lavorazione"
+    await tryUpdateField(b, recId, F.Stato, 'In lavorazione', debugSet);
+
     if (payload.createdByEmail) await tryUpdateField(b, recId, F.CreatoDaEmail, payload.createdByEmail, debugSet);
     if (payload.customerEmail) await tryUpdateField(b, recId, F.EmailCliente, payload.customerEmail, debugSet);
     if (payload.valuta) await tryUpdateField(b, recId, F.Valuta, payload.valuta, debugSet);
     if (payload.ritiroData) await tryUpdateField(b, recId, F.RitiroData, dateOnlyISO(payload.ritiroData), debugSet);
     if (payload.noteGeneriche) await tryUpdateField(b, recId, F.NoteGeneriche, payload.noteGeneriche, debugSet);
 
-    // nuovi: tipo spedizione + incoterm
+    // tipo spedizione + incoterm
     if (payload.tipoSped) await tryUpdateField(b, recId, F.TipoSped, payload.tipoSped, debugSet);
     if (payload.incoterm) await tryUpdateField(b, recId, F.Incoterm, payload.incoterm, debugSet);
 
@@ -242,201 +235,94 @@ export async function createPreventivo(
 }
 
 // ---------------------------------------------------------------
-// LIST preventivi per email (filtro lato Node) + fallback sort
+// GET one preventivo by recordId OR displayId (ID_Preventivo)
 // ---------------------------------------------------------------
-export async function listPreventivi(
-  opts?: { email?: string }
-): Promise<Array<{ id: string; fields: any; displayId?: string }>> {
+export async function getPreventivo(idOrDisplayId: string): Promise<{
+  id: string;
+  displayId?: string;
+  fields: any;
+  colli: Array<{ id: string; fields: any }>;
+} | null> {
   const b = base();
 
-  // NB: usiamo `any` per evitare problemi con i generics di Airtable typings
-  const fetchAll = async (params: any) =>
-    new Promise<Array<{ id: string; fields: any }>>((resolve, reject) => {
-      const out: Array<{ id: string; fields: any }> = [];
-      b(TB_PREVENTIVI)
-        .select(params)
-        .eachPage(
-          (recs, next) => {
-            for (const r of recs) out.push({ id: r.id, fields: r.fields });
-            next();
-          },
-          (err) => (err ? reject(err) : resolve(out))
-        );
-    });
-
-  // 1) tenta sort per "Last modified time"
-  let rows: Array<{ id: string; fields: any }>;
+  // 1) prova come recordId
+  let rec: any | null = null;
   try {
-    rows = await fetchAll({
-      pageSize: 100,
-      sort: [{ field: 'Last modified time', direction: 'desc' }],
-    });
-  } catch (e: any) {
-    // 2) se il campo non esiste → fallback senza sort
-    if (e?.statusCode === 422 || e?.error === 'UNKNOWN_FIELD_NAME') {
-      console.warn('[airtable.quotes] listPreventivi: sort field missing, fallback to unsorted.', {
-        message: e?.message,
-        statusCode: e?.statusCode,
-        airtable: e?.error,
-      });
-      rows = await fetchAll({ pageSize: 100 });
-    } else {
-      console.error('[airtable.quotes] listPreventivi fatal:', {
-        message: e?.message,
-        statusCode: e?.statusCode,
-        airtable: e?.error,
-      });
-      throw e;
-    }
-  }
-
-  // 3) filtro opzionale per email
-  let filtered = rows;
-  if (opts?.email) {
-    const needle = String(opts.email).toLowerCase();
-    const emailFields = [...F.EmailCliente, ...F.CreatoDaEmail];
-    filtered = rows.filter(({ fields }) =>
-      emailFields.some((k) => {
-        const v = fields?.[k];
-        return typeof v === 'string' && v.toLowerCase() === needle;
+    rec = await b(TB_PREVENTIVI).find(idOrDisplayId);
+  } catch {
+    // 2) cerca per ID_Preventivo
+    const found: any[] = [];
+    await b(TB_PREVENTIVI)
+      .select({
+        pageSize: 50,
+        filterByFormula: `OR({ID_Preventivo}="${idOrDisplayId}", {ID Preventivo}="${idOrDisplayId}")`,
       })
-    );
+      .eachPage((rows, next) => {
+        for (const r of rows) found.push(r);
+        next();
+      });
+    rec = found[0] || null;
   }
+  if (!rec) return null;
 
-  // 4) aggiungo displayId per la UI (ID_Preventivo o simili)
+  // colli collegati (via linked record o campo testo)
+  const colli: Array<{ id: string; fields: any }> = [];
+  await b(TB_COLLI)
+    .select({ pageSize: 100 })
+    .eachPage((rows, next) => {
+      for (const r of rows) {
+        const f = r.fields || {};
+        const linkedArr: string[] = Array.isArray(f[C.LinkPreventivo[0]]) ? f[C.LinkPreventivo[0]] as string[] : [];
+        const linked = linkedArr.includes(rec.id);
+        const txtId = (f[C.PreventivoIdTxt[0]] as string) === rec.id;
+        if (linked || txtId) colli.push({ id: r.id, fields: r.fields });
+      }
+      next();
+    });
+
+  const displayId =
+    (rec.fields['ID_Preventivo'] as string) ||
+    (rec.fields['ID Preventivo'] as string) ||
+    undefined;
+
+  return { id: rec.id, displayId, fields: rec.fields, colli };
+}
+
+// ---------------------------------------------------------------
+// LIST preventivi per email (filtro lato Node) + displayId & dest
+// ---------------------------------------------------------------
+export async function listPreventivi(opts?: { email?: string }): Promise<Array<{
+  id: string;
+  displayId?: string;
+  fields: any;
+}>> {
+  const b = base();
+  const all: Array<{ id: string; fields: any }> = [];
+
+  await b(TB_PREVENTIVI)
+    .select({ pageSize: 100, sort: [{ field: 'Last modified time', direction: 'desc' }] })
+    .eachPage((recs, next) => {
+      for (const r of recs) all.push({ id: r.id, fields: r.fields });
+      next();
+    });
+
+  const filtered = (() => {
+    if (!opts?.email) return all;
+    const needle = String(opts.email).toLowerCase();
+    const emailFields = ['Email_Cliente', 'Email Cliente', 'Cliente_Email', 'Customer_Email',
+      'CreatoDaEmail', 'Creato da (email)', 'Created By Email', 'Creato da Email'];
+    return all.filter(({ fields }) => emailFields.some(k => {
+      const v = fields?.[k];
+      return typeof v === 'string' && v.toLowerCase() === needle;
+    }));
+  })();
+
   return filtered.map((r) => ({
     id: r.id,
     displayId:
       (r.fields['ID_Preventivo'] as string) ||
       (r.fields['ID Preventivo'] as string) ||
-      (r.fields['ID'] as string) ||
       undefined,
     fields: r.fields,
   }));
 }
-
-// ---- DETTAGLIO PREVENTIVO (by recId o by ID_Preventivo) --------------------
-export type PreventivoFull = {
-  id: string;
-  displayId?: string;
-  stato?: string;
-  tipoSped?: string;
-  incoterm?: string;
-  valuta?: string;
-  ritiroData?: string;
-  noteGeneriche?: string;
-  destination?: string; // paese destinatario
-  updatedAt?: string;
-
-  mittente: {
-    ragioneSociale?: string; indirizzo?: string; cap?: string; citta?: string;
-    paese?: string; telefono?: string; taxId?: string;
-  };
-  destinatario: {
-    ragioneSociale?: string; indirizzo?: string; cap?: string; citta?: string;
-    paese?: string; telefono?: string; taxId?: string;
-  };
-
-  colli: Array<{ qty?: number; l1_cm?: number | null; l2_cm?: number | null; l3_cm?: number | null; peso_kg?: number | null }>;
-  fieldsRaw: any; // per eventuali debug
-};
-
-export async function getPreventivo(idOrCode: string): Promise<PreventivoFull> {
-  const b = base();
-
-  const pick = (obj: any, keys: string[]) => {
-    for (const k of keys) {
-      const v = obj?.[k];
-      if (v !== undefined && v !== null && String(v).trim() !== '') return v as any;
-    }
-    return undefined;
-  };
-
-  // 1) trova il record: prima per recId, altrimenti per ID_Preventivo
-  let rec: any | undefined;
-  try {
-    rec = await b(TB_PREVENTIVI).find(idOrCode);
-  } catch {
-    const found = await b(TB_PREVENTIVI)
-      .select({
-        maxRecords: 1,
-        filterByFormula:
-          `OR({ID_Preventivo}='${idOrCode}', {ID Preventivo}='${idOrCode}', {ID}='${idOrCode}')`,
-      })
-      .firstPage();
-    rec = found?.[0];
-  }
-  if (!rec) throw new Error('NOT_FOUND');
-
-  const f = rec.fields;
-
-  const mittente = {
-    ragioneSociale: pick(f, F.M_Nome as unknown as string[]),
-    indirizzo:     pick(f, F.M_Ind as unknown as string[]),
-    cap:           pick(f, F.M_CAP as unknown as string[]),
-    citta:         pick(f, F.M_Citta as unknown as string[]),
-    paese:         pick(f, F.M_Paese as unknown as string[]),
-    telefono:      pick(f, F.M_Tel as unknown as string[]),
-    taxId:         pick(f, F.M_Tax as unknown as string[]),
-  };
-  const destinatario = {
-    ragioneSociale: pick(f, F.D_Nome as unknown as string[]),
-    indirizzo:     pick(f, F.D_Ind as unknown as string[]),
-    cap:           pick(f, F.D_CAP as unknown as string[]),
-    citta:         pick(f, F.D_Citta as unknown as string[]),
-    paese:         pick(f, F.D_Paese as unknown as string[]),
-    telefono:      pick(f, F.D_Tel as unknown as string[]),
-    taxId:         pick(f, F.D_Tax as unknown as string[]),
-  };
-
-  // 2) carica colli e filtra quelli collegati al preventivo
-  const allColli: any[] = [];
-  await b(TB_COLLI)
-    .select({ pageSize: 100 })
-    .eachPage((recs, next) => {
-      for (const r of recs) allColli.push(r);
-      next();
-    });
-
-  const getAny = (obj: any, keys: string[]) => {
-    for (const k of keys) {
-      const v = obj?.[k];
-      if (v !== undefined) return v;
-    }
-    return undefined;
-  };
-
-  const colliRecs = allColli.filter((r) => {
-    const link = getAny(r.fields, C.LinkPreventivo as unknown as string[]);
-    if (Array.isArray(link) && link.some((x) => x === rec.id)) return true;
-
-    const pid = getAny(r.fields, C.PreventivoIdTxt as unknown as string[]);
-    return pid === rec.id;
-  });
-
-  const colli = colliRecs.map((r) => ({
-    qty:     pick(r.fields, C.Qty as unknown as string[]),
-    l1_cm:   pick(r.fields, C.L   as unknown as string[]),
-    l2_cm:   pick(r.fields, C.W   as unknown as string[]),
-    l3_cm:   pick(r.fields, C.H   as unknown as string[]),
-    peso_kg: pick(r.fields, C.Peso as unknown as string[]),
-  }));
-
-  return {
-    id: rec.id,
-    displayId:  pick(f, ['ID_Preventivo', 'ID Preventivo', 'ID']),
-    stato:      pick(f, F.Stato as unknown as string[]),
-    tipoSped:   pick(f, F.TipoSped as unknown as string[]),
-    incoterm:   pick(f, F.Incoterm as unknown as string[]),
-    valuta:     pick(f, F.Valuta as unknown as string[]),
-    ritiroData: pick(f, F.RitiroData as unknown as string[]),
-    noteGeneriche: pick(f, F.NoteGeneriche as unknown as string[]),
-    destination: destinatario.paese,
-    updatedAt:  String(f['Last modified time'] || f['Ultima Modifica'] || ''),
-    mittente,
-    destinatario,
-    colli,
-    fieldsRaw: f,
-  };
-}
-
