@@ -1,11 +1,10 @@
 // lib/airtable.quotes.ts
 import Airtable from 'airtable';
 
-// ---------- ENV ----------
+// --- ENV ---
 const API_TOKEN =
   process.env.AIRTABLE_API_TOKEN || process.env.AIRTABLE_API_KEY || '';
 const BASE_ID = process.env.AIRTABLE_BASE_ID_SPST || '';
-
 const TB_PREVENTIVI = process.env.AIRTABLE_TABLE_PREVENTIVI || 'Preventivi';
 const TB_COLLI =
   process.env.AIRTABLE_TABLE_PREVENTIVI_COLLI ||
@@ -27,9 +26,8 @@ function dateOnlyISO(d?: string | Date) {
   try { return new Date(d).toISOString().slice(0, 10); } catch { return undefined; }
 }
 function optional<T>(v: T | null | undefined) { return v == null ? undefined : v; }
-function esc(s: string) { return String(s).replace(/"/g, '\\"'); }
 
-// ---------- Tipi ----------
+// ---- Tipi payload UI ----
 export type PartyQ = {
   ragioneSociale?: string;
   indirizzo?: string;
@@ -37,45 +35,50 @@ export type PartyQ = {
   citta?: string;
   paese?: string;
   telefono?: string;
-  taxId?: string;
+  taxId?: string; // P.IVA/EORI/EIN
 };
+
 export type ColloQ = {
-  qty?: number;
+  // accettiamo entrambe le notazioni
+  quantita?: number;
+  lunghezza_cm?: number | null;
+  larghezza_cm?: number | null;
+  altezza_cm?: number | null;
   l1_cm?: number | null;
   l2_cm?: number | null;
   l3_cm?: number | null;
   peso_kg?: number | null;
 };
+
 export type PreventivoPayload = {
   createdByEmail?: string;
-  customerEmail?: string;
+  customerEmail?: string;   // email cliente finale
   valuta?: 'EUR' | 'USD' | 'GBP';
-  ritiroData?: string;
+  ritiroData?: string;      // ISO date
   noteGeneriche?: string;
+
+  // campi aggiuntivi
   tipoSped?: 'B2B' | 'B2C' | 'Sample';
   incoterm?: 'DAP' | 'DDP' | 'EXW';
+
   mittente?: PartyQ;
   destinatario?: PartyQ;
   colli?: ColloQ[];
 };
 
-// ---------- Alias campi ----------
+// ---- Alias campo PREVENTIVI (tolleranti) ----
 const F = {
   Stato: ['Stato', 'Status'],
-  // alias estesi per essere super tolleranti
-  EmailCliente: [
-    'Email_Cliente', 'Email Cliente', 'Cliente_Email', 'Customer_Email',
-    'Email cliente', 'E-mail Cliente', 'E-mail_Cliente'
-  ],
+  EmailCliente: ['Email_Cliente', 'Email Cliente', 'Cliente_Email', 'Customer_Email'],
   CreatoDaEmail: ['CreatoDaEmail', 'Creato da (email)', 'Created By Email', 'Creato da Email'],
   Valuta: ['Valuta', 'Currency'],
-  RitiroData: [
-    'Ritiro_Data', 'Data_Ritiro', 'RitiroData', 'PickUp_Date',
-    'Data ritiro', 'Data Ritiro', ' Data Ritiro ', ' Data ritiro '
-  ],
+  // include anche "Data Ritiro" con spazio
+  RitiroData: ['Ritiro_Data', 'Data_Ritiro', 'RitiroData', 'PickUp_Date', 'Data Ritiro'],
   NoteGeneriche: [
-    'Note generiche sulla spedizione', 'Note_Spedizione',
-    'Shipment_Notes', 'Note spedizione'
+    'Note generiche sulla spedizione',
+    'Note_Spedizione',
+    'Shipment_Notes',
+    'Note spedizione',
   ],
   TipoSped: ['Tipo_Spedizione', 'Tipo spedizione', 'Tipo Spedizione', 'Tipologia', 'Tipo', 'TipoSped'],
   Incoterm: ['Incoterm', 'Incoterms', 'Incoterm_Selezionato', 'Incoterm Selezionato'],
@@ -99,17 +102,18 @@ const F = {
   D_Tax: ['Destinatario_Tax', 'Destinatario_EORI', 'Dest_TaxID', 'TaxID Destinatario'],
 } as const;
 
+// ---- Campi COLLI (nomi ESATTI) ----
 const C = {
-  LinkPreventivo: ['Preventivi', 'Preventivo', 'Link Preventivo'],
-  PreventivoIdTxt: ['Preventivo_Id', 'Preventivo ID (testo)'],
-  Qty: ['Quantita', 'Quantità', 'Qty', 'Q.ta'],
-  L: ['L_cm', 'Lato 1', 'Lato1', 'Lunghezza', 'L'],
-  W: ['W_cm', 'Lato 2', 'Lato2', 'Larghezza', 'W'],
-  H: ['H_cm', 'Lato 3', 'Lato3', 'Altezza', 'H'],
-  Peso: ['Peso', 'Peso (Kg)', 'Peso_Kg', 'Kg', 'Weight'],
+  LinkPreventivo: ['Preventivi'],         // linked a Preventivi
+  PreventivoIdTxt: ['Preventivo_Id'],     // single line text
+  Qty: ['Quantita'],
+  L: ['L_cm'],
+  W: ['W_cm'],
+  H: ['H_cm'],
+  Peso: ['Peso'],
 } as const;
 
-// ---------- helpers ----------
+// utility update con alias multipli
 async function tryUpdateField(
   b: ReturnType<typeof base>,
   recId: string,
@@ -118,13 +122,15 @@ async function tryUpdateField(
   debug: string[],
 ): Promise<boolean> {
   if (value == null) return true;
-  const keys = Array.isArray(aliases) ? aliases : [aliases];
+  const keys = Array.isArray(aliases) ? [...aliases] : [aliases];
   for (const k of keys) {
     try {
       await b(TB_PREVENTIVI).update(recId, { [k]: value });
       debug.push(`OK ${k}`);
       return true;
-    } catch {}
+    } catch {
+      // prova alias successivo
+    }
   }
   debug.push(`SKIP ${Array.isArray(aliases) ? aliases.join('|') : aliases}`);
   return false;
@@ -135,100 +141,112 @@ async function tryCreateColloRow(
   recId: string,
   c: ColloQ
 ) {
-  try {
-    await b(TB_COLLI).create([{
-      fields: {
-        [C.LinkPreventivo[0]]: [recId],
-        [C.PreventivoIdTxt[0]]: recId,
-        [C.Qty[0]]: optional(c.qty ?? 1),
-        [C.L[0]]: optional(c.l1_cm),
-        [C.W[0]]: optional(c.l2_cm),
-        [C.H[0]]: optional(c.l3_cm),
-        [C.Peso[0]]: optional(c.peso_kg),
-      }
-    }]);
-    return;
-  } catch {}
+  // normalizzo: prendo lunghezza/larghezza/altezza o l1/l2/l3
+  const L = c.lunghezza_cm ?? c.l1_cm ?? undefined;
+  const W = c.larghezza_cm ?? c.l2_cm ?? undefined;
+  const H = c.altezza_cm ?? c.l3_cm ?? undefined;
 
+  const fields: Record<string, any> = {
+    [C.LinkPreventivo[0]]: [recId],                // linked: Preventivi
+    [C.PreventivoIdTxt[0]]: recId,                 // testo: recordId
+    [C.Qty[0]]: optional(c.quantita ?? 1),         // Quantita
+    [C.L[0]]: optional(L),                         // L_cm
+    [C.W[0]]: optional(W),                         // W_cm
+    [C.H[0]]: optional(H),                         // H_cm
+    [C.Peso[0]]: optional(c.peso_kg),              // Peso
+  };
+
+  // 1) tentativo completo (con linked)
   try {
-    await b(TB_COLLI).create([{
-      fields: {
-        [C.PreventivoIdTxt[0]]: recId,
-        [C.Qty[0]]: optional(c.qty ?? 1),
-        [C.L[0]]: optional(c.l1_cm),
-        [C.W[0]]: optional(c.l2_cm),
-        [C.H[0]]: optional(c.l3_cm),
-        [C.Peso[0]]: optional(c.peso_kg),
-      }
-    }]);
-  } catch (e) {
-    console.warn('[airtable.quotes] impossibile creare riga colli', e);
+    await b(TB_COLLI).create([{ fields }]);
+    return;
+  } catch {
+    // 2) fallback senza linked (se il campo non esistesse)
+    try {
+      const { [C.LinkPreventivo[0]]: _omit, ...noLink } = fields;
+      await b(TB_COLLI).create([{ fields: noLink }]);
+      return;
+    } catch (e) {
+      console.warn('[airtable.quotes] impossibile creare riga colli', e);
+    }
   }
 }
 
-// ---------- CREATE ----------
+// ---------------------------------------------------------------
+// CREATE preventivo
+// ---------------------------------------------------------------
 export async function createPreventivo(
   payload: PreventivoPayload
 ): Promise<{ id: string; displayId?: string }> {
   const b = base();
   const debugSet: string[] = [];
 
-  // 1) record vuoto
-  const created = await b(TB_PREVENTIVI).create([{ fields: {} }]);
-  const recId = created[0].id;
-
-  // 2) campi base (con fallback customerEmail <- createdByEmail)
-  const customerEmail = payload.customerEmail || payload.createdByEmail;
-
-  await tryUpdateField(b, recId, F.Stato, 'In lavorazione', debugSet);
-  if (payload.createdByEmail) await tryUpdateField(b, recId, F.CreatoDaEmail, payload.createdByEmail, debugSet);
-  if (customerEmail) await tryUpdateField(b, recId, F.EmailCliente, customerEmail, debugSet);
-  if (payload.valuta) await tryUpdateField(b, recId, F.Valuta, payload.valuta, debugSet);
-  if (payload.ritiroData) await tryUpdateField(b, recId, F.RitiroData, dateOnlyISO(payload.ritiroData), debugSet);
-  if (payload.noteGeneriche) await tryUpdateField(b, recId, F.NoteGeneriche, payload.noteGeneriche, debugSet);
-  if (payload.tipoSped) await tryUpdateField(b, recId, F.TipoSped, payload.tipoSped, debugSet);
-  if (payload.incoterm) await tryUpdateField(b, recId, F.Incoterm, payload.incoterm, debugSet);
-
-  // 3) mittente
-  const M = payload.mittente || {};
-  if (M.ragioneSociale) await tryUpdateField(b, recId, F.M_Nome, M.ragioneSociale, debugSet);
-  if (M.indirizzo) await tryUpdateField(b, recId, F.M_Ind, M.indirizzo, debugSet);
-  if (M.cap) await tryUpdateField(b, recId, F.M_CAP, M.cap, debugSet);
-  if (M.citta) await tryUpdateField(b, recId, F.M_Citta, M.citta, debugSet);
-  if (M.paese) await tryUpdateField(b, recId, F.M_Paese, M.paese, debugSet);
-  if (M.telefono) await tryUpdateField(b, recId, F.M_Tel, M.telefono, debugSet);
-  if (M.taxId) await tryUpdateField(b, recId, F.M_Tax, M.taxId, debugSet);
-
-  // 4) destinatario
-  const D = payload.destinatario || {};
-  if (D.ragioneSociale) await tryUpdateField(b, recId, F.D_Nome, D.ragioneSociale, debugSet);
-  if (D.indirizzo) await tryUpdateField(b, recId, F.D_Ind, D.indirizzo, debugSet);
-  if (D.cap) await tryUpdateField(b, recId, F.D_CAP, D.cap, debugSet);
-  if (D.citta) await tryUpdateField(b, recId, F.D_Citta, D.citta, debugSet);
-  if (D.paese) await tryUpdateField(b, recId, F.D_Paese, D.paese, debugSet);
-  if (D.telefono) await tryUpdateField(b, recId, F.D_Tel, D.telefono, debugSet);
-  if (D.taxId) await tryUpdateField(b, recId, F.D_Tax, D.taxId, debugSet);
-
-  // 5) colli
-  if (payload.colli?.length) {
-    for (const c of payload.colli) await tryCreateColloRow(b, recId, c);
-  }
-
-  // 6) displayId (formula)
-  let displayId: string | undefined;
   try {
-    const rec = await b(TB_PREVENTIVI).find(recId);
-    displayId =
-      (rec.fields['ID_Preventivo'] as string) ||
-      (rec.fields['ID Preventivo'] as string) ||
-      undefined;
-  } catch {}
+    // 1) record vuoto
+    const created = await b(TB_PREVENTIVI).create([{ fields: {} }]);
+    const recId = created[0].id;
 
-  console.log('[airtable.quotes] createPreventivo set fields:', debugSet);
-  return { id: recId, displayId };
+    // 2) campi base
+    await tryUpdateField(b, recId, F.Stato, 'In lavorazione', debugSet);
+    if (payload.createdByEmail) await tryUpdateField(b, recId, F.CreatoDaEmail, payload.createdByEmail, debugSet);
+    if (payload.customerEmail) await tryUpdateField(b, recId, F.EmailCliente, payload.customerEmail, debugSet);
+    if (payload.valuta) await tryUpdateField(b, recId, F.Valuta, payload.valuta, debugSet);
+    if (payload.ritiroData) await tryUpdateField(b, recId, F.RitiroData, dateOnlyISO(payload.ritiroData), debugSet);
+    if (payload.noteGeneriche) await tryUpdateField(b, recId, F.NoteGeneriche, payload.noteGeneriche, debugSet);
+    if (payload.tipoSped) await tryUpdateField(b, recId, F.TipoSped, payload.tipoSped, debugSet);
+    if (payload.incoterm) await tryUpdateField(b, recId, F.Incoterm, payload.incoterm, debugSet);
+
+    // 3) mittente
+    const M = payload.mittente || {};
+    if (M.ragioneSociale) await tryUpdateField(b, recId, F.M_Nome, M.ragioneSociale, debugSet);
+    if (M.indirizzo) await tryUpdateField(b, recId, F.M_Ind, M.indirizzo, debugSet);
+    if (M.cap) await tryUpdateField(b, recId, F.M_CAP, M.cap, debugSet);
+    if (M.citta) await tryUpdateField(b, recId, F.M_Citta, M.citta, debugSet);
+    if (M.paese) await tryUpdateField(b, recId, F.M_Paese, M.paese, debugSet);
+    if (M.telefono) await tryUpdateField(b, recId, F.M_Tel, M.telefono, debugSet);
+    if (M.taxId) await tryUpdateField(b, recId, F.M_Tax, M.taxId, debugSet);
+
+    // 4) destinatario
+    const D = payload.destinatario || {};
+    if (D.ragioneSociale) await tryUpdateField(b, recId, F.D_Nome, D.ragioneSociale, debugSet);
+    if (D.indirizzo) await tryUpdateField(b, recId, F.D_Ind, D.indirizzo, debugSet);
+    if (D.cap) await tryUpdateField(b, recId, F.D_CAP, D.cap, debugSet);
+    if (D.citta) await tryUpdateField(b, recId, F.D_Citta, D.citta, debugSet);
+    if (D.paese) await tryUpdateField(b, recId, F.D_Paese, D.paese, debugSet);
+    if (D.telefono) await tryUpdateField(b, recId, F.D_Tel, D.telefono, debugSet);
+    if (D.taxId) await tryUpdateField(b, recId, F.D_Tax, D.taxId, debugSet);
+
+    // 5) colli
+    if (payload.colli?.length) {
+      for (const c of payload.colli) await tryCreateColloRow(b, recId, c);
+    }
+
+    // 6) ID visuale (formula ID_Preventivo / ID Preventivo)
+    let displayId: string | undefined;
+    try {
+      const rec = await b(TB_PREVENTIVI).find(recId);
+      displayId =
+        (rec.fields['ID_Preventivo'] as string) ||
+        (rec.fields['ID Preventivo'] as string) ||
+        undefined;
+    } catch {}
+
+    console.log('[airtable.quotes] createPreventivo set fields:', debugSet);
+    return { id: recId, displayId };
+  } catch (e: any) {
+    console.error('[airtable.quotes] createPreventivo failed', {
+      message: e?.message,
+      statusCode: e?.statusCode,
+      airtable: e?.error,
+      tables: { TB_PREVENTIVI, TB_COLLI },
+    });
+    throw e;
+  }
 }
 
-// ---------- LIST ----------
+// ---------------------------------------------------------------
+// LIST preventivi per email (filtro lato Node) + displayId & sort robusto
+// ---------------------------------------------------------------
 export async function listPreventivi(opts?: { email?: string }): Promise<Array<{
   id: string;
   displayId?: string;
@@ -239,14 +257,16 @@ export async function listPreventivi(opts?: { email?: string }): Promise<Array<{
 
   await b(TB_PREVENTIVI)
     .select({ pageSize: 100 })
-    .eachPage((recs, next) => { for (const r of recs) all.push({ id: r.id, fields: r.fields }); next(); });
+    .eachPage((recs, next) => {
+      for (const r of recs) all.push({ id: r.id, fields: r.fields });
+      next();
+    });
 
   const filtered = (() => {
     if (!opts?.email) return all;
     const needle = String(opts.email).toLowerCase();
     const emailFields = [
       'Email_Cliente', 'Email Cliente', 'Cliente_Email', 'Customer_Email',
-      'Email cliente', 'E-mail Cliente', 'E-mail_Cliente',
       'CreatoDaEmail', 'Creato da (email)', 'Created By Email', 'Creato da Email',
     ];
     return all.filter(({ fields }) =>
@@ -266,20 +286,25 @@ export async function listPreventivi(opts?: { email?: string }): Promise<Array<{
     fields: r.fields,
   }));
 
+  // Ordine: Seq (se presente) -> displayId -> id
   rows.sort((a, b) => {
-    const sa = typeof a.fields?.Seq === 'number' ? a.fields.Seq as number : null;
-    const sb = typeof b.fields?.Seq === 'number' ? b.fields.Seq as number : null;
+    const sa = typeof a.fields?.Seq === 'number' ? (a.fields.Seq as number) : null;
+    const sb = typeof b.fields?.Seq === 'number' ? (b.fields.Seq as number) : null;
     if (sa != null && sb != null) return sb - sa;
-    const da = (a.displayId || '');
-    const db = (b.displayId || '');
+
+    const da = (a.displayId || '') as string;
+    const db = (b.displayId || '') as string;
     if (da && db) return db.localeCompare(da);
+
     return (b.id || '').localeCompare(a.id || '');
   });
 
   return rows;
 }
 
-// ---------- GET ONE ----------
+// ---------------------------------------------------------------
+// GET one preventivo by recordId OR displayId (ID_Preventivo)
+// ---------------------------------------------------------------
 export async function getPreventivo(idOrDisplayId: string): Promise<{
   id: string;
   displayId?: string;
@@ -287,37 +312,28 @@ export async function getPreventivo(idOrDisplayId: string): Promise<{
   colli: Array<{ id: string; fields: any }>;
 } | null> {
   const b = base();
-  const key = String(idOrDisplayId).trim();
 
+  // 1) prova come recordId
   let rec: any | null = null;
+  try {
+    rec = await b(TB_PREVENTIVI).find(idOrDisplayId);
+  } catch {}
 
-  if (/^rec[a-zA-Z0-9]{14}$/.test(key)) {
-    try { rec = await b(TB_PREVENTIVI).find(key); } catch {}
-  }
-
+  // 2) se non trovato, cerca per ID_Preventivo / ID Preventivo
   if (!rec) {
-    const fbf = `OR(
-      LOWER(TRIM({ID_Preventivo}))=LOWER("${esc(key)}"),
-      LOWER(TRIM({ID Preventivo}))=LOWER("${esc(key)}")
-    )`;
     try {
       const found: any[] = [];
-      await b(TB_PREVENTIVI).select({ pageSize: 50, filterByFormula: fbf })
-        .eachPage((rows, next) => { for (const r of rows) found.push(r); next(); });
+      await b(TB_PREVENTIVI)
+        .select({
+          pageSize: 50,
+          filterByFormula: `OR({ID_Preventivo}="${idOrDisplayId}", {ID Preventivo}="${idOrDisplayId}")`,
+        })
+        .eachPage((rows, next) => {
+          for (const r of rows) found.push(r);
+          next();
+        });
       rec = found[0] || null;
     } catch {}
-  }
-
-  if (!rec) {
-    const all: any[] = [];
-    await b(TB_PREVENTIVI)
-      .select({ pageSize: 100 })
-      .eachPage((rows, next) => { for (const r of rows) all.push(r); next(); });
-    rec = all.find((r) => {
-      const f = r.fields || {};
-      const disp = (f['ID_Preventivo'] as string) || (f['ID Preventivo'] as string) || (f['ID'] as string) || '';
-      return disp && String(disp).trim().toLowerCase() === key.toLowerCase();
-    }) || null;
   }
 
   if (!rec) return null;
@@ -327,19 +343,22 @@ export async function getPreventivo(idOrDisplayId: string): Promise<{
     (rec.fields['ID Preventivo'] as string) ||
     undefined;
 
+  // 3) colli collegati (linked "Preventivi") o match testuale "Preventivo_Id"
   const colli: Array<{ id: string; fields: any }> = [];
   await b(TB_COLLI)
     .select({ pageSize: 100 })
     .eachPage((rows, next) => {
       for (const r of rows) {
         const f = r.fields || {};
-        const linkedArr: string[] =
-          (Array.isArray(f['Preventivi']) ? f['Preventivi'] as string[] :
-            Array.isArray(f['Preventivo']) ? f['Preventivo'] as string[] :
-              Array.isArray(f['Link Preventivo']) ? f['Link Preventivo'] as string[] : []);
+
+        const linkedArr: string[] = Array.isArray(f[C.LinkPreventivo[0]])
+          ? (f[C.LinkPreventivo[0]] as string[])
+          : [];
         const linked = linkedArr.includes(rec.id);
-        const txt = String(f['Preventivo_Id'] ?? f['Preventivo ID (testo)'] ?? '').trim();
+
+        const txt = String(f[C.PreventivoIdTxt[0]] ?? '').trim();
         const txtMatch = !!txt && (txt === rec.id || (displayId && txt === displayId));
+
         if (linked || txtMatch) colli.push({ id: r.id, fields: r.fields });
       }
       next();
