@@ -1,23 +1,31 @@
-# SPST WebApp – Mini‑Docs / README
+
+# SPST WebApp — README (MVP Spedizioni + Quotazioni)
 
 > **Stack**: Next.js 14 (App Router) · TypeScript · TailwindCSS · Airtable (API) · Firebase (Auth + Storage) · Resend (Email) · Deploy: Vercel (Node 20.x)
 
-Questa mini‑documentazione riassume architettura, flussi, pagine, endpoint, schemi Airtable, variabili d’ambiente e gotcha già risolti. È pensata per essere incollata pari‑pari in una nuova repo o per allineare un collaboratore.
+Mini-documentazione operativa che copre architettura, flussi, pagine, endpoint, schemi Airtable, env e gotcha. Include sia **spedizioni** sia **quotazioni/preventivi**.
 
 ---
 
-## Struttura del progetto
+## Struttura progetto
 
 ```
 app/
   api/
-    spedizioni/route.ts                     # POST crea spedizione, GET lista (con filtro per email)
+    # --- Spedizioni ---
+    spedizioni/route.ts                     # POST crea spedizione · GET lista (?email=...)
     spedizioni/[id]/attachments/route.ts    # POST: allega file (URL Firebase) su Airtable
-    spedizioni/[id]/colli/route.ts          # GET: lista colli (patch: filtro lato Node su linked IDs)
+    spedizioni/[id]/colli/route.ts          # GET: lista colli (patch filtro lato Node su linked IDs)
     spedizioni/[id]/meta/route.ts           # GET: id pubblico & creato-da-email
-    spedizioni/[id]/notify/route.ts         # POST: invia mail di conferma (Resend) + CTA WhatsApp
-    utenti/route.ts                         # GET: profilo da tab. UTENTI; POST: upsert profilo
+    spedizioni/[id]/notify/route.ts         # POST: invia mail (Resend) + CTA WhatsApp
+
+    # --- Utenti / profilo ---
+    utenti/route.ts                         # GET: profilo da tab. UTENTI · POST: upsert profilo
     profile/route.ts                        # GET: profilo Party per prefill (usa tab. UTENTI)
+
+    # --- Quotazioni (Preventivi) ---
+    quotazioni/route.ts                     # GET :idOrDisplayId · GET ?email=... · POST create
+
   dashboard/
     page.tsx                                # (TODO) Overview
     spedizioni/page.tsx                     # Lista spedizioni + Drawer dettagli (client)
@@ -26,6 +34,8 @@ app/
     impostazioni/page.tsx                   # Dati mittente (tab. UTENTI)
     informazioni-utili/page.tsx             # Statica/risorse (OK)
     compliance/page.tsx                     # (TODO)
+    # (TODO) quotazioni/page.tsx            # Lista preventivi + dettaglio (vedi Gap & TODO)
+
 components/
   Drawer.tsx
   Protected.tsx
@@ -38,61 +48,69 @@ components/
     RitiroCard.tsx
     FatturaCard.tsx
     PackingListVino.tsx
-    Field.tsx (Select, input helpers)
+    Field.tsx                               # Select & input helpers
+
 lib/
-  airtable.schema.ts     # Nomi tabelle/campi (TABLE, F, FCOLLO, FPL, FUSER)
-  airtable.ts            # Logica Airtable (create/list/attach/meta/utenti/colli + utils)
-  api.ts                 # Facade client: postSpedizione, postSpedizioneAttachments, postSpedizioneNotify, getUserProfile
-  authed-fetch.ts        # fetch con Bearer token
-  cors.ts                # CORS helper
+  airtable.schema.ts                        # Nomi tabelle/campi Spedizioni (TABLE, F, FCOLLO, FPL, FUSER)
+  airtable.ts                               # Spedizioni: create/list/attach/meta/utenti/colli + utils
+  airtable.quotes.ts                        # Quotazioni: create/list/get + normalizzazione colli
+  api.ts                                    # Facade client: postSpedizione, attachments, notify, getUserProfile
+  authed-fetch.ts                           # fetch con Bearer token Firebase
+  cors.ts                                   # CORS helper
   firebase-client-auth.ts / firebase-client.ts
+
 styles & config (tailwind, postcss, next.config, tsconfig)
 ```
+
+> Per le route che parlano con Airtable, aggiungere se non già presente:
+> `export const runtime = 'nodejs'` (per evitare Edge).
 
 ---
 
 ## Schemi Airtable
 
-### Tabelle
+### Tabelle Spedizioni
 
 * **SpedizioniWebApp** (`TABLE.SPED`, default `"SpedizioniWebApp"`)
 * **SPED\_COLLI** (`TABLE.COLLI`, default `"SPED_COLLI"`)
 * **SPED\_PL** (`TABLE.PL`, default `"SPED_PL"`) – solo per vino
 * **UTENTI** (`TABLE.UTENTI`, default `"UTENTI"`)
 
-### Campi principali (estratto)
+**Campi principali (estratto)**
 
-**`F` (tab. SpedizioniWebApp)**
+* **F** (SpedizioniWebApp): Stato, Incoterm, Valuta, Note Fattura, Creato da, blocchi Mitt/Dest/Fatt, `Ritiro - Data` *(date only)*, `Ritiro - Note`, `Fattura - Delega a SPST` *(checkbox)*, `Fattura - Allegato Cliente` *(Attachment)*, `Packing List - Allegato Cliente` *(Attachment)*, `ID Spedizione` (umano), link a Colli/PL.
+* **FCOLLO** (SPED\_COLLI): Spedizione *(link)*, Lunghezza/Larghezza/Altezza (cm), Peso (kg), Quantità.
+* **FPL** (SPED\_PL): Spedizione *(link)*, Etichetta, Bottiglie, Formato (L), Gradazione, Prezzo, Valuta, Pesi netti/lordi.
+* **FUSER** (UTENTI): Mail Cliente, Mittente, Paese/Città/CAP/Indirizzo/Telefono Mittente, P.IVA Mittente, Data Creazione.
+  ✅ **Telefono Mittente** è stato aggiunto e mappato.
 
-* **Stato**, **Incoterm**, **Valuta**, **Note Fattura**, **Creato da**
-* Blocchi Mittente / Destinatario / FATT (tutti i campi: RS, Referente, Paese, Città, CAP, Indirizzo, Telefono, P.IVA/CF)
-* `Ritiro - Data` *(date only)*, `Ritiro - Note`
-* `Fattura - Delega a SPST` *(checkbox)*
-* `Fattura - Allegato Cliente` *(Attachment)*, `Packing List - Allegato Cliente` *(Attachment)*
-* `ID Spedizione` *(testo, opzionale ma consigliato)*, `LinkColli`, `LinkPL`
+### Tabelle Quotazioni (Preventivi)
 
-**`FCOLLO` (tab. SPED\_COLLI)**
+* **Preventivi** (default `"Preventivi"`)
+* **Colli** (default `"Colli"`) — collegata a Preventivi con field linked **`Preventivi`** + fallback testo **`Preventivo_Id`**
 
-* **Spedizione** *(link)*, **Lunghezza (cm)**, **Larghezza (cm)**, **Altezza (cm)**, **Peso (kg)**, `#` *(tot opzionale)*
+**Campi canonici (estratto)**
 
-**`FPL` (tab. SPED\_PL)**
+* **Preventivi**:
 
-* **Spedizione** *(link)*, **Etichetta**, **Bottiglie**, **Formato (L)**, **Gradazione (% vol)**, **Prezzo**, **Valuta**, **Peso netto/lordo bott**
+  * ID visuale (formula): **`ID_Preventivo`** o **`ID Preventivo`** (usati per ricerca/mostra)
+  * Stato, Email Cliente, CreatoDaEmail, Valuta, **Data Ritiro** *(date only ISO)*, Note generiche, Tipo sped, Incoterm
+  * Mittente/Destinatario: RS, Indirizzo, CAP, Città, Paese, Telefono, TaxID
+* **Colli**:
 
-**`FUSER` (tab. UTENTI)**
+  * Link preventivo (linked) **`Preventivi`**, fallback **`Preventivo_Id`**
+  * **`Quantita`**, **`L_cm`**, **`W_cm`**, **`H_cm`**, **`Peso`**
 
-* `Mail Cliente`, `Mittente`, `Paese Mittente`, `Città Mittente`, `CAP Mittente`, `Indirizzo Mittente`, **`Telefono Mittente`**, `Partita IVA Mittente`, `Data Creazione`
-
-> **Nota:** `Telefono Mittente` è stato aggiunto in schema e nelle mappe; prima mancava ed era la causa del mancato salvataggio.
+**Alias robusti (lettura/scrittura)**: vedi `lib/airtable.quotes.ts` (supporto a varianti tipo “Lunghezza (cm)”, “Peso (Kg)”, ecc. + parsing dimensioni testuali “40x30x20 cm”).
 
 ---
 
 ## Tipi / Contratti (TS)
 
-### Party
+### Party (spedizioni)
 
 ```ts
-export type Party = {
+type Party = {
   ragioneSociale: string;
   referente: string;
   paese: string;
@@ -104,10 +122,10 @@ export type Party = {
 }
 ```
 
-### Collo
+### Collo (spedizioni)
 
 ```ts
-export type Collo = {
+type Collo = {
   lunghezza_cm: number | null;
   larghezza_cm: number | null;
   altezza_cm: number | null;
@@ -118,7 +136,7 @@ export type Collo = {
 ### RigaPL (vino)
 
 ```ts
-export type RigaPL = {
+type RigaPL = {
   etichetta: string;
   bottiglie: number;
   formato_litri: number;
@@ -133,15 +151,13 @@ export type RigaPL = {
 ### SpedizionePayload (POST /api/spedizioni)
 
 ```ts
-export interface SpedizionePayload {
+interface SpedizionePayload {
   sorgente: 'vino' | 'altro';
   tipoSped: 'B2B' | 'B2C' | 'Sample';
   destAbilitato?: boolean;
-
   contenuto?: string;
   formato: 'Pacco' | 'Pallet';
-
-  ritiroData?: string;  // ISO; viene convertito in AAAA-MM-GG per Airtable
+  ritiroData?: string;     // ISO → salvato come YYYY-MM-DD
   ritiroNote?: string;
 
   mittente: Party;
@@ -157,222 +173,192 @@ export interface SpedizionePayload {
   fatturaFileName?: string | null;
 
   colli: Collo[];
-  packingList?: RigaPL[];    // solo per 'vino'
+  packingList?: RigaPL[];  // solo 'vino'
 
-  createdByEmail?: string;    // opzionale; se presente viene scritto in F.CreatoDaEmail
+  createdByEmail?: string; // scritto in F.CreatoDaEmail se presente
 }
+```
+
+### Quotazioni (tipi UI)
+
+```ts
+type PartyQ = { ragioneSociale?: string; indirizzo?: string; cap?: string; citta?: string; paese?: string; telefono?: string; taxId?: string; };
+
+type ColloQ = {
+  quantita?: number;
+  lunghezza_cm?: number | string | null;
+  larghezza_cm?: number | string | null;
+  altezza_cm?: number | string | null;
+  l1_cm?: number | string | null; l2_cm?: number | string | null; l3_cm?: number | string | null;
+  peso_kg?: number | string | null;
+};
+
+type PreventivoPayload = {
+  createdByEmail?: string;
+  customerEmail?: string;
+  valuta?: 'EUR'|'USD'|'GBP';
+  ritiroData?: string;     // ISO → YYYY-MM-DD
+  noteGeneriche?: string;
+  tipoSped?: 'B2B'|'B2C'|'Sample';
+  incoterm?: 'DAP'|'DDP'|'EXW';
+  mittente?: PartyQ;
+  destinatario?: PartyQ;
+  colli?: ColloQ[];
+};
 ```
 
 ---
 
 ## Flussi principali
 
-### 1) Creazione spedizione (vino/altro)
+### A) Spedizioni
 
-1. **Form** in `app/dashboard/nuova/[vino|altro]/page.tsx`
+1. **Creazione** (`dashboard/nuova/vino|altro`)
 
-   * “altro” = identico a “vino” **senza** packing list (righe & file)
-   * Validazioni base (misure colli, data ritiro, dati fattura se manca allegato fattura)
-2. **POST** `/api/spedizioni` con `SpedizionePayload`
-3. **Upload allegati** su Firebase Storage
+* POST `/api/spedizioni` con `SpedizionePayload`
+* Upload allegati su Firebase → POST `/api/spedizioni/[id]/attachments`
+* Mail cortesia **best-effort**: POST `/api/spedizioni/[id]/notify` (Resend + CTA WhatsApp)
+* GET `/api/spedizioni/[id]/meta` per ID “umano”
+* UI success con scorciatoie (Le mie spedizioni / Info utili / WhatsApp)
 
-   * sottocartelle: `spedizioni/<recId>/fattura` e `…/packing`
-   * si ottengono URL pubblici (signed)
-4. **POST** `/api/spedizioni/[id]/attachments` con `{ fattura?: Att[]; packing?: Att[] }`
+2. **Lista & dettagli** (`dashboard/spedizioni`)
 
-   * `lib/airtable.ts/attachFilesToSpedizione` scrive gli attachment su `F.Fattura_Att` e `F.PL_Att`
-5. **POST** `/api/spedizioni/[id]/notify` *(best effort)*
+* GET `/api/spedizioni[?email=...]` → card con ID/stato/dest/ritiro + bottoni LDV/Fatt/PL
+* Drawer dettagli → GET `/api/spedizioni/[id]/colli`
+  ⚠️ **Fix**: niente formula con `ARRAYJOIN({Spedizione})` sugli ID; filtro **in Node** su linked IDs.
 
-   * invia mail “brandizzata” con **logo**, **CTA WhatsApp**, link “Documenti & info utili”
-6. **GET** `/api/spedizioni/[id]/meta` → recupera `ID Spedizione` (umano); se assente, usa l’id record Airtable
-7. **UI success** → ID, info principali + pulsanti: Le mie spedizioni · Documenti & info utili · Supporto WhatsApp
+3. **Impostazioni (UTENTI)** (`dashboard/impostazioni`)
 
-> **Gotcha data:** su Airtable scrivere `Ritiro - Data` in **YYYY-MM-DD** (date-only).
-> Usare `formatAirtableDateOnly()` (non `toLocaleDateString()`).
+* GET `/api/utenti?email=...` (prefill) · POST `/api/utenti` (upsert)
 
-### 2) Lista spedizioni + dettagli
+### B) Quotazioni (Preventivi)
 
-* **GET** `/api/spedizioni` → `listSpedizioni()`
-
-  * supporta `?email=...` (filtro su `LOWER({Creato da})`)
-* **UI** `components/SpedizioniClient.tsx`
-
-  * legge `localStorage.userEmail` e id token Firebase
-  * card con ID/stato/destinatario/ritiro + bottoni **LDV**, **Fattura**, **Packing List**, **Mostra dettagli**
-  * ordinamento: `Ritiro - Data` **desc**; se assente, `createdTime` **desc** (parse sicuro)
-  * **smart pick** degli attachment: prima nomi ufficiali, poi **fallback** su chiavi simili (ldv/awb/lettera, fatt/invoice, packing/pl)
-* **Drawer dettagli** (`ShipmentDetail.tsx`)
-
-  * mostra Mittente, Destinatario, “Destinatario abilitato import”, Data ritiro, Incoterm, Tipo spedizione
-  * sezione **Fatturazione** (RS/indirizzo/piva + “Uguale a destinatario” + “Delega fattura a SPST”)
-  * sezione **Colli** → **GET** `/api/spedizioni/[id]/colli`
-
-    * ⚠️ **Fix**: non usare formula Airtable con `ARRAYJOIN({Spedizione})` (restituisce *nomi*, non *id*)
-    * filtrare **in Node** sull’array di **linked record IDs** (patch `listColliBySpedId`)
-
-### 3) Impostazioni (profilo UTENTI)
-
-* Pagina `app/dashboard/impostazioni/page.tsx`
-
-  * seleziona email (o legge da `localStorage.userEmail`)
-  * **GET** `/api/utenti?email=...` → pre‑fill form (mappa UTENTI → Party)
-  * **POST** `/api/utenti` con payload:
-
-```json
-{
-  "email": "user@dominio.it",
-  "fields": {
-    "Paese Mittente": "...",
-    "Mittente": "...",
-    "Città Mittente": "...",
-    "CAP Mittente": "...",
-    "Indirizzo Mittente": "...",
-    "Telefono Mittente": "...",
-    "Partita IVA Mittente": "..."
-  }
-}
-```
-
-* `upsertUserProfile()` crea/aggiorna in **UTENTI**
-
-### 4) Auth (client‑side)
-
-* Firebase (login fuori scope)
-* `getIdToken()` per `Authorization: Bearer <token>`
-* `onAuthStateChanged()` per trigger fetch
-* *(facoltativo)* validazione server del token via middleware o direttamente negli endpoint
-
-### 5) Email di notifica
-
-* **Route:** `/api/spedizioni/[id]/notify` (Node runtime)
-* **Provider:** Resend
-* **Contenuto:** logo SPST, testo cortesia (“stiamo elaborando la tua spedizione…”),
-
-  * **Bottone WhatsApp** da `NEXT_PUBLIC_WHATSAPP_URL`
-  * **Bottone Documenti & info utili** da `NEXT_PUBLIC_INFO_URL`
-* **Best effort:** eventuale errore non blocca il salvataggio
+* **GET** `/api/quotazioni/:idOrDisplayId` → dettaglio preventivo + **colli normalizzati**
+  (ricerca per recordId o per `ID_Preventivo`/`ID Preventivo`, case/space-insensitive)
+* **GET** `/api/quotazioni?email=...` → lista preventivi per email (alias robusti)
+* **POST** `/api/quotazioni` → crea preventivo, set `Stato="In lavorazione"`, valorizza alias, **crea colli** (tentativo con link + fallback senza link, salvando `Preventivo_Id`)
+* **Normalizzazione colli in uscita**: garantiamo **`L_cm`/`W_cm`/`H_cm`/`Peso`/`Quantita`** anche se in Airtable le misure sono sparse/nominate diversamente o dentro testo tipo “40x30x20 cm”.
 
 ---
 
 ## Endpoints (contratti rapidi)
 
-* `POST /api/spedizioni` → body: `SpedizionePayload` → `{ id, idSpedizione }`
-* `POST /api/spedizioni/:id/attachments` → `{ fattura?: Att[]; packing?: Att[] }` → `204`
+**Spedizioni**
+
+* `POST /api/spedizioni` → body `SpedizionePayload` → `{ id, idSpedizione }`
+* `GET  /api/spedizioni[?email=...]` → array (records con `id` + `fields`)
 * `GET  /api/spedizioni/:id/meta` → `{ idSpedizione?: string, creatoDaEmail?: string }`
 * `GET  /api/spedizioni/:id/colli` → `{ ok: true, rows: Collo[] }`
+* `POST /api/spedizioni/:id/attachments` → `{ fattura?: Att[]; packing?: Att[] }` → `204`
 * `POST /api/spedizioni/:id/notify` → `{ ok: true }` *(best effort)*
-* `GET  /api/spedizioni[?email=...]` → `any[]` (records Airtable con `id` + `fields`)
-* `GET  /api/utenti?email=...` → `{ ok: true, data: [ { id, fields } ] }`
-* `POST /api/utenti` → vedi payload sopra → `{ ok: true, record }`
-* `GET  /api/profile` → `{ ok: true, party?: Party }` *(prefill mittente)*
+
+**Utenti / profilo**
+
+* `GET  /api/utenti?email=...` → `{ ok: true, data: [{ id, fields }] }`
+* `POST /api/utenti` → `{ ok: true, record }`
+* `GET  /api/profile` → `{ ok: true, party?: Party }`
+
+**Quotazioni**
+
+* `GET  /api/quotazioni/:idOrDisplayId` → `{ id, displayId?, fields, colli: [{id,fields}] }`
+* `GET  /api/quotazioni?email=...` → lista con `{ id, displayId?, fields }`
+* `POST /api/quotazioni` → `{ id, displayId? }`
 
 ---
 
 ## Variabili d’ambiente
 
-### Airtable
+### Airtable (Spedizioni)
 
-* `AIRTABLE_API_TOKEN` *(o `AIRTABLE_API_KEY`)*
-* `AIRTABLE_BASE_ID_SPST`
-* `AIRTABLE_TABLE_SPEDIZIONI_WEBAPP` *(default `SpedizioniWebApp`)*
-* `AIRTABLE_TABLE_SPED_COLLI` *(default `SPED_COLLI`)*
-* `AIRTABLE_TABLE_SPED_PL` *(default `SPED_PL`)*
-* `AIRTABLE_TABLE_UTENTI` *(default `UTENTI`)*
-
-### Email
-
-* `RESEND_API_KEY`
-
-### Firebase (client)
-
-* `NEXT_PUBLIC_FIREBASE_API_KEY`
-* `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
-* `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
-* `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
-* `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
-* `NEXT_PUBLIC_FIREBASE_APP_ID`
-
-### UI / link
-
-* `NEXT_PUBLIC_WHATSAPP_URL` (es. `https://wa.me/39xxxxxxxxxx`)
-* `NEXT_PUBLIC_INFO_URL` (es. `/dashboard/informazioni-utili` o URL esterno)
-
-### Note runtime
-
-* **Node 20.x** (impostare su Vercel)
-* aggiungere `export const runtime = 'nodejs'` sulle route server dove necessario
-
-#### `.env.example`
-
-```bash
-# Airtable
-AIRTABLE_API_TOKEN=
-AIRTABLE_BASE_ID_SPST=
+```
+AIRTABLE_API_TOKEN=...           # o AIRTABLE_API_KEY
+AIRTABLE_BASE_ID_SPST=...
 AIRTABLE_TABLE_SPEDIZIONI_WEBAPP=SpedizioniWebApp
 AIRTABLE_TABLE_SPED_COLLI=SPED_COLLI
 AIRTABLE_TABLE_SPED_PL=SPED_PL
 AIRTABLE_TABLE_UTENTI=UTENTI
+```
 
-# Email
-RESEND_API_KEY=
+### Airtable (Quotazioni)
 
-# Firebase (client)
-NEXT_PUBLIC_FIREBASE_API_KEY=
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
-NEXT_PUBLIC_FIREBASE_APP_ID=
+```
+AIRTABLE_TABLE_PREVENTIVI=Preventivi
+AIRTABLE_TABLE_PREVENTIVI_COLLI=Colli
+# opzionale (fallback):
+AIRTABLE_TABLE_COLLI=Colli
+# logging debug per quotes:
+DEBUG_QUOTES=0|1
+```
 
-# UI / Links
-NEXT_PUBLIC_WHATSAPP_URL=
-NEXT_PUBLIC_INFO_URL=
+### Email / Firebase / UI
+
+```
+RESEND_API_KEY=...
+
+NEXT_PUBLIC_FIREBASE_API_KEY=...
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
+NEXT_PUBLIC_FIREBASE_APP_ID=...
+
+NEXT_PUBLIC_WHATSAPP_URL=https://wa.me/39XXXXXXXXX
+NEXT_PUBLIC_INFO_URL=/dashboard/informazioni-utili
+```
+
+> **Runtime**: Node **20.x** su Vercel. Aggiungere `export const runtime = 'nodejs'` nelle route server Airtable-dipendenti.
+
+---
+
+## Gotcha / Fix già risolti
+
+1. **Telefono Mittente** (UTENTI) mancava → aggiunto in schema + mapping.
+2. **SPED\_COLLI**: filtro con link → **filtro in Node** su linked IDs (no `ARRAYJOIN` su id).
+3. **Date Airtable (date-only)** → scrivere **YYYY-MM-DD** (no `toLocaleDateString`).
+4. **Attachment “ballerini”** → smart-pick nomi (LDV/AWB/Lettera · Fatt/Invoice · Packing/PL).
+5. **Ordinamento card** → `Ritiro - Data` desc, fallback `createdTime` desc.
+6. **Quotazioni**: normalizzazione colli → alias multipli + parsing testo “40x30x20” + fallback da record Preventivo.
+
+---
+
+## Sviluppo locale
+
+```bash
+cp .env.example .env.local
+npm i
+npm run dev
 ```
 
 ---
 
-## Gotcha / Fix già risolti (da ricordare)
+## MVP: stato lato cliente (cosa può fare oggi)
 
-1. **Telefono Mittente** → aggiunto a `FUSER` + mappatura in upsert/get (prima mancava → non salvava)
-2. **Colli non visibili** → il filtro formula su link record **non** può usare gli **ID** record; patch `listColliBySpedId`: **filtra in Node** sugli array di linked record IDs
-3. **Date Airtable** → scrivere **YYYY-MM-DD** per “date only” (`formatAirtableDateOnly()`)
-4. **Attachment “ballerini”** → card usa “smart pick”: nomi ufficiali + fallback su chiavi simili (ldv/awb/lettera, fatt/invoice, packing/pl)
-5. **Ordinamento card** → `Ritiro - Data` desc; se assente, `createdTime` desc (parse sicuro)
+* **Creare spedizioni** (vino/altro), caricare allegati, ricevere **mail di conferma** con CTA WhatsApp → **OK**
+* **Vedere le spedizioni** nell’area riservata con dettaglio e colli → **OK**
+* **Gestire profilo mittente** (UTENTI) e pre-fill nei form → **OK**
+* **Creare/leggere quotazioni** via **API** con dimensioni colli normalizzate → **OK**
+* **Vedere quotazioni nell’area riservata** → **DA AGGIUNGERE** (manca la pagina `dashboard/quotazioni`)
 
----
+### Gap & TODO consigliati
 
-## Pagine & UI
-
-* **Dashboard / Overview** *(TODO)*
-
-  * widget “Prossimi ritiri” (`Ritiro - Data` ≥ oggi, ultimi N)
-  * contatori per **Stato**
-  * scorciatoie: Nuova spedizione · Informazioni utili · Supporto WhatsApp
-  * “last 5 attività”
-* **Compliance** *(TODO)*
-
-  * pagina info statiche + allegati scaricabili (template dichiarazioni, deleghe, etichette)
-  * eventuale form per upload documenti ricorrenti collegati all’utente → nuova tabella Airtable `COMPLIANCE_DOCS` link a **UTENTI**
-
----
-
-## Setup & Deploy – Checklist
-
-1. Impostare **ENV** (Airtable, Firebase, Resend, WhatsApp/Info URL)
-2. Verificare su Airtable che i **nomi campo** combacino con `airtable.schema.ts` (o regolare gli alias previsti)
-3. Deploy su **Vercel** (Node 20.x; Serverless Functions)
-4. **Firebase Storage**: permettere lettura pubblica o utilizzare **signed URLs** per gli allegati
-5. *(Opzionale)* Aggiungere verifica server del **Bearer token** nei route API
-
----
-
-## Note operative
-
-* `/api/spedizioni/[id]/notify` è **best effort**: fallimenti non bloccano il flusso di creazione
-* Gli ID “umani” sono in campo `ID Spedizione`; se assenti, usare l’**id record** Airtable
+* [ ] **UI Quotazioni**: `app/dashboard/quotazioni/page.tsx` (lista + drawer dettaglio come spedizioni) consumando `/api/quotazioni`.
+* [ ] **Tracking “live”**: oggi c’è la sola mail cortesia; per aggiornamenti reali servono:
+  • endpoint webhook carrier (`/api/tracking/webhook`) → update stato su Airtable
+  • timeline UI in `ShipmentDetail` (stati evento)
+  • job/polling se il carrier non supporta webhook.
+* [ ] (Opzionale) **Verifica Bearer** lato server per hardening auth sulle route API.
 
 ---
 
 ## Licenza
 
-TBD (aggiungere in base alla repo).
+TBD.
+
+---
+
+### Check rapido contenuti/routing/struttura
+
+* **Routing**: le route App Router sono coerenti, i segmenti dinamici `[id]` corretti; ricorda `runtime='nodejs'`.
+* **Struttura**: separazione chiara `lib/airtable.ts` (spedizioni) vs `lib/airtable.quotes.ts` (preventivi); `authed-fetch` usa Bearer Firebase (ok).
+* **Contenuti**: mapping Airtable allineato (incluso `Telefono Mittente`); normalizzazione dimensioni **OK**; patch linked IDs **OK**.
+* **Client**: lo **strumentario c’è** per creare spedizioni e quotazioni (API), per vedere spedizioni; per **vedere i preventivi** serve la pagina UI indicata sopra; per **tracking** servono integrazioni aggiuntive (webhook/UI).
