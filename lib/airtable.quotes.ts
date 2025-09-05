@@ -432,30 +432,32 @@ export async function getPreventivo(
     (rec.fields['ID Preventivo'] as string) ||
     undefined;
 
-  // 3) colli collegati — usa solo i due campi che sappiamo esistere in base al tuo file
+   // 3) colli collegati — scan lato Node per evitare formule su linked
   const colli: Array<{ id: string; fields: any }> = [];
   try {
-    const linkField = '{Preventivi}';      // linked field
-    const prevIdTxt = '{Preventivo_Id}';  // testo
-    const clauses = [
-      `FIND("${rec.id}", ARRAYJOIN(${linkField}))`,
-      `${prevIdTxt}="${rec.id}"`,
-      displayId ? `${prevIdTxt}="${displayId}"` : '',
-    ].filter(Boolean).join(',');
-    const filterByFormulaColli = `OR(${clauses})`;
-
-    _push(debug, 'colliQuery:start', { filterByFormulaColli });
-
+    _push(debug, 'colliScan:start', {});
     await b(TB_COLLI)
-      .select({ pageSize: 100, filterByFormula: filterByFormulaColli })
+      .select({ pageSize: 100 })
       .eachPage((rows, next) => {
-        for (const r of rows) colli.push({ id: r.id, fields: r.fields });
+        for (const r of rows) {
+          const f = r.fields || {};
+
+          const linkedArr: string[] = Array.isArray(f[C.LinkPreventivo[0]])
+            ? (f[C.LinkPreventivo[0]] as string[])
+            : [];
+          const linked = linkedArr.includes(rec.id);
+
+          const txt = String(f[C.PreventivoIdTxt[0]] ?? '').trim();
+          const txtMatch = !!txt && (txt === rec.id || (displayId && txt === displayId));
+
+          if (linked || txtMatch) colli.push({ id: r.id, fields: r.fields });
+        }
         next();
       });
 
-    _push(debug, 'colliQuery:done', { count: colli.length, sampleIds: colli.slice(0, 5).map(c => c.id) });
+    _push(debug, 'colliScan:done', { count: colli.length, sampleIds: colli.slice(0, 5).map(c => c.id) });
   } catch (e: any) {
-    _push(debug, 'colliQuery:error', { message: e?.message, status: e?.statusCode });
+    _push(debug, 'colliScan:error', { message: e?.message, status: e?.statusCode });
   }
 
   _push(debug, 'OK', { recId: rec.id, displayId, colli: colli.length });
@@ -463,5 +465,3 @@ export async function getPreventivo(
 }
 
 
-  return { id: rec.id, displayId, fields: rec.fields, colli };
-}
