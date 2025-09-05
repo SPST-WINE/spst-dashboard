@@ -242,14 +242,11 @@ export async function createPreventivo(
 }
 
 // ---------------------------------------------------------------
-// LIST preventivi per email (filtro lato Node)
-// ---------------------------------------------------------------
-// ---------------------------------------------------------------
 // LIST preventivi per email (filtro lato Node) + fallback sort
 // ---------------------------------------------------------------
 export async function listPreventivi(
   opts?: { email?: string }
-): Promise<Array<{ id: string; fields: any }>> {
+): Promise<Array<{ id: string; fields: any; displayId?: string }>> {
   const b = base();
 
   const fetchAll = async (params: Airtable.SelectOptions) =>
@@ -266,20 +263,21 @@ export async function listPreventivi(
         );
     });
 
-  let rows: Array<{ id: string; fields: any }> = [];
+  // 1) prova con ordinamento per "Last modified time"
+  let rows: Array<{ id: string; fields: any }>;
   try {
-    // Primo tentativo: sort per "Last modified time"
     rows = await fetchAll({
       pageSize: 100,
       sort: [{ field: 'Last modified time', direction: 'desc' }],
     });
   } catch (e: any) {
-    // Fallback se il campo non esiste nella base
+    // 2) se il campo non esiste nella base → fallback senza sort
     if (e?.statusCode === 422 || e?.error === 'UNKNOWN_FIELD_NAME') {
-      console.warn(
-        '[airtable.quotes] listPreventivi: sort field missing, falling back to unsorted. Details:',
-        { message: e?.message, statusCode: e?.statusCode, airtable: e?.error }
-      );
+      console.warn('[airtable.quotes] listPreventivi: sort field missing, fallback to unsorted.', {
+        message: e?.message,
+        statusCode: e?.statusCode,
+        airtable: e?.error,
+      });
       rows = await fetchAll({ pageSize: 100 });
     } else {
       console.error('[airtable.quotes] listPreventivi fatal:', {
@@ -291,24 +289,20 @@ export async function listPreventivi(
     }
   }
 
-  if (!opts?.email) return rows;
+  // 3) eventuale filtro per email lato Node
+  let filtered = rows;
+  if (opts?.email) {
+    const needle = String(opts.email).toLowerCase();
+    const emailFields = [...F.EmailCliente, ...F.CreatoDaEmail];
+    filtered = rows.filter(({ fields }) =>
+      emailFields.some((k) => {
+        const v = fields?.[k];
+        return typeof v === 'string' && v.toLowerCase() === needle;
+      })
+    );
+  }
 
-  const needle = String(opts.email).toLowerCase();
-  const emailFields = [
-    ...F.EmailCliente,
-    ...F.CreatoDaEmail,
-  ];
-
-  return rows.filter(({ fields }) =>
-    emailFields.some((k) => {
-      const v = fields?.[k];
-      return typeof v === 'string' && v.toLowerCase() === needle;
-    })
-  );
-}
-
-
-  // aggiungo displayId pronto
+  // 4) aggiungo displayId (ID_Preventivo o simili) per la UI
   return filtered.map((r) => ({
     id: r.id,
     displayId:
@@ -319,3 +313,5 @@ export async function listPreventivi(
     fields: r.fields,
   }));
 }
+
+
