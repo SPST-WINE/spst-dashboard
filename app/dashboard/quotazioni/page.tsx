@@ -1,48 +1,65 @@
 // app/dashboard/quotazioni/page.tsx
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { ReceiptText, FilePlus2, Clock, BadgeCheck, AlertCircle, Ban } from 'lucide-react';
-import { getIdToken } from '@/lib/firebase-client-auth';
+import Link from 'next/link';
 
-type QuoteRow = {
-  id: string;
-  [k: string]: any; // campi Airtable dinamici
+type Row = {
+  id: string;                 // Airtable recId
+  displayId?: string;         // ID_Preventivo (Q-YYYY-xxxxx)
+  destination?: string;       // Paese destinatario
+  fields: Record<string, any>;
 };
 
-function StatusBadge({ s }: { s?: string }) {
-  const v = (s || '').toLowerCase();
-  const map =
-    v.includes('accett') ? { cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200', Icon: BadgeCheck, label: 'Accettato' } :
-    v.includes('pubbl')  ? { cls: 'bg-blue-50 text-blue-700 ring-blue-200', Icon: Clock, label: 'Pubblicato' } :
-    v.includes('scad')   ? { cls: 'bg-amber-50 text-amber-700 ring-amber-200', Icon: AlertCircle, label: 'Scaduto' } :
-    v.includes('annul')  ? { cls: 'bg-rose-50 text-rose-700 ring-rose-200', Icon: Ban, label: 'Annullato' } :
-                           { cls: 'bg-slate-50 text-slate-700 ring-slate-200', Icon: Clock, label: 'Bozza' };
-  const I = map.Icon;
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs ring-1 ${map.cls}`}>
-      <I className="h-3.5 w-3.5" />
-      {map.label}
-    </span>
-  );
-}
-
 export default function QuotazioniPage() {
-  const [rows, setRows] = useState<QuoteRow[]>([]);
+  const [rows, setRows] = useState<Row[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // piccoli alias lato client per sicurezza/fallback
+  const pick = (obj: any, keys: string[]) => {
+    for (const k of keys) {
+      const v = obj?.[k];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+    }
+    return undefined;
+  };
 
   useEffect(() => {
     let abort = false;
     (async () => {
       try {
-        const t = await getIdToken();
-        const r = await fetch('/api/quotazioni', {
-          headers: t ? { Authorization: `Bearer ${t}` } : undefined,
-          cache: 'no-store',
-        });
+        setLoading(true);
+        const r = await fetch('/api/quotazioni', { cache: 'no-store' });
         const j = await r.json();
-        if (!abort && j?.ok) setRows(Array.isArray(j.rows) ? j.rows : []);
+        if (!r.ok || !j?.ok) throw new Error(j?.error || 'SERVER_ERROR');
+
+        const data: Row[] = (j.rows || []).map((row: any) => {
+          // fallback se l’API non avesse messo i campi
+          const displayId =
+            row.displayId ||
+            pick(row.fields, ['ID_Preventivo', 'ID Preventivo', 'ID']) ||
+            row.id;
+
+          const destination =
+            row.destination ||
+            pick(row.fields, [
+              'Destinatario_Paese',
+              'Destinatario Paese',
+              'Paese Destinatario',
+              'DestinatarioPaese',
+            ]) ||
+            '—';
+
+          return { ...row, displayId, destination };
+        });
+
+        if (!abort) {
+          setRows(data);
+          setErr(null);
+        }
+      } catch (e: any) {
+        if (!abort) setErr(e?.message || 'Errore di caricamento');
       } finally {
         if (!abort) setLoading(false);
       }
@@ -51,74 +68,79 @@ export default function QuotazioniPage() {
   }, []);
 
   return (
-    <div className="space-y-8">
-      <header className="flex items-start justify-between">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-800">Quotazioni</h1>
-          <p className="text-slate-500 text-sm mt-1">
+          <p className="mt-1 text-sm text-slate-500">
             Crea preventivi e tieni traccia di quelli inviati ai clienti.
           </p>
         </div>
         <Link
           href="/dashboard/quotazioni/nuova"
-          className="inline-flex items-center gap-2 rounded-lg bg-[#1c3e5e] px-3 py-2 text-sm text-white hover:opacity-95"
+          className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700"
         >
-          <FilePlus2 className="h-4 w-4" />
           Nuova quotazione
         </Link>
-      </header>
+      </div>
 
-      <section className="rounded-2xl border bg-white p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-[#f7911e]">Le mie quotazioni</h3>
-          <div className="text-xs text-slate-500 inline-flex items-center gap-1">
-            <Clock className="h-3.5 w-3.5" />
-            {loading ? 'caricamento…' : 'aggiornato adesso'}
-          </div>
+      <div className="rounded-2xl border bg-white">
+        <div className="border-b px-4 py-3 text-sm font-medium text-slate-700">
+          Le mie quotazioni
         </div>
 
-        {(!rows || rows.length === 0) ? (
-          <div className="rounded-xl border border-dashed p-8 text-center">
-            <p className="text-slate-600">Non hai ancora creato nessuna quotazione.</p>
-            <div className="mt-3">
-              <Link
-                href="/dashboard/quotazioni/nuova"
-                className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-[#1c3e5e] hover:bg-slate-50"
-              >
-                <ReceiptText className="h-4 w-4" />
-                Crea la prima quotazione
-              </Link>
-            </div>
+        {loading ? (
+          <div className="p-6 text-sm text-slate-500">Caricamento…</div>
+        ) : err ? (
+          <div className="p-6 text-sm text-rose-700">
+            Errore: {err}
+          </div>
+        ) : !rows || rows.length === 0 ? (
+          <div className="p-6 text-sm text-slate-500">
+            Non hai ancora creato nessuna quotazione.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-500">
-                  <th className="px-2 py-2 font-medium">Riferimento</th>
-                  <th className="px-2 py-2 font-medium">Destinazione</th>
-                  <th className="px-2 py-2 font-medium">Stato</th>
-                  <th className="px-2 py-2 font-medium">Ultimo aggiornamento</th>
+              <thead className="bg-slate-50 text-slate-600">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">Riferimento</th>
+                  <th className="px-4 py-2 text-left font-medium">Destinazione</th>
+                  <th className="px-4 py-2 text-left font-medium">Stato</th>
+                  <th className="px-4 py-2 text-left font-medium">Ultimo aggiornamento</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
-                {rows.map((r) => (
-                  <tr key={r.id} className="text-slate-800">
-                    <td className="px-2 py-2">{r['ID Preventivo'] || r['Slug_Pubblico'] || r.id}</td>
-                    <td className="px-2 py-2">
-                      {r['Destinatario_Citta'] || '—'}{r['Destinatario_Paese'] ? ` (${r['Destinatario_Paese']})` : ''}
-                    </td>
-                    <td className="px-2 py-2">
-                      <StatusBadge s={r['Stato']} />
-                    </td>
-                    <td className="px-2 py-2">{r['Last Modified'] || r['Ultimo Aggiornamento'] || '—'}</td>
-                  </tr>
-                ))}
+              <tbody>
+                {rows.map((r) => {
+                  const stato =
+                    r.fields['Stato'] ??
+                    r.fields['Status'] ??
+                    '—';
+
+                  const updated =
+                    r.fields['Last modified time'] ||
+                    r.fields['Ultima Modifica'] ||
+                    '—';
+
+                  return (
+                    <tr key={r.id} className="border-t">
+                      <td className="px-4 py-2 font-medium text-slate-800">{r.displayId}</td>
+                      <td className="px-4 py-2">{r.destination || '—'}</td>
+                      <td className="px-4 py-2">
+                        <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                          {String(stato)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2">{String(updated).slice(0, 16)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
-      </section>
+      </div>
     </div>
   );
 }
