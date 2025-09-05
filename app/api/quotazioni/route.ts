@@ -17,14 +17,14 @@ async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
   if (m) {
     try {
       const decoded = await adminAuth().verifyIdToken(m[1], true);
-      return decoded.email || decoded.firebase?.identities?.email?.[0] || undefined;
+      return decoded.email || (decoded.firebase as any)?.identities?.email?.[0] || undefined;
     } catch {}
   }
   const session = req.cookies.get('spst_session')?.value;
   if (session) {
     try {
       const decoded = await adminAuth().verifySessionCookie(session, true);
-      return decoded.email || decoded.firebase?.identities?.email?.[0] || undefined;
+      return decoded.email || (decoded.firebase as any)?.identities?.email?.[0] || undefined;
     } catch {}
   }
   return undefined;
@@ -37,6 +37,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const emailParam = searchParams.get('email') || undefined;
     const email = emailParam || (await getEmailFromAuth(req));
+
     const rows = await listPreventivi(email ? { email } : undefined);
     return NextResponse.json({ ok: true, rows }, { headers: cors });
   } catch (e: any) {
@@ -59,44 +60,28 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // se non arriva, prendo l'email dall'autenticazione e la salvo in CreatoDaEmail
+    // 1) ricava l'email dell'utente autenticato
     if (!body.createdByEmail) {
       const email = await getEmailFromAuth(req);
       if (email) body.createdByEmail = email;
     }
 
-    // normalizzo data ritiro (accetto varie chiavi)
-    const ritiroRaw: string | Date | undefined =
-      body.ritiroData ??
-      body.dataRitiro ??
-      body['Data Ritiro'] ??
-      body.ritiro_date ??
-      undefined;
-
-    // normalizzo i colli: quantita/lunghezza/larghezza/altezza -> qty/l1_cm/l2_cm/l3_cm
-    const normalizedColli = Array.isArray(body.colli)
-      ? body.colli.map((c: any) => ({
-          qty: c?.qty ?? c?.quantita ?? c?.quantity ?? 1,
-          l1_cm: c?.l1_cm ?? c?.lunghezza_cm ?? c?.length_cm ?? c?.l ?? null,
-          l2_cm: c?.l2_cm ?? c?.larghezza_cm ?? c?.width_cm ?? c?.w ?? null,
-          l3_cm: c?.l3_cm ?? c?.altezza_cm ?? c?.height_cm ?? c?.h ?? null,
-          peso_kg: c?.peso_kg ?? c?.peso ?? c?.weight_kg ?? c?.kg ?? null,
-        }))
-      : [];
+    // 2) fallback: se non arriva customerEmail, usa createdByEmail
+    if (!body.customerEmail && body.createdByEmail) {
+      body.customerEmail = body.createdByEmail;
+    }
 
     const created = await createPreventivo({
       createdByEmail: body.createdByEmail,
       customerEmail: body.customerEmail,
       valuta: body.valuta,
-      ritiroData: ritiroRaw ? new Date(ritiroRaw).toISOString() : undefined,
-      noteGeneriche: body.noteGeneriche ?? body.note ?? undefined,
-      // nuovi:
+      ritiroData: body.ritiroData,
+      noteGeneriche: body.noteGeneriche,
       tipoSped: body.tipoSped,
       incoterm: body.incoterm,
-      // parti & colli
       mittente: body.mittente,
       destinatario: body.destinatario,
-      colli: normalizedColli,
+      colli: body.colli,
     });
 
     return NextResponse.json(
