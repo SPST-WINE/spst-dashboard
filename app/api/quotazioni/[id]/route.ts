@@ -1,45 +1,28 @@
-// app/api/quotazioni/[id]/route.ts
-import { NextResponse, type NextRequest } from 'next/server';
-import { buildCorsHeaders } from '@/lib/cors';
-import { getPreventivo } from '@/lib/airtable.quotes';
+import { NextResponse } from 'next/server';
+import { getPreventivo as getPreventivoAT } from '@/lib/airtable.quotes';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
-export async function OPTIONS(req: NextRequest) {
-  const origin = req.headers.get('origin') ?? undefined;
-  return new NextResponse(null, { status: 204, headers: buildCorsHeaders(origin) });
-}
-
-export async function GET(
-  req: NextRequest,
-  ctx: { params: { id: string } }
-) {
-  const origin = req.headers.get('origin') ?? undefined;
-  const cors = buildCorsHeaders(origin);
+export async function GET(_req: Request, ctx: { params: { id: string } }) {
+  const raw = ctx?.params?.id ?? '';
+  const id = decodeURIComponent(raw);
 
   try {
-    const raw = ctx?.params?.id ?? '';
-    const id = decodeURIComponent(raw).trim();
-
-    const rec = await getPreventivo(id);
-    if (!rec) {
+    const row = await getPreventivoAT(id);
+    if (!row) {
       return NextResponse.json(
-        { ok: false, error: 'NOT_FOUND' },
-        { status: 404, headers: cors }
+        { ok: false, error: 'NOT_FOUND', id },
+        { status: 404 }
       );
     }
-
-    return NextResponse.json({ ok: true, row: rec }, { headers: cors });
+    return NextResponse.json({ ok: true, row }, { status: 200 });
   } catch (e: any) {
-    console.error('GET /api/quotazioni/[id] error:', {
+    console.error('[api/quotazioni/[id]] GET error', {
+      id,
       message: e?.message,
       statusCode: e?.statusCode,
-      airtable: e?.error,
     });
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
-      { status: 500, headers: cors }
+      { status: 500 }
     );
   }
 }
