@@ -334,8 +334,27 @@ export async function listPreventivi(opts?: {
 /* ============================ GET ============================== */
 // Cerca per recordId o per ID_Preventivo/ID Preventivo (anche normalizzato).
 // lib/airtable.quotes.ts (solo funzione getPreventivo)
+// lib/airtable.quotes.ts
+const DEBUG_QUOTES = process.env.DEBUG_QUOTES === '1';
+function _log(...args: any[]) { if (DEBUG_QUOTES) console.log('[quotes]', ...args); }
+function _push(dbg: any[] | undefined, label: string, extra?: any) {
+  const row = { at: new Date().toISOString(), label, ...(extra ?? {}) };
+  dbg?.push(row);
+  _log(label, extra ?? '');
+}
+
+const CANDIDATE_DISPLAY_FIELDS = [
+  'ID_Preventivo',
+  'ID Preventivo',
+  'Name',
+  'Preventivo',
+  'Numero_Preventivo',
+  'Numero Preventivo',
+];
+
 export async function getPreventivo(
   idOrDisplayId: string,
+  debug?: any[],
 ): Promise<{
   id: string;
   displayId?: string;
@@ -343,61 +362,83 @@ export async function getPreventivo(
   colli: Array<{ id: string; fields: any }>;
 } | null> {
   const b = base();
-  const raw = String(idOrDisplayId || '').trim();
+
+  const raw = String(idOrDisplayId ?? '').trim();
   const norm = raw.toLowerCase().replace(/\s+/g, '');
+  _push(debug, 'input', { raw, norm, TB_PREVENTIVI, TB_COLLI });
 
-  // 1) recordId diretto
+  // 1) tentativo recordId diretto
   let rec: any | null = null;
-  try { rec = await b(TB_PREVENTIVI).find(raw); } catch {}
+  try {
+    rec = await b(TB_PREVENTIVI).find(raw);
+    _push(debug, 'findByRecordId', { success: !!rec, id: raw });
+  } catch (e: any) {
+    _push(debug, 'findByRecordId:error', { message: e?.message, status: e?.statusCode });
+  }
 
-  // 2) per ID visuale – campi e normalizzazione
+  // 2) ricerca per ID visuale con normalizzazione
   if (!rec) {
-    const qe = (s: string) => s.replace(/"/g, '\\"');
-    const candidates = [
-      'ID_Preventivo',
-      'ID Preventivo',
-      'Name',
-      'Preventivo',
-      'Numero_Preventivo',
-      'Numero Preventivo',
-    ];
-    const ors = candidates.map((f) =>
-      `OR({${f}}="${qe(raw)}", LOWER(SUBSTITUTE({${f}}," ",""))="${qe(norm)}")`
+    const esc = (s: string) => s.replace(/"/g, '\\"');
+    const ors = CANDIDATE_DISPLAY_FIELDS.map((f) =>
+      `OR({${f}}="${esc(raw)}", LOWER(SUBSTITUTE({${f}}," ",""))="${esc(norm)}")`
     ).join(',');
     const filterByFormula = `OR(${ors})`;
+    _push(debug, 'searchByFormula:start', { filterByFormula, fields: CANDIDATE_DISPLAY_FIELDS });
 
     const found: any[] = [];
     await b(TB_PREVENTIVI)
       .select({ pageSize: 10, filterByFormula })
       .eachPage((rows, next) => { found.push(...rows); next(); });
+
+    _push(debug, 'searchByFormula:done', {
+      count: found.length,
+      ids: found.map(r => r.id),
+      samples: found.slice(0, 3).map(r => ({
+        id: r.id,
+        ID_Preventivo: r.fields['ID_Preventivo'],
+        ID_Preventivo_spazio: r.fields['ID Preventivo'],
+        Name: r.fields['Name'],
+      })),
+    });
+
     rec = found[0] || null;
   }
 
-  if (!rec) return null;
+  if (!rec) {
+    _push(debug, 'NOT_FOUND', { triedFields: CANDIDATE_DISPLAY_FIELDS });
+    _log('getPreventivo NOT_FOUND', { raw, norm });
+    return null;
+  }
 
   const displayId =
     (rec.fields['ID_Preventivo'] as string) ||
     (rec.fields['ID Preventivo'] as string) ||
     undefined;
 
-  // 3) carico colli via formula (niente scansione full table)
+  // 3) colli collegati — query filtrata (no scansione intera tabella)
   const colli: Array<{ id: string; fields: any }> = [];
   try {
-    const linkField = `{Preventivi}`;
-    const prevIdTxt = `{Preventivo_Id}`;
+    const linkField = '{Preventivi}';
+    const prevIdTxt = '{Preventivo_Id}';
     const clauses = [
       `FIND("${rec.id}", ARRAYJOIN(${linkField}))`,
       `${prevIdTxt}="${rec.id}"`,
       displayId ? `${prevIdTxt}="${displayId}"` : '',
     ].filter(Boolean).join(',');
-    const filterByFormula = `OR(${clauses})`;
+    const filterByFormulaColli = `OR(${clauses})`;
+    _push(debug, 'colliQuery:start', { filterByFormulaColli });
 
     await b(TB_COLLI)
-      .select({ pageSize: 100, filterByFormula })
+      .select({ pageSize: 100, filterByFormula: filterByFormulaColli })
       .eachPage((rows, next) => { for (const r of rows) colli.push({ id: r.id, fields: r.fields }); next(); });
-  } catch (e) {
-    console.warn('[airtable.quotes] getPreventivo: lettura colli fallita', e);
+
+    _push(debug, 'colliQuery:done', { count: colli.length, sampleIds: colli.slice(0, 5).map(c => c.id) });
+  } catch (e: any) {
+    _push(debug, 'colliQuery:error', { message: e?.message, status: e?.statusCode });
   }
+
+  _push(debug, 'OK', { recId: rec.id, displayId, colli: colli.length });
+  _log('getPreventivo OK', { recId: rec.id, displayId, colli: colli.length });
 
   return { id: rec.id, displayId, fields: rec.fields, colli };
 }
