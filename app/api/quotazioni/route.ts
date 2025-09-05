@@ -33,38 +33,11 @@ async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
 export async function GET(req: NextRequest) {
   const origin = req.headers.get('origin') ?? undefined;
   const cors = buildCorsHeaders(origin);
-
-  // alias comodi lato API (così il client è pulito)
-  const ID_ALIASES = ['ID_Preventivo', 'ID Preventivo', 'ID'];
-  const DEST_COUNTRY_ALIASES = [
-    'Destinatario_Paese',
-    'Destinatario Paese',
-    'Paese Destinatario',
-    'DestinatarioPaese',
-  ];
-
-  const pick = (obj: any, keys: string[]) => {
-    for (const k of keys) {
-      const v = obj?.[k];
-      if (v !== undefined && v !== null && String(v).trim() !== '') return v;
-    }
-    return undefined;
-  };
-
   try {
     const { searchParams } = new URL(req.url);
     const emailParam = searchParams.get('email') || undefined;
     const email = emailParam || (await getEmailFromAuth(req));
-
-    const raw = await listPreventivi(email ? { email } : undefined);
-
-    // arricchisco ogni riga con displayId e destination
-    const rows = raw.map((r) => ({
-      ...r,
-      displayId: pick(r.fields, ID_ALIASES),
-      destination: pick(r.fields, DEST_COUNTRY_ALIASES),
-    }));
-
+    const rows = await listPreventivi(email ? { email } : undefined);
     return NextResponse.json({ ok: true, rows }, { headers: cors });
   } catch (e: any) {
     console.error('GET /api/quotazioni error:', {
@@ -86,10 +59,16 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    if (!body.createdByEmail) {
-      const email = await getEmailFromAuth(req);
-      if (email) body.createdByEmail = email;
-    }
+    // Email autenticata
+    const authEmail = await getEmailFromAuth(req);
+
+    // Compat: se la UI non passa customerEmail, usa l’email autenticata
+    if (!body.customerEmail) body.customerEmail = authEmail;
+    // E salviamo comunque anche "Creato da (email)"
+    if (!body.createdByEmail) body.createdByEmail = authEmail;
+
+    // Compat: alcune UI inviano "note" -> mappa su "noteGeneriche"
+    if (body.note && !body.noteGeneriche) body.noteGeneriche = body.note;
 
     const created = await createPreventivo({
       createdByEmail: body.createdByEmail,
@@ -97,10 +76,8 @@ export async function POST(req: NextRequest) {
       valuta: body.valuta,
       ritiroData: body.ritiroData,
       noteGeneriche: body.noteGeneriche,
-      // nuovi:
       tipoSped: body.tipoSped,
       incoterm: body.incoterm,
-      // parti & colli
       mittente: body.mittente,
       destinatario: body.destinatario,
       colli: body.colli,
