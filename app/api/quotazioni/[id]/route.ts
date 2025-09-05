@@ -20,7 +20,7 @@ export async function GET(
 
   try {
     const raw = ctx?.params?.id ?? '';
-    const id = decodeURIComponent(raw).trim(); // accetta sia recordId che ID_Preventivo (es. Q-2025-00078)
+    const id = decodeURIComponent(raw).trim();
 
     const rec = await getPreventivo(id);
     if (!rec) {
