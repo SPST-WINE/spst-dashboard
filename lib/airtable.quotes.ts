@@ -20,9 +20,15 @@ function base() {
 
 function dateOnlyISO(d?: string | Date) {
   if (!d) return undefined;
-  try { return new Date(d).toISOString().slice(0, 10); } catch { return undefined; }
+  try {
+    return new Date(d).toISOString().slice(0, 10);
+  } catch {
+    return undefined;
+  }
 }
-function optional<T>(v: T | null | undefined) { return v == null ? undefined : v; }
+function optional<T>(v: T | null | undefined) {
+  return v == null ? undefined : v;
+}
 
 // ---- Tipi payload UI ----
 export type PartyQ = {
@@ -45,9 +51,9 @@ export type ColloQ = {
 
 export type PreventivoPayload = {
   createdByEmail?: string;
-  customerEmail?: string;   // email cliente finale
+  customerEmail?: string; // email cliente finale
   valuta?: 'EUR' | 'USD' | 'GBP';
-  ritiroData?: string;      // ISO date
+  ritiroData?: string; // ISO date
   noteGeneriche?: string;
 
   // nuovi campi
@@ -80,7 +86,7 @@ const F = {
     'Tipo Spedizione',
     'Tipologia',
     'Tipo',
-    'TipoSped'
+    'TipoSped',
   ],
   Incoterm: ['Incoterm', 'Incoterms', 'Incoterm_Selezionato', 'Incoterm Selezionato'],
 
@@ -105,7 +111,7 @@ const F = {
 
 // ---- Alias campo COLLI (tolleranti) ----
 const C = {
-  LinkPreventivo: ['Preventivo', 'Link Preventivo'],  // linked-record
+  LinkPreventivo: ['Preventivo', 'Link Preventivo'], // linked-record
   PreventivoIdTxt: ['Preventivo_Id', 'Preventivo ID (testo)'],
   Qty: ['Quantita', 'Quantità', 'Qty', 'Q.ta'],
   L: ['Lato 1', 'Lato1', 'L_cm', 'Lunghezza', 'L'],
@@ -140,7 +146,7 @@ async function tryUpdateField(
 async function tryCreateColloRow(
   b: ReturnType<typeof base>,
   recId: string,
-  c: ColloQ
+  c: ColloQ,
 ) {
   const attempt = async (fields: Record<string, any>) => {
     try {
@@ -173,34 +179,11 @@ async function tryCreateColloRow(
 // ---------------------------------------------------------------
 // CREATE preventivo
 // ---------------------------------------------------------------
-// Sostituisci TUTTA la listPreventivi con questa versione:
-
-export async function listPreventivi(
-  opts?: { email?: string }
-): Promise<Array<{ id: string; fields: any }>> {
+export async function createPreventivo(
+  payload: PreventivoPayload,
+): Promise<{ id: string; displayId?: string }> {
   const b = base();
-  const all: Array<{ id: string; fields: any }> = [];
-
-  await b(TB_PREVENTIVI)
-    .select({ pageSize: 100, sort: [{ field: 'Last modified time', direction: 'desc' }] })
-    .eachPage((recs, next) => {
-      for (const r of recs) all.push({ id: r.id, fields: r.fields });
-      next();
-    });
-
-  if (!opts?.email) return all;
-
-  const needle = String(opts.email).toLowerCase();
-  const emailFields = [...F.EmailCliente, ...F.CreatoDaEmail];
-
-  return all.filter(({ fields }) =>
-    emailFields.some((k) => {
-      const v = fields?.[k];
-      return typeof v === 'string' && v.toLowerCase() === needle;
-    })
-  );
-}
-
+  const debugSet: string[] = [];
 
   try {
     // 1) record vuoto
@@ -209,11 +192,15 @@ export async function listPreventivi(
 
     // 2) campi base
     await tryUpdateField(b, recId, F.Stato, 'Bozza', debugSet);
-    if (payload.createdByEmail) await tryUpdateField(b, recId, F.CreatoDaEmail, payload.createdByEmail, debugSet);
-    if (payload.customerEmail) await tryUpdateField(b, recId, F.EmailCliente, payload.customerEmail, debugSet);
+    if (payload.createdByEmail)
+      await tryUpdateField(b, recId, F.CreatoDaEmail, payload.createdByEmail, debugSet);
+    if (payload.customerEmail)
+      await tryUpdateField(b, recId, F.EmailCliente, payload.customerEmail, debugSet);
     if (payload.valuta) await tryUpdateField(b, recId, F.Valuta, payload.valuta, debugSet);
-    if (payload.ritiroData) await tryUpdateField(b, recId, F.RitiroData, dateOnlyISO(payload.ritiroData), debugSet);
-    if (payload.noteGeneriche) await tryUpdateField(b, recId, F.NoteGeneriche, payload.noteGeneriche, debugSet);
+    if (payload.ritiroData)
+      await tryUpdateField(b, recId, F.RitiroData, dateOnlyISO(payload.ritiroData), debugSet);
+    if (payload.noteGeneriche)
+      await tryUpdateField(b, recId, F.NoteGeneriche, payload.noteGeneriche, debugSet);
 
     // nuovi: tipo spedizione + incoterm
     if (payload.tipoSped) await tryUpdateField(b, recId, F.TipoSped, payload.tipoSped, debugSet);
@@ -272,10 +259,10 @@ export async function listPreventivi(
 // LIST preventivi per email (filtro lato Node)
 // ---------------------------------------------------------------
 export async function listPreventivi(
-  opts?: { email?: string }
+  opts?: { email?: string },
 ): Promise<Array<{ id: string; fields: any }>> {
   const b = base();
-  const all: Array<{ id: string; fields: any }>> = [];
+  const all: Array<{ id: string; fields: any }> = [];
 
   await b(TB_PREVENTIVI)
     .select({ pageSize: 100, sort: [{ field: 'Last modified time', direction: 'desc' }] })
@@ -287,12 +274,12 @@ export async function listPreventivi(
   if (!opts?.email) return all;
 
   const needle = String(opts.email).toLowerCase();
-  const emailFields = ['Email_Cliente', 'Email Cliente', 'Cliente_Email', 'Customer_Email', 'CreatoDaEmail', 'Creato da (email)', 'Created By Email', 'Creato da Email'];
-  return all.filter(({ fields }) => {
-    for (const k of emailFields) {
-      const v = (fields?.[k] ?? '') as string;
-      if (typeof v === 'string' && v.toLowerCase() === needle) return true;
-    }
-    return false;
-  });
+  const emailFields = [...F.EmailCliente, ...F.CreatoDaEmail];
+
+  return all.filter(({ fields }) =>
+    emailFields.some((k) => {
+      const v = fields?.[k];
+      return typeof v === 'string' && v.toLowerCase() === needle;
+    }),
+  );
 }
