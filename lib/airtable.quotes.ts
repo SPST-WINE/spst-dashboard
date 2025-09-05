@@ -496,13 +496,13 @@ export async function getPreventivo(
     return null;
   }
 
-  // displayId robusto (solo i due campi principali che conosciamo davvero)
+   // displayId robusto (solo i due campi principali che conosciamo davvero)
   const displayId =
     (rec.fields['ID_Preventivo'] as string) ||
     (rec.fields['ID Preventivo'] as string) ||
     undefined;
 
-    // 3) colli collegati — usa solo i due campi che sappiamo esistere in base al tuo file
+  // 3) colli collegati — usa solo i due campi che sappiamo esistere in base al tuo file
   const colli: Array<{ id: string; fields: any }> = [];
   try {
     const linkField = '{Preventivi}';      // linked field
@@ -520,81 +520,86 @@ export async function getPreventivo(
       .select({ pageSize: 100, filterByFormula: filterByFormulaColli })
       .eachPage((rows, next) => {
         for (const r of rows) {
-  const f = r.fields || {};
-  const fields = { ...f };
+          const f = r.fields || {};
+          const fields = { ...f };
 
-  // 1) prova alias numerici classici
-  let Ln = pickFirstNumberField(f, COLLI_ALIASES.L);
-  let Wn = pickFirstNumberField(f, COLLI_ALIASES.W);
-  let Hn = pickFirstNumberField(f, COLLI_ALIASES.H);
-  let Pn = pickFirstNumberField(f, COLLI_ALIASES.Peso);
-  let Qn = pickFirstNumberField(f, COLLI_ALIASES.Qty);
+          // 1) prova alias numerici classici
+          let Ln = pickFirstNumberField(f, COLLI_ALIASES.L);
+          let Wn = pickFirstNumberField(f, COLLI_ALIASES.W);
+          let Hn = pickFirstNumberField(f, COLLI_ALIASES.H);
+          let Pn = pickFirstNumberField(f, COLLI_ALIASES.Peso);
+          let Qn = pickFirstNumberField(f, COLLI_ALIASES.Qty);
 
-  // 2) se mancano L/W/H, prova a parsare da testo nel collo
-  if ((Ln == null || Wn == null || Hn == null)) {
-    const parsed = scanAnyTextForDims(f, COLLI_ALIASES.DimText);
-    if (parsed) {
-      Ln = Ln ?? parsed.L;
-      Wn = Wn ?? parsed.W;
-      Hn = Hn ?? parsed.H;
-      _push(debug, 'colli:parsedFromText', { id: r.id, parsed });
-    }
-  }
+          // 2) se mancano L/W/H, prova a parsare da testo nel collo
+          if (Ln == null || Wn == null || Hn == null) {
+            const parsed = scanAnyTextForDims(f, COLLI_ALIASES.DimText);
+            if (parsed) {
+              Ln = Ln ?? parsed.L;
+              Wn = Wn ?? parsed.W;
+              Hn = Hn ?? parsed.H;
+              _push(debug, 'colli:parsedFromText', { id: r.id, parsed });
+            }
+          }
 
-  // 3) se ancora mancano, prova fallback dal record Preventivo
-  if ((Ln == null || Wn == null || Hn == null)) {
-    const p = rec?.fields || {};
-    // alias lato preventivo (stesse chiavi dei colli, più campi testo generici)
-    const pL = pickFirstNumberField(p, COLLI_ALIASES.L);
-    const pW = pickFirstNumberField(p, COLLI_ALIASES.W);
-    const pH = pickFirstNumberField(p, COLLI_ALIASES.H);
-    if (Ln == null && pL != null) Ln = pL;
-    if (Wn == null && pW != null) Wn = pW;
-    if (Hn == null && pH != null) Hn = pH;
+          // 3) se ancora mancano, prova fallback dal record Preventivo
+          if (Ln == null || Wn == null || Hn == null) {
+            const p = rec?.fields || {};
+            const pL = pickFirstNumberField(p, COLLI_ALIASES.L);
+            const pW = pickFirstNumberField(p, COLLI_ALIASES.W);
+            const pH = pickFirstNumberField(p, COLLI_ALIASES.H);
+            if (Ln == null && pL != null) Ln = pL;
+            if (Wn == null && pW != null) Wn = pW;
+            if (Hn == null && pH != null) Hn = pH;
 
-    if (Ln == null || Wn == null || Hn == null) {
-      const parsedP = scanAnyTextForDims(p, COLLI_ALIASES.DimText);
-      if (parsedP) {
-        Ln = Ln ?? parsedP.L;
-        Wn = Wn ?? parsedP.W;
-        Hn = Hn ?? parsedP.H;
-        _push(debug, 'colli:parsedFromPreventivoText', { id: r.id, parsed: parsedP });
-      }
-    }
-  }
+            if (Ln == null || Wn == null || Hn == null) {
+              const parsedP = scanAnyTextForDims(p, COLLI_ALIASES.DimText);
+              if (parsedP) {
+                Ln = Ln ?? parsedP.L;
+                Wn = Wn ?? parsedP.W;
+                Hn = Hn ?? parsedP.H;
+                _push(debug, 'colli:parsedFromPreventivoText', { id: r.id, parsed: parsedP });
+              }
+            }
+          }
 
-  // 4) normalizzazione finale in uscita
-  if (fields['L_cm'] == null && Ln != null) fields['L_cm'] = Ln;
-  if (fields['W_cm'] == null && Wn != null) fields['W_cm'] = Wn;
-  if (fields['H_cm'] == null && Hn != null) fields['H_cm'] = Hn;
-  if (fields['Peso']  == null && Pn != null) fields['Peso']  = Pn;
-  if (fields['Quantita'] == null && Qn != null) fields['Quantita'] = Qn;
+          // 4) normalizzazione finale in uscita
+          if (fields['L_cm'] == null && Ln != null) fields['L_cm'] = Ln;
+          if (fields['W_cm'] == null && Wn != null) fields['W_cm'] = Wn;
+          if (fields['H_cm'] == null && Hn != null) fields['H_cm'] = Hn;
+          if (fields['Peso']  == null && Pn != null) fields['Peso']  = Pn;
+          if (fields['Quantita'] == null && Qn != null) fields['Quantita'] = Qn;
 
-  colli.push({ id: r.id, fields });
+          // se proprio non troviamo nulla, logghiamo
+          if (fields['L_cm'] == null && fields['W_cm'] == null && fields['H_cm'] == null) {
+            _push(debug, 'colli:noDims', { id: r.id });
+          }
 
-  // log compatto (prime 3 righe)
-  if (colli.length <= 3) {
-    const keyz = Object.keys(f).slice(0, 30); // log non verboso
-    _push(debug, 'colli:sample', {
-      id: r.id,
-      keys: keyz,
-      normalized: {
-        L_cm: fields['L_cm'],
-        W_cm: fields['W_cm'],
-        H_cm: fields['H_cm'],
-        Peso: fields['Peso'],
-        Quantita: fields['Quantita']
-      }
-    });
-  }
-}
+          colli.push({ id: r.id, fields });
+
+          // log compatto (prime 3 righe)
+          if (colli.length <= 3) {
+            const keyz = Object.keys(f).slice(0, 30);
+            _push(debug, 'colli:sample', {
+              id: r.id,
+              keys: keyz,
+              normalized: {
+                L_cm: fields['L_cm'],
+                W_cm: fields['W_cm'],
+                H_cm: fields['H_cm'],
+                Peso: fields['Peso'],
+                Quantita: fields['Quantita'],
+              },
+            });
+          }
+        }
+        next(); // <-- importante per paginare
+      }); // <-- chiusura eachPage
 
     _push(debug, 'colliQuery:done', { count: colli.length, sampleIds: colli.slice(0, 5).map(c => c.id) });
   } catch (e: any) {
     _push(debug, 'colliQuery:error', { message: e?.message, status: e?.statusCode });
   }
 
-    _push(debug, 'OK', { recId: rec.id, displayId, colli: colli.length });
+  _push(debug, 'OK', { recId: rec.id, displayId, colli: colli.length });
   return { id: rec.id, displayId, fields: rec.fields, colli };
 }
-
