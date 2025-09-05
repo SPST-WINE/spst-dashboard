@@ -1,27 +1,21 @@
+// app/api/quotazioni/[id]/route.ts
+// ───────────────────────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server';
-import { getPreventivo as getPreventivoAT } from '@/lib/airtable.quotes';
+import { getPreventivo } from '@/lib/airtable.quotes';
 
 export async function GET(_req: Request, ctx: { params: { id: string } }) {
-  const raw = ctx?.params?.id ?? '';
-  const id = decodeURIComponent(raw);
+  const id = decodeURIComponent(ctx?.params?.id ?? '').trim();
 
   try {
-    const row = await getPreventivoAT(id);
+    const row = await getPreventivo(id);
     if (!row) {
-      return NextResponse.json(
-        { ok: false, error: 'NOT_FOUND', id },
-        { status: 404 }
-      );
+      return NextResponse.json({ ok: false, error: 'NOT_FOUND', id }, { status: 404 });
     }
     return NextResponse.json({ ok: true, row }, { status: 200 });
-  } catch (e: any) {
-    console.error('[api/quotazioni/[id]] GET error', {
-      id,
-      message: e?.message,
-      statusCode: e?.statusCode,
-    });
+  } catch (err: any) {
+    console.error('[api/quotazioni/[id]]', err?.message || err);
     return NextResponse.json(
-      { ok: false, error: e?.message || 'SERVER_ERROR' },
+      { ok: false, error: err?.message || 'SERVER_ERROR' },
       { status: 500 }
     );
   }
