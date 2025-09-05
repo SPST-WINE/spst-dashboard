@@ -2,11 +2,18 @@
 import Airtable from 'airtable';
 
 // --- ENV ---
+// --- ENV ---
 const API_TOKEN =
   process.env.AIRTABLE_API_TOKEN || process.env.AIRTABLE_API_KEY || '';
 const BASE_ID = process.env.AIRTABLE_BASE_ID_SPST || '';
 const TB_PREVENTIVI = process.env.AIRTABLE_TABLE_PREVENTIVI || 'Preventivi';
-const TB_COLLI = process.env.AIRTABLE_TABLE_SPED_COLLI || 'SPED_COLLI';
+
+// ⬅️ per i COLLI dei PREVENTIVI usiamo la tabella "Colli"
+const TB_COLLI =
+  process.env.AIRTABLE_TABLE_PREVENTIVI_COLLI ||
+  process.env.AIRTABLE_TABLE_COLLI ||
+  'Colli';
+
 
 function assertEnv() {
   if (!API_TOKEN) throw new Error('AIRTABLE_API_TOKEN (o AIRTABLE_API_KEY) mancante');
@@ -65,13 +72,17 @@ const F = {
   EmailCliente: ['Email_Cliente', 'Email Cliente', 'Cliente_Email', 'Customer_Email'],
   CreatoDaEmail: ['CreatoDaEmail', 'Creato da (email)', 'Created By Email', 'Creato da Email'],
   Valuta: ['Valuta', 'Currency'],
+
+  // ⬅️ include anche "Data ritiro" (con spazio)
   RitiroData: ['Ritiro_Data', 'Data_Ritiro', 'RitiroData', 'PickUp_Date', 'Data ritiro'],
+
   NoteGeneriche: [
     'Note generiche sulla spedizione',
     'Note_Spedizione',
     'Shipment_Notes',
     'Note spedizione',
   ],
+
   TipoSped: ['Tipo_Spedizione', 'Tipo spedizione', 'Tipo Spedizione', 'Tipologia', 'Tipo', 'TipoSped'],
   Incoterm: ['Incoterm', 'Incoterms', 'Incoterm_Selezionato', 'Incoterm Selezionato'],
 
@@ -93,6 +104,19 @@ const F = {
   D_Tel: ['Destinatario_Telefono', 'Telefono Destinatario'],
   D_Tax: ['Destinatario_Tax', 'Destinatario_EORI', 'Dest_TaxID', 'TaxID Destinatario'],
 } as const;
+
+const C = {
+  // ⬅️ nomi ESATTI della tabella Colli
+  LinkPreventivo: ['Preventivi', 'Preventivo', 'Link Preventivo'],
+  PreventivoIdTxt: ['Preventivo_Id', 'Preventivo ID (testo)'],
+
+  Qty: ['Quantita', 'Quantità', 'Qty', 'Q.ta'],
+  L: ['L_cm', 'Lato 1', 'Lato1', 'Lunghezza', 'L'],
+  W: ['W_cm', 'Lato 2', 'Lato2', 'Larghezza', 'W'],
+  H: ['H_cm', 'Lato 3', 'Lato3', 'Altezza', 'H'],
+  Peso: ['Peso', 'Peso (Kg)', 'Peso_Kg', 'Kg', 'Weight'],
+} as const;
+
 
 // ---- Alias campo COLLI (tolleranti) ----
 const C = {
@@ -133,14 +157,33 @@ async function tryCreateColloRow(
   recId: string,
   c: ColloQ
 ) {
-  const attempt = async (fields: Record<string, any>) => {
-    try {
-      await b(TB_COLLI).create([{ fields }]);
-      return true;
-    } catch {
-      return false;
-    }
+  // Creo con i nomi esatti (e alias tolleranti) in un colpo solo
+  const fields: Record<string, any> = {
+    [C.LinkPreventivo[0]]: [recId],                  // linked: Preventivi
+    [C.PreventivoIdTxt[0]]: recId,                   // testo: Preventivo_Id (salvo il recordId)
+    [C.Qty[0]]: optional(c.qty ?? 1),                // Quantita
+    [C.L[0]]: optional(c.l1_cm),                     // L_cm
+    [C.W[0]]: optional(c.l2_cm),                     // W_cm
+    [C.H[0]]: optional(c.l3_cm),                     // H_cm
+    [C.Peso[0]]: optional(c.peso_kg),                // Peso
   };
+
+  // 1) tentativo con i nomi principali
+  try {
+    await b(TB_COLLI).create([{ fields }]);
+    return;
+  } catch {
+    // 2) fallback minimo: senza linked (qualche base potrebbe non avere il campo)
+    try {
+      const { [C.LinkPreventivo[0]]: _omit, ...noLink } = fields;
+      await b(TB_COLLI).create([{ fields: noLink }]);
+      return;
+    } catch (e) {
+      console.warn('[airtable.quotes] impossibile creare riga colli', e);
+    }
+  }
+}
+
 
   const baseFields = {
     [C.Qty[0]]: optional(c.qty),
@@ -326,6 +369,37 @@ export async function getPreventivo(idOrDisplayId: string): Promise<{
     } catch {}
   }
 
+  // dentro getPreventivo, dopo aver caricato `rec` e calcolato `displayId`
+const colli: Array<{ id: string; fields: any }> = [];
+await b(TB_COLLI)
+  .select({ pageSize: 100 })
+  .eachPage((rows, next) => {
+    for (const r of rows) {
+      const f = r.fields || {};
+
+      const linkedArr: string[] = Array.isArray(f['Preventivi'])
+        ? (f['Preventivi'] as string[])
+        : Array.isArray(f['Preventivo'])
+        ? (f['Preventivo'] as string[])
+        : Array.isArray(f['Link Preventivo'])
+        ? (f['Link Preventivo'] as string[])
+        : [];
+
+      const linked = linkedArr.includes(rec.id);
+
+      const txt = String(
+        f['Preventivo_Id'] ??
+        f['Preventivo ID (testo)'] ??
+        ''
+      ).trim();
+
+      const txtMatch = !!txt && (txt === rec.id || (displayId && txt === displayId));
+
+      if (linked || txtMatch) colli.push({ id: r.id, fields: r.fields });
+    }
+    next();
+  });
+
   // 3) fallback finale: scan e match lato Node
   if (!rec) {
     const all: any[] = [];
@@ -348,6 +422,8 @@ export async function getPreventivo(idOrDisplayId: string): Promise<{
   }
 
   if (!rec) return null;
+
+  
 
   // colli collegati (via linked record o campo testo)
   const colli: Array<{ id: string; fields: any }> = [];
