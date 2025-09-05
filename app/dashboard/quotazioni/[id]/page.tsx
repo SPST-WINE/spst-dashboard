@@ -24,13 +24,6 @@ function pickNumber(f: any, keys: string[]) {
   }
   return undefined;
 }
-function pickText(f: any, keys: string[]) {
-  for (const k of keys) {
-    const v = f?.[k];
-    if (v != null && v !== '') return String(v);
-  }
-  return undefined;
-}
 
 function fmtDate(d?: string) {
   if (!d) return '—';
@@ -128,7 +121,6 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
       const peso =
         pickNumber(cf, ['Peso', 'Peso (Kg)', 'Peso_Kg', 'Kg', 'Weight']) ?? undefined;
 
-      // mostra anche se presenti parzialmente
       const dimsParts = [L, W, H].map((n) => (n != null ? String(n) : '—'));
       const dims =
         L == null && W == null && H == null
