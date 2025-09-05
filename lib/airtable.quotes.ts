@@ -333,6 +333,7 @@ export async function listPreventivi(opts?: {
 
 /* ============================ GET ============================== */
 // Cerca per recordId o per ID_Preventivo/ID Preventivo (anche normalizzato).
+// lib/airtable.quotes.ts (solo funzione getPreventivo)
 export async function getPreventivo(
   idOrDisplayId: string,
 ): Promise<{
@@ -342,50 +343,34 @@ export async function getPreventivo(
   colli: Array<{ id: string; fields: any }>;
 } | null> {
   const b = base();
-  const needleRaw = String(idOrDisplayId || '').trim();
-  const needleNorm = needleRaw.toLowerCase().replace(/\s+/g, '');
+  const raw = String(idOrDisplayId || '').trim();
+  const norm = raw.toLowerCase().replace(/\s+/g, '');
 
-  // 1) prova come recordId
+  // 1) recordId diretto
   let rec: any | null = null;
-  try {
-    rec = await b(TB_PREVENTIVI).find(needleRaw);
-  } catch {
-    /* non è un recordId */
-  }
+  try { rec = await b(TB_PREVENTIVI).find(raw); } catch {}
 
-  // 2) se non trovato, cerca per ID visuale con formula tollerante
+  // 2) per ID visuale – campi e normalizzazione
   if (!rec) {
-    try {
-      const found: any[] = [];
-      // Costruiamo OR su più campi + normalizzazione LOWER/SUBSTITUTE
-      const fields = [
-        'ID_Preventivo',
-        'ID Preventivo',
-        'Name',
-        'Preventivo',
-        'Numero_Preventivo',
-        'Numero Preventivo',
-      ];
-      const ors = fields
-        .map(
-          (f) =>
-            `OR({${f}}="${qe(needleRaw)}", LOWER(SUBSTITUTE({${f}}," ",""))="${qe(
-              needleNorm,
-            )}")`,
-        )
-        .join(',');
-      const filterByFormula = `OR(${ors})`;
+    const qe = (s: string) => s.replace(/"/g, '\\"');
+    const candidates = [
+      'ID_Preventivo',
+      'ID Preventivo',
+      'Name',
+      'Preventivo',
+      'Numero_Preventivo',
+      'Numero Preventivo',
+    ];
+    const ors = candidates.map((f) =>
+      `OR({${f}}="${qe(raw)}", LOWER(SUBSTITUTE({${f}}," ",""))="${qe(norm)}")`
+    ).join(',');
+    const filterByFormula = `OR(${ors})`;
 
-      await b(TB_PREVENTIVI)
-        .select({ pageSize: 10, filterByFormula })
-        .eachPage((rows, next) => {
-          for (const r of rows) found.push(r);
-          next();
-        });
-      rec = found[0] || null;
-    } catch {
-      /* ignore */
-    }
+    const found: any[] = [];
+    await b(TB_PREVENTIVI)
+      .select({ pageSize: 10, filterByFormula })
+      .eachPage((rows, next) => { found.push(...rows); next(); });
+    rec = found[0] || null;
   }
 
   if (!rec) return null;
@@ -395,29 +380,21 @@ export async function getPreventivo(
     (rec.fields['ID Preventivo'] as string) ||
     undefined;
 
-  // 3) carica i COLLI collegati con filterByFormula (niente scansione totale)
+  // 3) carico colli via formula (niente scansione full table)
   const colli: Array<{ id: string; fields: any }> = [];
   try {
-    const linkField = `{${C.LinkPreventivo[0]}}`;
-    const prevIdTxt = `{${C.PreventivoIdTxt[0]}}`;
+    const linkField = `{Preventivi}`;
+    const prevIdTxt = `{Preventivo_Id}`;
     const clauses = [
-      // linked records contengono l'id nel join dell'array
-      `FIND("${qe(rec.id)}", ARRAYJOIN(${linkField}))`,
-      // match su campo testuale eventuale
-      `${prevIdTxt}="${qe(rec.id)}"`,
-      displayId ? `${prevIdTxt}="${qe(displayId)}"` : '',
-    ]
-      .filter(Boolean)
-      .join(',');
-
+      `FIND("${rec.id}", ARRAYJOIN(${linkField}))`,
+      `${prevIdTxt}="${rec.id}"`,
+      displayId ? `${prevIdTxt}="${displayId}"` : '',
+    ].filter(Boolean).join(',');
     const filterByFormula = `OR(${clauses})`;
 
     await b(TB_COLLI)
       .select({ pageSize: 100, filterByFormula })
-      .eachPage((rows, next) => {
-        for (const r of rows) colli.push({ id: r.id, fields: r.fields });
-        next();
-      });
+      .eachPage((rows, next) => { for (const r of rows) colli.push({ id: r.id, fields: r.fields }); next(); });
   } catch (e) {
     console.warn('[airtable.quotes] getPreventivo: lettura colli fallita', e);
   }
