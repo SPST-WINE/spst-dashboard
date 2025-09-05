@@ -3,38 +3,25 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
-type Collo = { qty?: number; l1_cm?: number | null; l2_cm?: number | null; l3_cm?: number | null; peso_kg?: number | null };
 type Row = {
   id: string;
   displayId?: string;
-  stato?: string;
-  tipoSped?: string;
-  incoterm?: string;
-  valuta?: string;
-  ritiroData?: string;
-  noteGeneriche?: string;
-  destination?: string;
-  updatedAt?: string;
-  mittente: any;
-  destinatario: any;
-  colli: Collo[];
+  fields: any;
+  colli: Array<{ id: string; fields: any }>;
 };
 
-export default function PreventivoDettaglioPage({ params }: { params: { id: string } }) {
+export default function QuoteDetailPage({ params }: { params: { id: string } }) {
   const [row, setRow] = useState<Row | null>(null);
-  const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let abort = false;
     (async () => {
+      setLoading(true);
       try {
-        const r = await fetch(`/api/quotazioni/${encodeURIComponent(params.id)}`, { cache: 'no-store' });
-        const j = await r.json();
-        if (!r.ok || !j?.ok) throw new Error(j?.error || 'SERVER_ERROR');
-        if (!abort) setRow(j.row as Row);
-      } catch (e: any) {
-        if (!abort) setErr(e?.message || 'Errore caricamento');
+        const res = await fetch(`/api/quotazioni/${encodeURIComponent(params.id)}`);
+        const j = await res.json();
+        if (!abort) setRow(j?.row || null);
       } finally {
         if (!abort) setLoading(false);
       }
@@ -42,91 +29,114 @@ export default function PreventivoDettaglioPage({ params }: { params: { id: stri
     return () => { abort = true; };
   }, [params.id]);
 
+  if (loading) return <div className="text-sm text-slate-500">Caricamento…</div>;
+  if (!row) return <div className="text-sm text-rose-600">Preventivo non trovato.</div>;
+
+  const f = row.fields || {};
+  const idVis = row.displayId || row.id;
+
+  const stato = f['Stato_Computato'] || f['Stato'] || 'In lavorazione';
+  const tipoSped = f['Tipo_Spedizione'] || f['Tipologia'] || f['Tipo'] || '—';
+  const incoterm = f['Incoterm'] || '—';
+  const ritiro = f['Ritiro_Data'] || f['RitiroData'] || '—';
+
+  const mittNome = f['Mittente_Nome'] || '—';
+  const mittAddr = [f['Mittente_Indirizzo'], f['Mittente_Citta'], f['Mittente_Paese']].filter(Boolean).join(', ');
+  const destNome = f['Destinatario_Nome'] || '—';
+  const destAddr = [f['Destinatario_Indirizzo'], f['Destinatario_Citta'], f['Destinatario_Paese']].filter(Boolean).join(', ');
+
+  const colli = row.colli || [];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-800">Dettaglio preventivo</h1>
-        <Link href="/dashboard/quotazioni" className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-slate-50">
+        <h1 className="text-2xl font-semibold">Dettaglio preventivo</h1>
+        <Link href="/dashboard/quotazioni" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">
           Torna alla lista
         </Link>
       </div>
 
-      {loading && <div className="rounded-2xl border bg-white p-4 text-sm text-slate-500">Caricamento…</div>}
-      {err && !loading && <div className="rounded-2xl border border-rose-300 bg-rose-50 p-4 text-rose-700 text-sm">Errore: {err}</div>}
-      {!loading && !err && row && (
-        <>
-          <div className="rounded-2xl border bg-white p-4">
-            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
-              <div className="text-lg font-semibold">{row.displayId || row.id}</div>
-              <div className="text-sm text-slate-500">Stato: <span className="font-medium text-slate-700">{row.stato || '—'}</span></div>
-              <div className="text-sm text-slate-500">Tipo spedizione: <span className="font-medium text-slate-700">{row.tipoSped || '—'}</span></div>
-              <div className="text-sm text-slate-500">Incoterm: <span className="font-medium text-slate-700">{row.incoterm || '—'}</span></div>
-              <div className="text-sm text-slate-500">Valuta: <span className="font-medium text-slate-700">{row.valuta || '—'}</span></div>
-              <div className="text-sm text-slate-500">Data ritiro: <span className="font-medium text-slate-700">{row.ritiroData || '—'}</span></div>
-            </div>
+      <div className="rounded-2xl border bg-white p-4">
+        <div className="grid gap-6 sm:grid-cols-2">
+          <div>
+            <div className="text-sm text-slate-500">ID Preventivo</div>
+            <div className="font-medium">{idVis}</div>
           </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border bg-white p-4">
-              <h2 className="mb-2 text-base font-semibold text-spst-blue">Mittente</h2>
-              <div className="text-sm">
-                <div className="font-medium text-slate-800">{row.mittente?.ragioneSociale || '—'}</div>
-                <div className="text-slate-600">{row.mittente?.indirizzo || '—'}</div>
-                <div className="text-slate-600">{[row.mittente?.cap, row.mittente?.citta, row.mittente?.paese].filter(Boolean).join(' ') || '—'}</div>
-                <div className="text-slate-600">Tel: {row.mittente?.telefono || '—'}</div>
-                <div className="text-slate-600">Tax ID: {row.mittente?.taxId || '—'}</div>
-              </div>
-            </div>
-            <div className="rounded-2xl border bg-white p-4">
-              <h2 className="mb-2 text-base font-semibold text-spst-blue">Destinatario</h2>
-              <div className="text-sm">
-                <div className="font-medium text-slate-800">{row.destinatario?.ragioneSociale || '—'}</div>
-                <div className="text-slate-600">{row.destinatario?.indirizzo || '—'}</div>
-                <div className="text-slate-600">{[row.destinatario?.cap, row.destinatario?.citta, row.destinatario?.paese].filter(Boolean).join(' ') || '—'}</div>
-                <div className="text-slate-600">Tel: {row.destinatario?.telefono || '—'}</div>
-                <div className="text-slate-600">Tax ID: {row.destinatario?.taxId || '—'}</div>
-              </div>
-            </div>
+          <div>
+            <div className="text-sm text-slate-500">Stato</div>
+            <div className="font-medium">{stato || 'In lavorazione'}</div>
           </div>
+          <div>
+            <div className="text-sm text-slate-500">Tipo spedizione</div>
+            <div className="font-medium">{tipoSped}</div>
+          </div>
+          <div>
+            <div className="text-sm text-slate-500">Incoterm</div>
+            <div className="font-medium">{incoterm}</div>
+          </div>
+          <div>
+            <div className="text-sm text-slate-500">Data ritiro</div>
+            <div className="font-medium">{ritiro || '—'}</div>
+          </div>
+        </div>
+      </div>
 
-          <div className="rounded-2xl border bg-white p-4">
-            <h2 className="mb-3 text-base font-semibold text-spst-blue">Colli</h2>
-            {(!row.colli || row.colli.length === 0) ? (
-              <div className="text-sm text-slate-500">Nessun collo presente.</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-slate-50 text-slate-600">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium">Qty</th>
-                      <th className="px-3 py-2 text-left font-medium">Lato 1 (cm)</th>
-                      <th className="px-3 py-2 text-left font-medium">Lato 2 (cm)</th>
-                      <th className="px-3 py-2 text-left font-medium">Lato 3 (cm)</th>
-                      <th className="px-3 py-2 text-left font-medium">Peso (kg)</th>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-2xl border bg-white p-4">
+          <h2 className="mb-2 text-base font-semibold text-spst-blue">Mittente</h2>
+          <div className="text-sm">
+            <div className="font-medium">{mittNome}</div>
+            <div className="text-slate-600">{mittAddr || '—'}</div>
+          </div>
+        </div>
+        <div className="rounded-2xl border bg-white p-4">
+          <h2 className="mb-2 text-base font-semibold text-spst-blue">Destinatario</h2>
+          <div className="text-sm">
+            <div className="font-medium">{destNome}</div>
+            <div className="text-slate-600">{destAddr || '—'}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border bg-white p-4">
+        <h2 className="mb-3 text-base font-semibold text-spst-blue">Colli</h2>
+        {colli.length === 0 ? (
+          <div className="text-sm text-slate-500">Nessun collo indicato.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-500">
+                  <th className="py-2 pr-4">Quantità</th>
+                  <th className="py-2 pr-4">L (cm)</th>
+                  <th className="py-2 pr-4">W (cm)</th>
+                  <th className="py-2 pr-4">H (cm)</th>
+                  <th className="py-2 pr-4">Peso (kg)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {colli.map((c) => {
+                  const cf = c.fields || {};
+                  const qty = cf['Quantita'] ?? cf['Quantità'] ?? cf['Qty'] ?? 1;
+                  const L = cf['Lato 1'] ?? cf['L_cm'] ?? cf['Lunghezza'] ?? cf['L'] ?? '—';
+                  const W = cf['Lato 2'] ?? cf['W_cm'] ?? cf['Larghezza'] ?? cf['W'] ?? '—';
+                  const H = cf['Lato 3'] ?? cf['H_cm'] ?? cf['Altezza'] ?? cf['H'] ?? '—';
+                  const P = cf['Peso (Kg)'] ?? cf['Peso_Kg'] ?? cf['Peso'] ?? cf['Kg'] ?? '—';
+                  return (
+                    <tr key={c.id} className="border-t">
+                      <td className="py-2 pr-4">{qty}</td>
+                      <td className="py-2 pr-4">{L}</td>
+                      <td className="py-2 pr-4">{W}</td>
+                      <td className="py-2 pr-4">{H}</td>
+                      <td className="py-2 pr-4">{P}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {row.colli.map((c, i) => (
-                      <tr key={i} className="border-t">
-                        <td className="px-3 py-2">{c.qty ?? 1}</td>
-                        <td className="px-3 py-2">{c.l1_cm ?? '—'}</td>
-                        <td className="px-3 py-2">{c.l2_cm ?? '—'}</td>
-                        <td className="px-3 py-2">{c.l3_cm ?? '—'}</td>
-                        <td className="px-3 py-2">{c.peso_kg ?? '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-
-          <div className="rounded-2xl border bg-white p-4">
-            <h2 className="mb-2 text-base font-semibold text-spst-blue">Note</h2>
-            <div className="text-sm whitespace-pre-wrap">{row.noteGeneriche || '—'}</div>
-          </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }
