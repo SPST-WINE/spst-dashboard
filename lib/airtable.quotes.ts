@@ -1,7 +1,13 @@
 // lib/airtable.quotes.ts
+// Robust helpers per CRUD Preventivi/Colli su Airtable.
+// - Salva correttamente "Data Ritiro" (campo data) e "Email_Cliente"
+// - Crea i Colli popolando sempre L_cm, W_cm, H_cm e Peso (number)
+// - getPreventivo accetta sia recordId che ID visuale (es. Q-2025-00082)
+//   con ricerca tollerante (case/space-insensitive) e carica i Colli via filterByFormula
+
 import Airtable from 'airtable';
 
-// --- ENV ---
+/* ============================= ENV ============================= */
 const API_TOKEN =
   process.env.AIRTABLE_API_TOKEN || process.env.AIRTABLE_API_KEY || '';
 const BASE_ID = process.env.AIRTABLE_BASE_ID_SPST || '';
@@ -21,13 +27,28 @@ function base() {
   return new Airtable().base(BASE_ID);
 }
 
+/* ========================= UTILITIES =========================== */
 function dateOnlyISO(d?: string | Date) {
   if (!d) return undefined;
-  try { return new Date(d).toISOString().slice(0, 10); } catch { return undefined; }
+  try {
+    return new Date(d).toISOString().slice(0, 10);
+  } catch {
+    return undefined;
+  }
 }
-function optional<T>(v: T | null | undefined) { return v == null ? undefined : v; }
+function optional<T>(v: T | null | undefined) {
+  return v == null ? undefined : v;
+}
+function parseNum(v: any): number | undefined {
+  if (v == null || v === '') return undefined;
+  const n = Number(String(v).replace(',', '.'));
+  return Number.isFinite(n) ? n : undefined;
+}
+function qe(s: string) {
+  return s.replace(/"/g, '\\"');
+}
 
-// ---- Tipi payload UI ----
+/* ======================== TIPI UI PAYLOAD ====================== */
 export type PartyQ = {
   ragioneSociale?: string;
   indirizzo?: string;
@@ -39,40 +60,36 @@ export type PartyQ = {
 };
 
 export type ColloQ = {
-  // accettiamo entrambe le notazioni
   quantita?: number;
-  lunghezza_cm?: number | null;
-  larghezza_cm?: number | null;
-  altezza_cm?: number | null;
-  l1_cm?: number | null;
-  l2_cm?: number | null;
-  l3_cm?: number | null;
-  peso_kg?: number | null;
+  lunghezza_cm?: number | string | null;
+  larghezza_cm?: number | string | null;
+  altezza_cm?: number | string | null;
+  l1_cm?: number | string | null;
+  l2_cm?: number | string | null;
+  l3_cm?: number | string | null;
+  peso_kg?: number | string | null;
 };
 
 export type PreventivoPayload = {
   createdByEmail?: string;
-  customerEmail?: string;   // email cliente finale
+  customerEmail?: string; // Email_Cliente
   valuta?: 'EUR' | 'USD' | 'GBP';
-  ritiroData?: string;      // ISO date
+  ritiroData?: string; // ISO date
   noteGeneriche?: string;
-
-  // campi aggiuntivi
   tipoSped?: 'B2B' | 'B2C' | 'Sample';
   incoterm?: 'DAP' | 'DDP' | 'EXW';
-
   mittente?: PartyQ;
   destinatario?: PartyQ;
   colli?: ColloQ[];
 };
 
-// ---- Alias campo PREVENTIVI (tolleranti) ----
+/* ===================== ALIAS PREVENTIVI ======================== */
 const F = {
   Stato: ['Stato', 'Status'],
   EmailCliente: ['Email_Cliente', 'Email Cliente', 'Cliente_Email', 'Customer_Email'],
   CreatoDaEmail: ['CreatoDaEmail', 'Creato da (email)', 'Created By Email', 'Creato da Email'],
   Valuta: ['Valuta', 'Currency'],
-  // include anche "Data Ritiro" con spazio
+  // include esattamente "Data Ritiro" (campo data in Airtable)
   RitiroData: ['Ritiro_Data', 'Data_Ritiro', 'RitiroData', 'PickUp_Date', 'Data Ritiro'],
   NoteGeneriche: [
     'Note generiche sulla spedizione',
@@ -102,18 +119,18 @@ const F = {
   D_Tax: ['Destinatario_Tax', 'Destinatario_EORI', 'Dest_TaxID', 'TaxID Destinatario'],
 } as const;
 
-// ---- Campi COLLI (nomi ESATTI) ----
+/* ======================== CAMPI COLLI ========================== */
 const C = {
-  LinkPreventivo: ['Preventivi'],         // linked a Preventivi
-  PreventivoIdTxt: ['Preventivo_Id'],     // single line text
-  Qty: ['Quantita'],
+  LinkPreventivo: ['Preventivi'], // Linked a Preventivi
+  PreventivoIdTxt: ['Preventivo_Id'], // Single line (fallback)
+  Qty: ['Quantita', 'Quantità'],
   L: ['L_cm'],
   W: ['W_cm'],
   H: ['H_cm'],
   Peso: ['Peso'],
 } as const;
 
-// utility update con alias multipli
+/* ===================== HELPERS DI UPDATE ======================= */
 async function tryUpdateField(
   b: ReturnType<typeof base>,
   recId: string,
@@ -129,7 +146,7 @@ async function tryUpdateField(
       debug.push(`OK ${k}`);
       return true;
     } catch {
-      // prova alias successivo
+      /* tenta prossimo alias */
     }
   }
   debug.push(`SKIP ${Array.isArray(aliases) ? aliases.join('|') : aliases}`);
@@ -141,19 +158,19 @@ async function tryCreateColloRow(
   recId: string,
   c: ColloQ
 ) {
-  // normalizzo: prendo lunghezza/larghezza/altezza o l1/l2/l3
-  const L = c.lunghezza_cm ?? c.l1_cm ?? undefined;
-  const W = c.larghezza_cm ?? c.l2_cm ?? undefined;
-  const H = c.altezza_cm ?? c.l3_cm ?? undefined;
+  const L = parseNum(c.lunghezza_cm ?? c.l1_cm);
+  const W = parseNum(c.larghezza_cm ?? c.l2_cm);
+  const H = parseNum(c.altezza_cm ?? c.l3_cm);
+  const peso = parseNum(c.peso_kg);
 
   const fields: Record<string, any> = {
-    [C.LinkPreventivo[0]]: [recId],                // linked: Preventivi
-    [C.PreventivoIdTxt[0]]: recId,                 // testo: recordId
-    [C.Qty[0]]: optional(c.quantita ?? 1),         // Quantita
-    [C.L[0]]: optional(L),                         // L_cm
-    [C.W[0]]: optional(W),                         // W_cm
-    [C.H[0]]: optional(H),                         // H_cm
-    [C.Peso[0]]: optional(c.peso_kg),              // Peso
+    [C.LinkPreventivo[0]]: [recId], // linked: Preventivi
+    [C.PreventivoIdTxt[0]]: recId,  // testo: recordId (fallback)
+    [C.Qty[0]]: optional(c.quantita ?? 1),
+    [C.L[0]]: optional(L),
+    [C.W[0]]: optional(W),
+    [C.H[0]]: optional(H),
+    [C.Peso[0]]: optional(peso),
   };
 
   // 1) tentativo completo (con linked)
@@ -161,20 +178,17 @@ async function tryCreateColloRow(
     await b(TB_COLLI).create([{ fields }]);
     return;
   } catch {
-    // 2) fallback senza linked (se il campo non esistesse)
+    // 2) fallback senza linked
     try {
       const { [C.LinkPreventivo[0]]: _omit, ...noLink } = fields;
       await b(TB_COLLI).create([{ fields: noLink }]);
-      return;
     } catch (e) {
       console.warn('[airtable.quotes] impossibile creare riga colli', e);
     }
   }
 }
 
-// ---------------------------------------------------------------
-// CREATE preventivo
-// ---------------------------------------------------------------
+/* ========================== CREATE ============================= */
 export async function createPreventivo(
   payload: PreventivoPayload
 ): Promise<{ id: string; displayId?: string }> {
@@ -188,13 +202,20 @@ export async function createPreventivo(
 
     // 2) campi base
     await tryUpdateField(b, recId, F.Stato, 'In lavorazione', debugSet);
-    if (payload.createdByEmail) await tryUpdateField(b, recId, F.CreatoDaEmail, payload.createdByEmail, debugSet);
-    if (payload.customerEmail) await tryUpdateField(b, recId, F.EmailCliente, payload.customerEmail, debugSet);
-    if (payload.valuta) await tryUpdateField(b, recId, F.Valuta, payload.valuta, debugSet);
-    if (payload.ritiroData) await tryUpdateField(b, recId, F.RitiroData, dateOnlyISO(payload.ritiroData), debugSet);
-    if (payload.noteGeneriche) await tryUpdateField(b, recId, F.NoteGeneriche, payload.noteGeneriche, debugSet);
-    if (payload.tipoSped) await tryUpdateField(b, recId, F.TipoSped, payload.tipoSped, debugSet);
-    if (payload.incoterm) await tryUpdateField(b, recId, F.Incoterm, payload.incoterm, debugSet);
+    if (payload.createdByEmail)
+      await tryUpdateField(b, recId, F.CreatoDaEmail, payload.createdByEmail, debugSet);
+    if (payload.customerEmail)
+      await tryUpdateField(b, recId, F.EmailCliente, payload.customerEmail, debugSet);
+    if (payload.valuta)
+      await tryUpdateField(b, recId, F.Valuta, payload.valuta, debugSet);
+    if (payload.ritiroData)
+      await tryUpdateField(b, recId, F.RitiroData, dateOnlyISO(payload.ritiroData), debugSet);
+    if (payload.noteGeneriche)
+      await tryUpdateField(b, recId, F.NoteGeneriche, payload.noteGeneriche, debugSet);
+    if (payload.tipoSped)
+      await tryUpdateField(b, recId, F.TipoSped, payload.tipoSped, debugSet);
+    if (payload.incoterm)
+      await tryUpdateField(b, recId, F.Incoterm, payload.incoterm, debugSet);
 
     // 3) mittente
     const M = payload.mittente || {};
@@ -244,14 +265,16 @@ export async function createPreventivo(
   }
 }
 
-// ---------------------------------------------------------------
-// LIST preventivi per email (filtro lato Node) + displayId & sort robusto
-// ---------------------------------------------------------------
-export async function listPreventivi(opts?: { email?: string }): Promise<Array<{
-  id: string;
-  displayId?: string;
-  fields: any;
-}>> {
+/* =========================== LIST ============================== */
+export async function listPreventivi(opts?: {
+  email?: string;
+}): Promise<
+  Array<{
+    id: string;
+    displayId?: string;
+    fields: any;
+  }>
+> {
   const b = base();
   const all: Array<{ id: string; fields: any }> = [];
 
@@ -266,14 +289,20 @@ export async function listPreventivi(opts?: { email?: string }): Promise<Array<{
     if (!opts?.email) return all;
     const needle = String(opts.email).toLowerCase();
     const emailFields = [
-      'Email_Cliente', 'Email Cliente', 'Cliente_Email', 'Customer_Email',
-      'CreatoDaEmail', 'Creato da (email)', 'Created By Email', 'Creato da Email',
+      'Email_Cliente',
+      'Email Cliente',
+      'Cliente_Email',
+      'Customer_Email',
+      'CreatoDaEmail',
+      'Creato da (email)',
+      'Created By Email',
+      'Creato da Email',
     ];
     return all.filter(({ fields }) =>
       emailFields.some((k) => {
         const v = fields?.[k];
         return typeof v === 'string' && v.toLowerCase() === needle;
-      })
+      }),
     );
   })();
 
@@ -302,38 +331,61 @@ export async function listPreventivi(opts?: { email?: string }): Promise<Array<{
   return rows;
 }
 
-// ---------------------------------------------------------------
-// GET one preventivo by recordId OR displayId (ID_Preventivo)
-// ---------------------------------------------------------------
-export async function getPreventivo(idOrDisplayId: string): Promise<{
+/* ============================ GET ============================== */
+// Cerca per recordId o per ID_Preventivo/ID Preventivo (anche normalizzato).
+export async function getPreventivo(
+  idOrDisplayId: string,
+): Promise<{
   id: string;
   displayId?: string;
   fields: any;
   colli: Array<{ id: string; fields: any }>;
 } | null> {
   const b = base();
+  const needleRaw = String(idOrDisplayId || '').trim();
+  const needleNorm = needleRaw.toLowerCase().replace(/\s+/g, '');
 
   // 1) prova come recordId
   let rec: any | null = null;
   try {
-    rec = await b(TB_PREVENTIVI).find(idOrDisplayId);
-  } catch {}
+    rec = await b(TB_PREVENTIVI).find(needleRaw);
+  } catch {
+    /* non è un recordId */
+  }
 
-  // 2) se non trovato, cerca per ID_Preventivo / ID Preventivo
+  // 2) se non trovato, cerca per ID visuale con formula tollerante
   if (!rec) {
     try {
       const found: any[] = [];
+      // Costruiamo OR su più campi + normalizzazione LOWER/SUBSTITUTE
+      const fields = [
+        'ID_Preventivo',
+        'ID Preventivo',
+        'Name',
+        'Preventivo',
+        'Numero_Preventivo',
+        'Numero Preventivo',
+      ];
+      const ors = fields
+        .map(
+          (f) =>
+            `OR({${f}}="${qe(needleRaw)}", LOWER(SUBSTITUTE({${f}}," ",""))="${qe(
+              needleNorm,
+            )}")`,
+        )
+        .join(',');
+      const filterByFormula = `OR(${ors})`;
+
       await b(TB_PREVENTIVI)
-        .select({
-          pageSize: 50,
-          filterByFormula: `OR({ID_Preventivo}="${idOrDisplayId}", {ID Preventivo}="${idOrDisplayId}")`,
-        })
+        .select({ pageSize: 10, filterByFormula })
         .eachPage((rows, next) => {
           for (const r of rows) found.push(r);
           next();
         });
       rec = found[0] || null;
-    } catch {}
+    } catch {
+      /* ignore */
+    }
   }
 
   if (!rec) return null;
@@ -343,26 +395,32 @@ export async function getPreventivo(idOrDisplayId: string): Promise<{
     (rec.fields['ID Preventivo'] as string) ||
     undefined;
 
-  // 3) colli collegati (linked "Preventivi") o match testuale "Preventivo_Id"
+  // 3) carica i COLLI collegati con filterByFormula (niente scansione totale)
   const colli: Array<{ id: string; fields: any }> = [];
-  await b(TB_COLLI)
-    .select({ pageSize: 100 })
-    .eachPage((rows, next) => {
-      for (const r of rows) {
-        const f = r.fields || {};
+  try {
+    const linkField = `{${C.LinkPreventivo[0]}}`;
+    const prevIdTxt = `{${C.PreventivoIdTxt[0]}}`;
+    const clauses = [
+      // linked records contengono l'id nel join dell'array
+      `FIND("${qe(rec.id)}", ARRAYJOIN(${linkField}))`,
+      // match su campo testuale eventuale
+      `${prevIdTxt}="${qe(rec.id)}"`,
+      displayId ? `${prevIdTxt}="${qe(displayId)}"` : '',
+    ]
+      .filter(Boolean)
+      .join(',');
 
-        const linkedArr: string[] = Array.isArray(f[C.LinkPreventivo[0]])
-          ? (f[C.LinkPreventivo[0]] as string[])
-          : [];
-        const linked = linkedArr.includes(rec.id);
+    const filterByFormula = `OR(${clauses})`;
 
-        const txt = String(f[C.PreventivoIdTxt[0]] ?? '').trim();
-        const txtMatch = !!txt && (txt === rec.id || (displayId && txt === displayId));
-
-        if (linked || txtMatch) colli.push({ id: r.id, fields: r.fields });
-      }
-      next();
-    });
+    await b(TB_COLLI)
+      .select({ pageSize: 100, filterByFormula })
+      .eachPage((rows, next) => {
+        for (const r of rows) colli.push({ id: r.id, fields: r.fields });
+        next();
+      });
+  } catch (e) {
+    console.warn('[airtable.quotes] getPreventivo: lettura colli fallita', e);
+  }
 
   return { id: rec.id, displayId, fields: rec.fields, colli };
 }
