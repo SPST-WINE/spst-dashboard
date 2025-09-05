@@ -249,7 +249,8 @@ export async function listPreventivi(
 ): Promise<Array<{ id: string; fields: any; displayId?: string }>> {
   const b = base();
 
-  const fetchAll = async (params: Airtable.SelectOptions) =>
+  // NB: usiamo `any` per evitare problemi con i generics di Airtable typings
+  const fetchAll = async (params: any) =>
     new Promise<Array<{ id: string; fields: any }>>((resolve, reject) => {
       const out: Array<{ id: string; fields: any }> = [];
       b(TB_PREVENTIVI)
@@ -263,7 +264,7 @@ export async function listPreventivi(
         );
     });
 
-  // 1) prova con ordinamento per "Last modified time"
+  // 1) tenta sort per "Last modified time"
   let rows: Array<{ id: string; fields: any }>;
   try {
     rows = await fetchAll({
@@ -271,7 +272,7 @@ export async function listPreventivi(
       sort: [{ field: 'Last modified time', direction: 'desc' }],
     });
   } catch (e: any) {
-    // 2) se il campo non esiste nella base → fallback senza sort
+    // 2) se il campo non esiste → fallback senza sort
     if (e?.statusCode === 422 || e?.error === 'UNKNOWN_FIELD_NAME') {
       console.warn('[airtable.quotes] listPreventivi: sort field missing, fallback to unsorted.', {
         message: e?.message,
@@ -289,7 +290,7 @@ export async function listPreventivi(
     }
   }
 
-  // 3) eventuale filtro per email lato Node
+  // 3) filtro opzionale per email
   let filtered = rows;
   if (opts?.email) {
     const needle = String(opts.email).toLowerCase();
@@ -302,7 +303,7 @@ export async function listPreventivi(
     );
   }
 
-  // 4) aggiungo displayId (ID_Preventivo o simili) per la UI
+  // 4) aggiungo displayId per la UI (ID_Preventivo o simili)
   return filtered.map((r) => ({
     id: r.id,
     displayId:
@@ -313,5 +314,3 @@ export async function listPreventivi(
     fields: r.fields,
   }));
 }
-
-
