@@ -180,7 +180,7 @@ try {
 }
 */
 
-// ---- QUOTES (portale) ------------------------------------------------------
+// ---- QUOTAZIONI (preventivi) ----------------------------------------------
 
 export type QuoteParty = {
   ragioneSociale: string;
@@ -194,30 +194,61 @@ export type QuoteParty = {
 
 export type QuoteCollo = {
   quantita?: number;
-  lunghezza_cm?: number|null;
-  larghezza_cm?: number|null;
-  altezza_cm?: number|null;
-  peso_kg?: number|null;
+  lunghezza_cm?: number | null;
+  larghezza_cm?: number | null;
+  altezza_cm?: number | null;
+  peso_kg?: number | null;
+};
+
+// payload “flessibile” allineato alla route /api/quotazioni
+export type QuoteCreatePayload = {
+  createdByEmail?: string;
+  customerEmail?: string;
+  valuta?: 'EUR' | 'USD' | 'GBP';
+  ritiroData?: string;            // ISO date (YYYY-MM-DD o full ISO)
+  noteGeneriche?: string;
+  tipoSped?: 'B2B' | 'B2C' | 'Sample';
+  incoterm?: 'DAP' | 'DDP' | 'EXW';
+  mittente?: QuoteParty;
+  destinatario?: QuoteParty;
+  colli?: QuoteCollo[];
 };
 
 export async function postPreventivo(
-  payload: {
-    mittente: QuoteParty;
-    destinatario: QuoteParty;
-    colli: QuoteCollo[];
-    valuta: 'EUR'|'USD'|'GBP';
-    note?: string;
-  },
+  payload: QuoteCreatePayload,
   getIdToken?: GetIdToken
-): Promise<{ ok: true; id: string }> {
-  return request('/api/quotes', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  }, getIdToken);
+): Promise<{ ok: true; id: string; displayId?: string }> {
+  return request(
+    '/api/quotazioni',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+    getIdToken
+  );
 }
 
+/** Lista preventivi (ritorna rows come dalla route /api/quotazioni) */
 export async function getPreventivi(getIdToken?: GetIdToken): Promise<any[]> {
-  const json = await request<{ ok: boolean; rows: any[] }>('/api/quotes', { method: 'GET' }, getIdToken);
+  const json = await request<{ ok: boolean; rows: any[] }>(
+    '/api/quotazioni',
+    { method: 'GET' },
+    getIdToken
+  );
   return Array.isArray(json?.rows) ? json.rows : [];
+}
+
+/** Dettaglio preventivo singolo (se implementato in /api/quotazioni/[id]) */
+export async function getPreventivoDettaglio(
+  id: string,
+  getIdToken?: GetIdToken
+): Promise<any | undefined> {
+  if (!id) return undefined;
+  const json = await request<{ ok: boolean; row: any }>(
+    `/api/quotazioni/${encodeURIComponent(id)}`,
+    { method: 'GET' },
+    getIdToken
+  );
+  return json?.row;
 }
