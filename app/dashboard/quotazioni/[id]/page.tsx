@@ -1,250 +1,187 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
 import { getIdToken } from '@/lib/firebase-client-auth';
+import Link from 'next/link';
 
-type ApiRow = {
+type Row = {
   id: string;
   displayId?: string;
   fields: Record<string, any>;
   colli: Array<{ id: string; fields: Record<string, any> }>;
 };
 
-function prettyDate(d?: string) {
-  if (!d) return '—';
-  try {
-    const dt = new Date(d);
-    if (Number.isNaN(+dt)) return '—';
-    return dt.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  } catch {
-    return '—';
-  }
-}
-
-// ---- alias lato UI (tolleranti, uguali a quelli del backend) ----
-const F = {
-  Stato: ['Stato', 'Status'],
-  TipoSped: ['Tipo_Spedizione', 'Tipo spedizione', 'Tipo Spedizione', 'Tipologia', 'Tipo', 'TipoSped'],
-  Incoterm: ['Incoterm', 'Incoterms', 'Incoterm_Selezionato', 'Incoterm Selezionato'],
-  RitiroData: ['Ritiro_Data', 'Data_Ritiro', 'RitiroData', 'PickUp_Date'],
-
-  M_Nome: ['Mittente_Nome', 'Mittente', 'Ragione sociale Mittente', 'Mittente RS'],
-  M_Ind: ['Mittente_Indirizzo', 'Indirizzo Mittente', 'Mittente Indirizzo'],
-  M_CAP: ['Mittente_CAP', 'CAP Mittente'],
-  M_Citta: ['Mittente_Citta', 'Città Mittente', 'Mittente Citta'],
-  M_Paese: ['Mittente_Paese', 'Paese Mittente'],
-
-  D_Nome: ['Destinatario_Nome', 'Destinatario', 'Ragione sociale Destinatario', 'Destinatario RS'],
-  D_Ind: ['Destinatario_Indirizzo', 'Indirizzo Destinatario'],
-  D_CAP: ['Destinatario_CAP', 'CAP Destinatario'],
-  D_Citta: ['Destinatario_Citta', 'Città Destinatario', 'Destinatario Citta'],
-  D_Paese: ['Destinatario_Paese', 'Paese Destinatario'],
-} as const;
-
-const C = {
-  Qty: ['Quantita', 'Quantità', 'Qty', 'Q.ta'],
-  L: ['Lato 1', 'Lato1', 'L_cm', 'Lunghezza', 'L'],
-  W: ['Lato 2', 'Lato2', 'W_cm', 'Larghezza', 'W'],
-  H: ['Lato 3', 'Lato3', 'H_cm', 'Altezza', 'H'],
-  Peso: ['Peso (Kg)', 'Peso_Kg', 'Peso', 'Kg', 'Weight'],
-} as const;
-
-function pick(fields: Record<string, any>, aliases: readonly string[], fallback: any = undefined) {
-  for (const k of aliases) {
-    if (fields[k] != null && fields[k] !== '') return fields[k];
+function getFirst<T = string>(f: Record<string, any>, keys: string[], fallback: any = undefined): T | undefined {
+  for (const k of keys) {
+    const v = f?.[k];
+    if (v != null && v !== '') return v as T;
   }
   return fallback;
 }
 
-export default function QuoteDetailPage() {
-  const router = useRouter();
-  const params = useParams<{ id: string }>();
-  const id = decodeURIComponent(params.id || '');
-  const [row, setRow] = useState<ApiRow | null>(null);
+function fmtDate(d?: string) {
+  if (!d) return undefined;
+  const x = new Date(d);
+  if (isNaN(x.getTime())) return undefined;
+  return x.toLocaleDateString();
+}
+
+export default function QuoteDetailPage({ params }: { params: { id: string } }) {
+  const [row, setRow] = useState<Row | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
     let abort = false;
     (async () => {
+      setLoading(true);
+      setNotFound(false);
       try {
-        setLoading(true);
         const token = await getIdToken();
-        const res = await fetch(`/api/quotazioni/${encodeURIComponent(id)}`, {
+        const res = await fetch(`/api/quotazioni/${encodeURIComponent(params.id)}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
-        const json = await res.json().catch(() => ({}));
-        if (!abort) {
-          if (res.ok && json?.ok && json?.row) setRow(json.row as ApiRow);
-          else setRow(null);
+        if (res.status === 404) {
+          if (!abort) setNotFound(true);
+          return;
         }
+        const json = await res.json();
+        if (!abort && json?.ok) setRow(json.row as Row);
       } catch {
-        if (!abort) setRow(null);
+        // noop
       } finally {
         if (!abort) setLoading(false);
       }
     })();
-    return () => {
-      abort = true;
-    };
-  }, [id]);
+    return () => { abort = true; };
+  }, [params.id]);
 
   const f = row?.fields || {};
-  const stato = (pick(f, F.Stato) as string) || 'In lavorazione'; // fallback richiesto
-  const tipoSped = pick(f, F.TipoSped, '—') as string | undefined;
-  const incoterm = pick(f, F.Incoterm, '—') as string | undefined;
-  const ritiro = pick(f, F.RitiroData) as string | undefined;
 
-  const mittente = {
-    nome: pick(f, F.M_Nome, '—'),
-    ind: pick(f, F.M_Ind),
-    cap: pick(f, F.M_CAP),
-    citta: pick(f, F.M_Citta),
-    paese: pick(f, F.M_Paese),
-  };
-  const destinatario = {
-    nome: pick(f, F.D_Nome, '—'),
-    ind: pick(f, F.D_Ind),
-    cap: pick(f, F.D_CAP),
-    citta: pick(f, F.D_Citta),
-    paese: pick(f, F.D_Paese),
-  };
+  // alias lato UI (solo lettura)
+  const displayId = row?.displayId || getFirst<string>(f, ['ID_Preventivo', 'ID Preventivo']) || params.id;
+
+  const stato = getFirst<string>(f, ['Stato', 'Status'], '—');
+  const incoterm = getFirst<string>(f, ['Incoterm', 'Incoterms', 'Incoterm_Selezionato', 'Incoterm Selezionato'], '—');
+  const tipoSped = getFirst<string>(f, ['Tipo_Spedizione', 'Tipo spedizione', 'Tipo Spedizione', 'Tipologia', 'Tipo', 'TipoSped'], '—');
+  const dataRitiroRaw = getFirst<string>(
+    f,
+    ['Ritiro_Data', 'Data_Ritiro', 'RitiroData', 'PickUp_Date', 'Data ritiro', 'Data Ritiro', ' Data Ritiro ']
+  );
+  const dataRitiro = fmtDate(dataRitiroRaw) || '—';
+
+  const mittenteRag = getFirst<string>(f, ['Mittente_Nome', 'Mittente', 'Ragione sociale Mittente', 'Mittente RS'], '—');
+  const mittenteAddr = [
+    getFirst<string>(f, ['Mittente_Indirizzo', 'Indirizzo Mittente', 'Mittente Indirizzo']),
+    [getFirst<string>(f, ['Mittente_Citta', 'Città Mittente', 'Mittente Citta']), getFirst<string>(f, ['Mittente_CAP', 'CAP Mittente'])].filter(Boolean).join(' '),
+    getFirst<string>(f, ['Mittente_Paese', 'Paese Mittente']),
+  ].filter(Boolean).join(', ') || '—';
+
+  const destRag = getFirst<string>(f, ['Destinatario_Nome', 'Destinatario', 'Ragione sociale Destinatario', 'Destinatario RS'], '—');
+  const destAddr = [
+    getFirst<string>(f, ['Destinatario_Indirizzo', 'Indirizzo Destinatario']),
+    [getFirst<string>(f, ['Destinatario_Citta', 'Città Destinatario', 'Destinatario Citta']), getFirst<string>(f, ['Destinatario_CAP', 'CAP Destinatario'])].filter(Boolean).join(' '),
+    getFirst<string>(f, ['Destinatario_Paese', 'Paese Destinatario']),
+  ].filter(Boolean).join(', ') || '—';
 
   const colli = useMemo(() => {
-    const list = row?.colli || [];
-    return list.map((r) => {
-      const cf = r.fields || {};
-      const qty = pick(cf, C.Qty) ?? 1;
-      const l = pick(cf, C.L);
-      const w = pick(cf, C.W);
-      const h = pick(cf, C.H);
-      const peso = pick(cf, C.Peso);
-      return { id: r.id, qty, l, w, h, peso };
+    return (row?.colli || []).map((c, i) => {
+      const cf = c.fields || {};
+      const qta = getFirst<number>(cf, ['Quantita', 'Quantità', 'Qty', 'Q.ta'], 1) ?? 1;
+      const l = getFirst<number>(cf, ['L_cm', 'Lato 1', 'Lato1', 'Lunghezza', 'L']);
+      const w = getFirst<number>(cf, ['W_cm', 'Lato 2', 'Lato2', 'Larghezza', 'W']);
+      const h = getFirst<number>(cf, ['H_cm', 'Lato 3', 'Lato3', 'Altezza', 'H']);
+      const peso = getFirst<number>(cf, ['Peso', 'Peso (Kg)', 'Peso_Kg', 'Kg', 'Weight'], 0) ?? 0;
+      const dims = (l || w || h) ? `${l ?? '—'} × ${w ?? '—'} × ${h ?? '—'}` : '—';
+      return { i: i + 1, qta, dims, peso };
     });
-  }, [row]);
-
-  if (loading) {
-    return <div className="text-sm text-slate-500">Caricamento…</div>;
-  }
-
-  if (!row) {
-    return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Dettaglio preventivo</h1>
-        <div className="rounded-xl border bg-white p-4 text-rose-600">Preventivo non trovato.</div>
-        <div className="mt-4">
-          <button
-            onClick={() => router.push('/dashboard/quotazioni')}
-            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
-          >
-            Torna alla lista
-          </button>
-        </div>
-      </div>
-    );
-  }
+  }, [row?.colli]);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Dettaglio preventivo</h1>
-        <button
-          onClick={() => router.push('/dashboard/quotazioni')}
-          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
-        >
-          Torna alla lista
-        </button>
-      </div>
+      <h2 className="text-lg font-semibold">Dettaglio preventivo</h2>
 
-      {/* Header info */}
-      <div className="rounded-2xl border bg-white p-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500">ID Preventivo</div>
-            <div className="font-medium">{row.displayId || row.id}</div>
-          </div>
-          <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500">Stato</div>
-            <div className="font-medium">{stato || 'In lavorazione'}</div>
-          </div>
-
-          <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500">Tipo spedizione</div>
-            <div className="font-medium">{tipoSped || '—'}</div>
-          </div>
-          <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500">Incoterm</div>
-            <div className="font-medium">{incoterm || '—'}</div>
-          </div>
-
-          <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500">Data ritiro</div>
-            <div className="font-medium">{prettyDate(ritiro)}</div>
-          </div>
+      {loading && <div className="text-sm text-slate-500">Caricamento…</div>}
+      {!loading && notFound && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          Preventivo non trovato.
         </div>
-      </div>
+      )}
 
-      {/* Mittente / Destinatario */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border bg-white p-4">
-          <div className="text-sm font-semibold text-spst-blue mb-1">Mittente</div>
-          <div className="text-sm">
-            <div className="font-medium">{mittente.nome}</div>
-            <div className="text-slate-600">
-              {[mittente.ind, [mittente.citta, mittente.cap].filter(Boolean).join(' '), mittente.paese]
-                .filter(Boolean)
-                .join(', ')}
+      {!loading && !!row && (
+        <>
+          <div className="rounded-xl border bg-white p-4 shadow-sm">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div>
+                <div className="text-xs uppercase text-slate-500">ID preventivo</div>
+                <div className="font-medium">{displayId}</div>
+                <div className="mt-4 text-xs uppercase text-slate-500">Tipo spedizione</div>
+                <div className="font-medium">{tipoSped}</div>
+                <div className="mt-4 text-xs uppercase text-slate-500">Data ritiro</div>
+                <div className="font-medium">{dataRitiro}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase text-slate-500">Stato</div>
+                <div className="font-medium">{stato}</div>
+                <div className="mt-4 text-xs uppercase text-slate-500">Incoterm</div>
+                <div className="font-medium">{incoterm}</div>
+              </div>
             </div>
           </div>
-        </div>
-        <div className="rounded-2xl border bg-white p-4">
-          <div className="text-sm font-semibold text-spst-blue mb-1">Destinatario</div>
-          <div className="text-sm">
-            <div className="font-medium">{destinatario.nome}</div>
-            <div className="text-slate-600">
-              {[destinatario.ind, [destinatario.citta, destinatario.cap].filter(Boolean).join(' '), destinatario.paese]
-                .filter(Boolean)
-                .join(', ')}
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="rounded-xl border bg-white p-4 shadow-sm">
+              <div className="text-sm font-medium">Mittente</div>
+              <div className="mt-1 text-sm text-slate-700">
+                <div className="font-medium">{mittenteRag}</div>
+                <div className="text-slate-500">{mittenteAddr}</div>
+              </div>
+            </div>
+            <div className="rounded-xl border bg-white p-4 shadow-sm">
+              <div className="text-sm font-medium">Destinatario</div>
+              <div className="mt-1 text-sm text-slate-700">
+                <div className="font-medium">{destRag}</div>
+                <div className="text-slate-500">{destAddr}</div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Colli */}
-      <div className="rounded-2xl border bg-white p-4">
-        <div className="text-sm font-semibold text-spst-blue mb-3">Colli</div>
-
-        {colli.length === 0 ? (
-          <div className="text-sm text-slate-500">Nessun collo indicato.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-600">
-                  <th className="py-2 pr-3">#</th>
-                  <th className="py-2 pr-3">Quantità</th>
-                  <th className="py-2 pr-3">Dimensioni (cm)</th>
-                  <th className="py-2 pr-3">Peso (kg)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {colli.map((c, idx) => {
-                  const dims = [c.l, c.w, c.h].every((v) => v != null)
-                    ? `${c.l} × ${c.w} × ${c.h}`
-                    : '—';
-                  return (
-                    <tr key={c.id} className="border-t">
-                      <td className="py-2 pr-3">{idx + 1}</td>
-                      <td className="py-2 pr-3">{c.qty ?? 1}</td>
-                      <td className="py-2 pr-3">{dims}</td>
-                      <td className="py-2 pr-3">{c.peso ?? '—'}</td>
+          <div className="rounded-xl border bg-white p-4 shadow-sm">
+            <div className="text-sm font-medium mb-3">Colli</div>
+            {colli.length === 0 ? (
+              <div className="text-sm text-slate-500">Nessun collo indicato.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500">
+                      <th className="py-2 pr-4">#</th>
+                      <th className="py-2 pr-4">Quantità</th>
+                      <th className="py-2 pr-4">Dimensioni (cm)</th>
+                      <th className="py-2 pr-0">Peso (kg)</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {colli.map((c) => (
+                      <tr key={c.i} className="border-t">
+                        <td className="py-2 pr-4">{c.i}</td>
+                        <td className="py-2 pr-4">{c.qta}</td>
+                        <td className="py-2 pr-4">{c.dims}</td>
+                        <td className="py-2 pr-0">{c.peso}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        )}
+        </>
+      )}
+
+      <div>
+        <Link href="/dashboard/quotazioni" className="rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50">
+          Torna alla lista
+        </Link>
       </div>
     </div>
   );
