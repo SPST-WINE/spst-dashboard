@@ -183,58 +183,107 @@ export default function NuovaQuotazionePage() {
     }
   }
 
-  // Success UI con ID_Preventivo (formula)
-  if (success) {
-    return (
-      <div ref={topRef} className="space-y-4">
-        <h2 className="text-lg font-semibold">Quotazione inviata</h2>
+  // Success UI
+if (okId) {
+  return (
+    <div ref={topRef} className="space-y-4">
+      <h2 className="text-lg font-semibold">Quotazione inviata</h2>
 
-        <div className="rounded-2xl border bg-white p-4">
-          <div className="mb-3 text-sm">
-            <div className="font-medium">ID Preventivo</div>
-            <div className="font-mono">{success.displayId}</div>
-            <div className="text-xs text-slate-500">Record: {success.recId}</div>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2 text-sm">
-            <div><span className="text-slate-500">Tipo spedizione:</span> {success.tipoSped}</div>
-            <div><span className="text-slate-500">Incoterm:</span> {success.incoterm}</div>
-            <div><span className="text-slate-500">Data ritiro:</span> {success.dataRitiro ?? '—'}</div>
-            <div><span className="text-slate-500">Colli:</span> {success.colli} ({success.formato})</div>
-            <div><span className="text-slate-500">Contenuto:</span> {success.contenuto || '—'}</div>
-
-            <div className="md:col-span-2 mt-2 text-slate-700">
-              <div className="font-medium mb-1">Mittente</div>
-              <div>{success.mittente.ragioneSociale || '—'}</div>
-              <div className="text-xs text-slate-500">
-                {success.mittente.indirizzo || '—'}{success.mittente.citta ? `, ${success.mittente.citta}` : ''} {success.mittente.cap || ''} {success.mittente.paese || ''}
+      <div className="rounded-2xl border bg-white p-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <div className="text-sm">
+              <div className="font-medium">ID Preventivo</div>
+              <div className="font-mono">
+                {okDisplayId || '—'}
               </div>
             </div>
 
-            <div className="md:col-span-2 text-slate-700">
-              <div className="font-medium mb-1">Destinatario</div>
-              <div>{success.destinatario.ragioneSociale || '—'}</div>
-              <div className="text-xs text-slate-500">
-                {success.destinatario.indirizzo || '—'}{success.destinatario.citta ? `, ${success.destinatario.citta}` : ''} {success.destinatario.cap || ''} {success.destinatario.paese || ''}
+            <div className="mt-3 text-sm">
+              <div className="font-medium">Tipo spedizione</div>
+              <div>{tipoSped || '—'}</div>
+            </div>
+
+            <div className="mt-3 text-sm">
+              <div className="font-medium">Data ritiro</div>
+              <div>{ritiroData ? ritiroData.toLocaleDateString() : '—'}</div>
+            </div>
+
+            <div className="mt-3 text-sm">
+              <div className="font-medium">Mittente</div>
+              <div>{mittente.ragioneSociale || '—'}</div>
+              <div className="text-slate-500 text-xs">
+                {[mittente.indirizzo, mittente.cap, mittente.citta, mittente.paese].filter(Boolean).join(' ')}
               </div>
             </div>
 
-            {success.note && (
-              <div className="md:col-span-2">
-                <div className="text-slate-500">Note:</div>
-                <pre className="whitespace-pre-wrap text-xs">{success.note}</pre>
+            <div className="mt-3 text-sm">
+              <div className="font-medium">Destinatario</div>
+              <div>{destinatario.ragioneSociale || '—'}</div>
+              <div className="text-slate-500 text-xs">
+                {[destinatario.indirizzo, destinatario.cap, destinatario.citta, destinatario.paese].filter(Boolean).join(' ')}
               </div>
-            )}
+            </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Link href="/dashboard/quotazioni" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">Le mie quotazioni</Link>
-            <Link href="/dashboard/quotazioni/nuova" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">Nuova quotazione</Link>
+          <div>
+            <div className="text-sm">
+              <div className="font-medium">Incoterm</div>
+              <div>{incoterm || '—'}</div>
+            </div>
+
+            <div className="mt-3 text-sm">
+              <div className="font-medium">Colli</div>
+              <div className="overflow-x-auto rounded-lg border mt-1">
+                <table className="min-w-[440px] text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">#</th>
+                      <th className="px-3 py-2 text-left font-medium">L (cm)</th>
+                      <th className="px-3 py-2 text-left font-medium">W (cm)</th>
+                      <th className="px-3 py-2 text-left font-medium">H (cm)</th>
+                      <th className="px-3 py-2 text-left font-medium">Peso (Kg)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {colli.map((c, i) => (
+                      <tr key={i} className="border-t">
+                        <td className="px-3 py-2">{i + 1}</td>
+                        <td className="px-3 py-2">{c.lunghezza_cm ?? '—'}</td>
+                        <td className="px-3 py-2">{c.larghezza_cm ?? '—'}</td>
+                        <td className="px-3 py-2">{c.altezza_cm ?? '—'}</td>
+                        <td className="px-3 py-2">{c.peso_kg ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="text-xs text-slate-500 mt-1">
+                Formato: {formato} {contenuto ? `• Contenuto: ${contenuto}` : ''}
+              </div>
+            </div>
+
+            <div className="mt-3 text-sm">
+              <div className="font-medium">Note</div>
+              <div className="whitespace-pre-line">{noteGeneriche || '—'}</div>
+              {ritiroNote ? <div className="text-xs text-slate-500 mt-1">Note ritiro: {ritiroNote}</div> : null}
+            </div>
           </div>
         </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link href="/dashboard/quotazioni" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">
+            Le mie quotazioni
+          </Link>
+          <Link href="/dashboard/quotazioni/nuova" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">
+            Nuova quotazione
+          </Link>
+        </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
+
 
   // FORM
   return (
