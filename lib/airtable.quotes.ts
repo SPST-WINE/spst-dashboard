@@ -65,7 +65,7 @@ const F = {
   EmailCliente: ['Email_Cliente', 'Email Cliente', 'Cliente_Email', 'Customer_Email'],
   CreatoDaEmail: ['CreatoDaEmail', 'Creato da (email)', 'Created By Email', 'Creato da Email'],
   Valuta: ['Valuta', 'Currency'],
-  RitiroData: ['Ritiro_Data', 'Data_Ritiro', 'RitiroData', 'PickUp_Date'],
+  RitiroData: ['Ritiro_Data', 'Data_Ritiro', 'RitiroData', 'PickUp_Date', 'Data ritiro'],
   NoteGeneriche: [
     'Note generiche sulla spedizione',
     'Note_Spedizione',
