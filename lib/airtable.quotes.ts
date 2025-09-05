@@ -350,7 +350,7 @@ const COLLI_ALIASES = {
   Qty: ['Quantita','Quantità','Qta','Qty'],
 } as const;
 
-function pickFirstNumberField(fields: Record<string, any>, aliases: string[]): number | undefined {
+function pickFirstNumberField(fields: Record<string, any>, aliases: ReadonlyArray<string>): number | undefined {
   for (const k of aliases) {
     const raw = fields?.[k];
     const n = parseNum(raw);
