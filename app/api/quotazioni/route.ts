@@ -59,28 +59,44 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // Email autenticata
-    const authEmail = await getEmailFromAuth(req);
+    // se non arriva, prendo l'email dall'autenticazione e la salvo in CreatoDaEmail
+    if (!body.createdByEmail) {
+      const email = await getEmailFromAuth(req);
+      if (email) body.createdByEmail = email;
+    }
 
-    // Compat: se la UI non passa customerEmail, usa l’email autenticata
-    if (!body.customerEmail) body.customerEmail = authEmail;
-    // E salviamo comunque anche "Creato da (email)"
-    if (!body.createdByEmail) body.createdByEmail = authEmail;
+    // normalizzo data ritiro (accetto varie chiavi)
+    const ritiroRaw: string | Date | undefined =
+      body.ritiroData ??
+      body.dataRitiro ??
+      body['Data Ritiro'] ??
+      body.ritiro_date ??
+      undefined;
 
-    // Compat: alcune UI inviano "note" -> mappa su "noteGeneriche"
-    if (body.note && !body.noteGeneriche) body.noteGeneriche = body.note;
+    // normalizzo i colli: quantita/lunghezza/larghezza/altezza -> qty/l1_cm/l2_cm/l3_cm
+    const normalizedColli = Array.isArray(body.colli)
+      ? body.colli.map((c: any) => ({
+          qty: c?.qty ?? c?.quantita ?? c?.quantity ?? 1,
+          l1_cm: c?.l1_cm ?? c?.lunghezza_cm ?? c?.length_cm ?? c?.l ?? null,
+          l2_cm: c?.l2_cm ?? c?.larghezza_cm ?? c?.width_cm ?? c?.w ?? null,
+          l3_cm: c?.l3_cm ?? c?.altezza_cm ?? c?.height_cm ?? c?.h ?? null,
+          peso_kg: c?.peso_kg ?? c?.peso ?? c?.weight_kg ?? c?.kg ?? null,
+        }))
+      : [];
 
     const created = await createPreventivo({
       createdByEmail: body.createdByEmail,
       customerEmail: body.customerEmail,
       valuta: body.valuta,
-      ritiroData: body.ritiroData,
-      noteGeneriche: body.noteGeneriche,
+      ritiroData: ritiroRaw ? new Date(ritiroRaw).toISOString() : undefined,
+      noteGeneriche: body.noteGeneriche ?? body.note ?? undefined,
+      // nuovi:
       tipoSped: body.tipoSped,
       incoterm: body.incoterm,
+      // parti & colli
       mittente: body.mittente,
       destinatario: body.destinatario,
-      colli: body.colli,
+      colli: normalizedColli,
     });
 
     return NextResponse.json(
