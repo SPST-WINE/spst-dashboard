@@ -504,3 +504,8 @@ export async function getPreventivo(
   } catch (e: any) {
     _push(debug, 'colliQuery:error', { message: e?.message, status: e?.statusCode });
   }
+
+    _push(debug, 'OK', { recId: rec.id, displayId, colli: colli.length });
+  return { id: rec.id, displayId, fields: rec.fields, colli };
+}
+
