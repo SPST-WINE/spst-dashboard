@@ -332,9 +332,7 @@ export async function listPreventivi(opts?: {
 }
 
 /* ============================ GET ============================== */
-// Cerca per recordId o per ID_Preventivo/ID Preventivo (anche normalizzato).
-// lib/airtable.quotes.ts (solo funzione getPreventivo)
-// lib/airtable.quotes.ts
+// --- helpers di logging (lascia come sono, o aggiungili se non ci sono già)
 const DEBUG_QUOTES = process.env.DEBUG_QUOTES === '1';
 function _log(...args: any[]) { if (DEBUG_QUOTES) console.log('[quotes]', ...args); }
 function _push(dbg: any[] | undefined, label: string, extra?: any) {
@@ -343,14 +341,53 @@ function _push(dbg: any[] | undefined, label: string, extra?: any) {
   _log(label, extra ?? '');
 }
 
-const CANDIDATE_DISPLAY_FIELDS = [
+// --- ordine dei campi da provare (uno per volta)
+const DISPLAY_FIELDS_TRY_ORDER = [
   'ID_Preventivo',
   'ID Preventivo',
-  'Name',
-  'Preventivo',
-  'Numero_Preventivo',
-  'Numero Preventivo',
-];
+  // se vuoi estendere, aggiungi qui, ma senza rompere:
+  // 'Name', 'Preventivo', 'Numero_Preventivo', 'Numero Preventivo'
+] as const;
+
+// Prova a cercare per un singolo campo; ignora elegantemente i campi inesistenti
+async function tryFindByField(
+  b: ReturnType<typeof base>,
+  field: string,
+  raw: string,
+  norm: string,
+  debug?: any[],
+) {
+  const esc = (s: string) => s.replace(/"/g, '\\"');
+
+  // 1) match esatto
+  for (const ff of [
+    `{${field}}="${esc(raw)}"`,
+    // 2) match normalizzato: minuscole + rimozione spazi
+    `LOWER(SUBSTITUTE({${field}}," ",""))="${esc(norm)}"`,
+  ]) {
+    try {
+      const found: any[] = [];
+      await b(TB_PREVENTIVI)
+        .select({ pageSize: 10, filterByFormula: ff })
+        .eachPage((rows, next) => { found.push(...rows); next(); });
+
+      _push(debug, 'probeField:ok', { field, filterByFormula: ff, count: found.length });
+      if (found.length) return found[0];
+    } catch (e: any) {
+      const msg = e?.message || '';
+      if (/Unknown field names?/i.test(msg)) {
+        _push(debug, 'probeField:unknown', { field, message: msg });
+        // Campo inesistente: interrompi ulteriori tentativi su questo campo
+        break;
+      } else {
+        _push(debug, 'probeField:error', { field, message: msg });
+        // altri errori: continua con l'altra variante o col prossimo campo
+      }
+    }
+  }
+
+  return null;
+}
 
 export async function getPreventivo(
   idOrDisplayId: string,
@@ -367,70 +404,54 @@ export async function getPreventivo(
   const norm = raw.toLowerCase().replace(/\s+/g, '');
   _push(debug, 'input', { raw, norm, TB_PREVENTIVI, TB_COLLI });
 
-  // 1) tentativo recordId diretto
+  // 1) tentativo come recordId diretto
   let rec: any | null = null;
   try {
     rec = await b(TB_PREVENTIVI).find(raw);
-    _push(debug, 'findByRecordId', { success: !!rec, id: raw });
+    _push(debug, 'findByRecordId', { success: !!rec, idTried: raw });
   } catch (e: any) {
     _push(debug, 'findByRecordId:error', { message: e?.message, status: e?.statusCode });
   }
 
-  // 2) ricerca per ID visuale con normalizzazione
+  // 2) se non trovato, prova i campi display uno per volta
   if (!rec) {
-    const esc = (s: string) => s.replace(/"/g, '\\"');
-    const ors = CANDIDATE_DISPLAY_FIELDS.map((f) =>
-      `OR({${f}}="${esc(raw)}", LOWER(SUBSTITUTE({${f}}," ",""))="${esc(norm)}")`
-    ).join(',');
-    const filterByFormula = `OR(${ors})`;
-    _push(debug, 'searchByFormula:start', { filterByFormula, fields: CANDIDATE_DISPLAY_FIELDS });
-
-    const found: any[] = [];
-    await b(TB_PREVENTIVI)
-      .select({ pageSize: 10, filterByFormula })
-      .eachPage((rows, next) => { found.push(...rows); next(); });
-
-    _push(debug, 'searchByFormula:done', {
-      count: found.length,
-      ids: found.map(r => r.id),
-      samples: found.slice(0, 3).map(r => ({
-        id: r.id,
-        ID_Preventivo: r.fields['ID_Preventivo'],
-        ID_Preventivo_spazio: r.fields['ID Preventivo'],
-        Name: r.fields['Name'],
-      })),
-    });
-
-    rec = found[0] || null;
+    for (const field of DISPLAY_FIELDS_TRY_ORDER) {
+      rec = await tryFindByField(b, field, raw, norm, debug);
+      if (rec) { _push(debug, 'matchedField', { field }); break; }
+    }
   }
 
   if (!rec) {
-    _push(debug, 'NOT_FOUND', { triedFields: CANDIDATE_DISPLAY_FIELDS });
-    _log('getPreventivo NOT_FOUND', { raw, norm });
+    _push(debug, 'NOT_FOUND', { triedFields: DISPLAY_FIELDS_TRY_ORDER });
     return null;
   }
 
+  // displayId robusto (solo i due campi principali che conosciamo davvero)
   const displayId =
     (rec.fields['ID_Preventivo'] as string) ||
     (rec.fields['ID Preventivo'] as string) ||
     undefined;
 
-  // 3) colli collegati — query filtrata (no scansione intera tabella)
+  // 3) colli collegati — usa solo i due campi che sappiamo esistere in base al tuo file
   const colli: Array<{ id: string; fields: any }> = [];
   try {
-    const linkField = '{Preventivi}';
-    const prevIdTxt = '{Preventivo_Id}';
+    const linkField = '{Preventivi}';      // linked field
+    const prevIdTxt = '{Preventivo_Id}';  // testo
     const clauses = [
       `FIND("${rec.id}", ARRAYJOIN(${linkField}))`,
       `${prevIdTxt}="${rec.id}"`,
       displayId ? `${prevIdTxt}="${displayId}"` : '',
     ].filter(Boolean).join(',');
     const filterByFormulaColli = `OR(${clauses})`;
+
     _push(debug, 'colliQuery:start', { filterByFormulaColli });
 
     await b(TB_COLLI)
       .select({ pageSize: 100, filterByFormula: filterByFormulaColli })
-      .eachPage((rows, next) => { for (const r of rows) colli.push({ id: r.id, fields: r.fields }); next(); });
+      .eachPage((rows, next) => {
+        for (const r of rows) colli.push({ id: r.id, fields: r.fields });
+        next();
+      });
 
     _push(debug, 'colliQuery:done', { count: colli.length, sampleIds: colli.slice(0, 5).map(c => c.id) });
   } catch (e: any) {
@@ -438,7 +459,9 @@ export async function getPreventivo(
   }
 
   _push(debug, 'OK', { recId: rec.id, displayId, colli: colli.length });
-  _log('getPreventivo OK', { recId: rec.id, displayId, colli: colli.length });
+  return { id: rec.id, displayId, fields: rec.fields, colli };
+}
+
 
   return { id: rec.id, displayId, fields: rec.fields, colli };
 }
