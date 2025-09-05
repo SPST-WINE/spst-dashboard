@@ -160,79 +160,66 @@ async function tryCreateColloRow(
 }
 
 // ---------------------------------------------------------------
-// CREATE preventivo
+// LIST preventivi per email (filtro lato Node) + displayId & sort robusto
 // ---------------------------------------------------------------
-export async function createPreventivo(payload: PreventivoPayload): Promise<{ id: string; displayId?: string }> {
+export async function listPreventivi(opts?: { email?: string }): Promise<Array<{
+  id: string;
+  displayId?: string;
+  fields: any;
+}>> {
   const b = base();
-  const debugSet: string[] = [];
+  const all: Array<{ id: string; fields: any }> = [];
 
-  try {
-    // 1) record vuoto
-    const created = await b(TB_PREVENTIVI).create([{ fields: {} }]);
-    const recId = created[0].id;
-
-    // 2) campi base
-    // 👇 NUOVO: settiamo direttamente "In lavorazione"
-    await tryUpdateField(b, recId, F.Stato, 'In lavorazione', debugSet);
-
-    if (payload.createdByEmail) await tryUpdateField(b, recId, F.CreatoDaEmail, payload.createdByEmail, debugSet);
-    if (payload.customerEmail) await tryUpdateField(b, recId, F.EmailCliente, payload.customerEmail, debugSet);
-    if (payload.valuta) await tryUpdateField(b, recId, F.Valuta, payload.valuta, debugSet);
-    if (payload.ritiroData) await tryUpdateField(b, recId, F.RitiroData, dateOnlyISO(payload.ritiroData), debugSet);
-    if (payload.noteGeneriche) await tryUpdateField(b, recId, F.NoteGeneriche, payload.noteGeneriche, debugSet);
-
-    // tipo spedizione + incoterm
-    if (payload.tipoSped) await tryUpdateField(b, recId, F.TipoSped, payload.tipoSped, debugSet);
-    if (payload.incoterm) await tryUpdateField(b, recId, F.Incoterm, payload.incoterm, debugSet);
-
-    // 3) mittente
-    const M = payload.mittente || {};
-    if (M.ragioneSociale) await tryUpdateField(b, recId, F.M_Nome, M.ragioneSociale, debugSet);
-    if (M.indirizzo) await tryUpdateField(b, recId, F.M_Ind, M.indirizzo, debugSet);
-    if (M.cap) await tryUpdateField(b, recId, F.M_CAP, M.cap, debugSet);
-    if (M.citta) await tryUpdateField(b, recId, F.M_Citta, M.citta, debugSet);
-    if (M.paese) await tryUpdateField(b, recId, F.M_Paese, M.paese, debugSet);
-    if (M.telefono) await tryUpdateField(b, recId, F.M_Tel, M.telefono, debugSet);
-    if (M.taxId) await tryUpdateField(b, recId, F.M_Tax, M.taxId, debugSet);
-
-    // 4) destinatario
-    const D = payload.destinatario || {};
-    if (D.ragioneSociale) await tryUpdateField(b, recId, F.D_Nome, D.ragioneSociale, debugSet);
-    if (D.indirizzo) await tryUpdateField(b, recId, F.D_Ind, D.indirizzo, debugSet);
-    if (D.cap) await tryUpdateField(b, recId, F.D_CAP, D.cap, debugSet);
-    if (D.citta) await tryUpdateField(b, recId, F.D_Citta, D.citta, debugSet);
-    if (D.paese) await tryUpdateField(b, recId, F.D_Paese, D.paese, debugSet);
-    if (D.telefono) await tryUpdateField(b, recId, F.D_Tel, D.telefono, debugSet);
-    if (D.taxId) await tryUpdateField(b, recId, F.D_Tax, D.taxId, debugSet);
-
-    // 5) colli
-    if (payload.colli?.length) {
-      for (const c of payload.colli) await tryCreateColloRow(b, recId, c);
-    }
-
-    // 6) leggo l'ID visuale (formula ID_Preventivo)
-    let displayId: string | undefined;
-    try {
-      const rec = await b(TB_PREVENTIVI).find(recId);
-      displayId =
-        (rec.fields['ID_Preventivo'] as string) ||
-        (rec.fields['ID Preventivo'] as string) ||
-        (rec.fields['ID'] as string) ||
-        undefined;
-    } catch {}
-
-    console.log('[airtable.quotes] createPreventivo set fields:', debugSet);
-    return { id: recId, displayId };
-  } catch (e: any) {
-    console.error('[airtable.quotes] createPreventivo failed', {
-      message: e?.message,
-      statusCode: e?.statusCode,
-      airtable: e?.error,
-      tables: { TB_PREVENTIVI, TB_COLLI },
+  // NIENTE sort lato Airtable: alcune basi non hanno "Last modified time"
+  await b(TB_PREVENTIVI)
+    .select({ pageSize: 100 })
+    .eachPage((recs, next) => {
+      for (const r of recs) all.push({ id: r.id, fields: r.fields });
+      next();
     });
-    throw e;
-  }
+
+  // Filtro per email se richiesto
+  const filtered = (() => {
+    if (!opts?.email) return all;
+    const needle = String(opts.email).toLowerCase();
+    const emailFields = [
+      'Email_Cliente', 'Email Cliente', 'Cliente_Email', 'Customer_Email',
+      'CreatoDaEmail', 'Creato da (email)', 'Created By Email', 'Creato da Email',
+    ];
+    return all.filter(({ fields }) =>
+      emailFields.some((k) => {
+        const v = fields?.[k];
+        return typeof v === 'string' && v.toLowerCase() === needle;
+      })
+    );
+  })();
+
+  // Arricchisco con displayId
+  const rows = filtered.map((r) => ({
+    id: r.id,
+    displayId:
+      (r.fields['ID_Preventivo'] as string) ||
+      (r.fields['ID Preventivo'] as string) ||
+      undefined,
+    fields: r.fields,
+  }));
+
+  // Ordine robusto: prima per Seq (se presente), poi per displayId, poi per id
+  rows.sort((a, b) => {
+    const sa = typeof a.fields?.Seq === 'number' ? a.fields.Seq as number : null;
+    const sb = typeof b.fields?.Seq === 'number' ? b.fields.Seq as number : null;
+    if (sa != null && sb != null) return sb - sa;
+
+    const da = (a.displayId || '') as string;
+    const db = (b.displayId || '') as string;
+    if (da && db) return db.localeCompare(da);
+
+    return (b.id || '').localeCompare(a.id || '');
+  });
+
+  return rows;
 }
+
 
 // ---------------------------------------------------------------
 // GET one preventivo by recordId OR displayId (ID_Preventivo)
