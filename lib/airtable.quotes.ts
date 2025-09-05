@@ -50,7 +50,7 @@ export type PreventivoPayload = {
   createdByEmail?: string;
   customerEmail?: string;
   valuta?: 'EUR' | 'USD' | 'GBP';
-  ritiroData?: string;        // ISO date
+  ritiroData?: string;
   noteGeneriche?: string;
   tipoSped?: 'B2B' | 'B2C' | 'Sample';
   incoterm?: 'DAP' | 'DDP' | 'EXW';
@@ -62,10 +62,13 @@ export type PreventivoPayload = {
 // ---------- Alias campi ----------
 const F = {
   Stato: ['Stato', 'Status'],
-  EmailCliente: ['Email_Cliente', 'Email Cliente', 'Cliente_Email', 'Customer_Email'],
+  // alias estesi per essere super tolleranti
+  EmailCliente: [
+    'Email_Cliente', 'Email Cliente', 'Cliente_Email', 'Customer_Email',
+    'Email cliente', 'E-mail Cliente', 'E-mail_Cliente'
+  ],
   CreatoDaEmail: ['CreatoDaEmail', 'Creato da (email)', 'Created By Email', 'Creato da Email'],
   Valuta: ['Valuta', 'Currency'],
-  // includi tutte le varianti, anche con spazi
   RitiroData: [
     'Ritiro_Data', 'Data_Ritiro', 'RitiroData', 'PickUp_Date',
     'Data ritiro', 'Data Ritiro', ' Data Ritiro ', ' Data ritiro '
@@ -97,8 +100,7 @@ const F = {
 } as const;
 
 const C = {
-  // tabella "Colli"
-  LinkPreventivo: ['Preventivi', 'Preventivo', 'Link Preventivo'], // linked-record
+  LinkPreventivo: ['Preventivi', 'Preventivo', 'Link Preventivo'],
   PreventivoIdTxt: ['Preventivo_Id', 'Preventivo ID (testo)'],
   Qty: ['Quantita', 'Quantità', 'Qty', 'Q.ta'],
   L: ['L_cm', 'Lato 1', 'Lato1', 'Lunghezza', 'L'],
@@ -133,7 +135,6 @@ async function tryCreateColloRow(
   recId: string,
   c: ColloQ
 ) {
-  // 1° tentativo: con linked-record
   try {
     await b(TB_COLLI).create([{
       fields: {
@@ -149,7 +150,6 @@ async function tryCreateColloRow(
     return;
   } catch {}
 
-  // 2° tentativo: senza linked (fallback)
   try {
     await b(TB_COLLI).create([{
       fields: {
@@ -177,10 +177,12 @@ export async function createPreventivo(
   const created = await b(TB_PREVENTIVI).create([{ fields: {} }]);
   const recId = created[0].id;
 
-  // 2) campi base
+  // 2) campi base (con fallback customerEmail <- createdByEmail)
+  const customerEmail = payload.customerEmail || payload.createdByEmail;
+
   await tryUpdateField(b, recId, F.Stato, 'In lavorazione', debugSet);
   if (payload.createdByEmail) await tryUpdateField(b, recId, F.CreatoDaEmail, payload.createdByEmail, debugSet);
-  if (payload.customerEmail) await tryUpdateField(b, recId, F.EmailCliente, payload.customerEmail, debugSet);
+  if (customerEmail) await tryUpdateField(b, recId, F.EmailCliente, customerEmail, debugSet);
   if (payload.valuta) await tryUpdateField(b, recId, F.Valuta, payload.valuta, debugSet);
   if (payload.ritiroData) await tryUpdateField(b, recId, F.RitiroData, dateOnlyISO(payload.ritiroData), debugSet);
   if (payload.noteGeneriche) await tryUpdateField(b, recId, F.NoteGeneriche, payload.noteGeneriche, debugSet);
@@ -244,6 +246,7 @@ export async function listPreventivi(opts?: { email?: string }): Promise<Array<{
     const needle = String(opts.email).toLowerCase();
     const emailFields = [
       'Email_Cliente', 'Email Cliente', 'Cliente_Email', 'Customer_Email',
+      'Email cliente', 'E-mail Cliente', 'E-mail_Cliente',
       'CreatoDaEmail', 'Creato da (email)', 'Created By Email', 'Creato da Email',
     ];
     return all.filter(({ fields }) =>
@@ -288,12 +291,10 @@ export async function getPreventivo(idOrDisplayId: string): Promise<{
 
   let rec: any | null = null;
 
-  // 1) se sembra un recordId, prova find()
   if (/^rec[a-zA-Z0-9]{14}$/.test(key)) {
     try { rec = await b(TB_PREVENTIVI).find(key); } catch {}
   }
 
-  // 2) ricerca su ID_Preventivo (case/trim insensitive)
   if (!rec) {
     const fbf = `OR(
       LOWER(TRIM({ID_Preventivo}))=LOWER("${esc(key)}"),
@@ -307,7 +308,6 @@ export async function getPreventivo(idOrDisplayId: string): Promise<{
     } catch {}
   }
 
-  // 3) fallback: scan all + match lato Node
   if (!rec) {
     const all: any[] = [];
     await b(TB_PREVENTIVI)
@@ -322,33 +322,24 @@ export async function getPreventivo(idOrDisplayId: string): Promise<{
 
   if (!rec) return null;
 
-  // displayId
   const displayId =
     (rec.fields['ID_Preventivo'] as string) ||
     (rec.fields['ID Preventivo'] as string) ||
     undefined;
 
-  // colli: match per linked-record o per testo (recordId o displayId)
   const colli: Array<{ id: string; fields: any }> = [];
   await b(TB_COLLI)
     .select({ pageSize: 100 })
     .eachPage((rows, next) => {
       for (const r of rows) {
         const f = r.fields || {};
-
         const linkedArr: string[] =
           (Array.isArray(f['Preventivi']) ? f['Preventivi'] as string[] :
             Array.isArray(f['Preventivo']) ? f['Preventivo'] as string[] :
               Array.isArray(f['Link Preventivo']) ? f['Link Preventivo'] as string[] : []);
-
         const linked = linkedArr.includes(rec.id);
-
-        const txt = String(
-          f['Preventivo_Id'] ?? f['Preventivo ID (testo)'] ?? ''
-        ).trim();
-
+        const txt = String(f['Preventivo_Id'] ?? f['Preventivo ID (testo)'] ?? '').trim();
         const txtMatch = !!txt && (txt === rec.id || (displayId && txt === displayId));
-
         if (linked || txtMatch) colli.push({ id: r.id, fields: r.fields });
       }
       next();
