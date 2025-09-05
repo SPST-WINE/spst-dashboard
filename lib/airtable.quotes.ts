@@ -314,3 +314,129 @@ export async function listPreventivi(
     fields: r.fields,
   }));
 }
+
+// ---- DETTAGLIO PREVENTIVO (by recId o by ID_Preventivo) --------------------
+export type PreventivoFull = {
+  id: string;
+  displayId?: string;
+  stato?: string;
+  tipoSped?: string;
+  incoterm?: string;
+  valuta?: string;
+  ritiroData?: string;
+  noteGeneriche?: string;
+  destination?: string; // paese destinatario
+  updatedAt?: string;
+
+  mittente: {
+    ragioneSociale?: string; indirizzo?: string; cap?: string; citta?: string;
+    paese?: string; telefono?: string; taxId?: string;
+  };
+  destinatario: {
+    ragioneSociale?: string; indirizzo?: string; cap?: string; citta?: string;
+    paese?: string; telefono?: string; taxId?: string;
+  };
+
+  colli: Array<{ qty?: number; l1_cm?: number | null; l2_cm?: number | null; l3_cm?: number | null; peso_kg?: number | null }>;
+  fieldsRaw: any; // per eventuali debug
+};
+
+export async function getPreventivo(idOrCode: string): Promise<PreventivoFull> {
+  const b = base();
+
+  const pick = (obj: any, keys: string[]) => {
+    for (const k of keys) {
+      const v = obj?.[k];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return v as any;
+    }
+    return undefined;
+  };
+
+  // 1) trova il record: prima per recId, altrimenti per ID_Preventivo
+  let rec: any | undefined;
+  try {
+    rec = await b(TB_PREVENTIVI).find(idOrCode);
+  } catch {
+    const found = await b(TB_PREVENTIVI)
+      .select({
+        maxRecords: 1,
+        filterByFormula:
+          `OR({ID_Preventivo}='${idOrCode}', {ID Preventivo}='${idOrCode}', {ID}='${idOrCode}')`,
+      })
+      .firstPage();
+    rec = found?.[0];
+  }
+  if (!rec) throw new Error('NOT_FOUND');
+
+  const f = rec.fields;
+
+  const mittente = {
+    ragioneSociale: pick(f, F.M_Nome as unknown as string[]),
+    indirizzo:     pick(f, F.M_Ind as unknown as string[]),
+    cap:           pick(f, F.M_CAP as unknown as string[]),
+    citta:         pick(f, F.M_Citta as unknown as string[]),
+    paese:         pick(f, F.M_Paese as unknown as string[]),
+    telefono:      pick(f, F.M_Tel as unknown as string[]),
+    taxId:         pick(f, F.M_Tax as unknown as string[]),
+  };
+  const destinatario = {
+    ragioneSociale: pick(f, F.D_Nome as unknown as string[]),
+    indirizzo:     pick(f, F.D_Ind as unknown as string[]),
+    cap:           pick(f, F.D_CAP as unknown as string[]),
+    citta:         pick(f, F.D_Citta as unknown as string[]),
+    paese:         pick(f, F.D_Paese as unknown as string[]),
+    telefono:      pick(f, F.D_Tel as unknown as string[]),
+    taxId:         pick(f, F.D_Tax as unknown as string[]),
+  };
+
+  // 2) carica colli e filtra quelli collegati al preventivo
+  const allColli: any[] = [];
+  await b(TB_COLLI)
+    .select({ pageSize: 100 })
+    .eachPage((recs, next) => {
+      for (const r of recs) allColli.push(r);
+      next();
+    });
+
+  const getAny = (obj: any, keys: string[]) => {
+    for (const k of keys) {
+      const v = obj?.[k];
+      if (v !== undefined) return v;
+    }
+    return undefined;
+  };
+
+  const colliRecs = allColli.filter((r) => {
+    const link = getAny(r.fields, C.LinkPreventivo as unknown as string[]);
+    if (Array.isArray(link) && link.some((x) => x === rec.id)) return true;
+
+    const pid = getAny(r.fields, C.PreventivoIdTxt as unknown as string[]);
+    return pid === rec.id;
+  });
+
+  const colli = colliRecs.map((r) => ({
+    qty:     pick(r.fields, C.Qty as unknown as string[]),
+    l1_cm:   pick(r.fields, C.L   as unknown as string[]),
+    l2_cm:   pick(r.fields, C.W   as unknown as string[]),
+    l3_cm:   pick(r.fields, C.H   as unknown as string[]),
+    peso_kg: pick(r.fields, C.Peso as unknown as string[]),
+  }));
+
+  return {
+    id: rec.id,
+    displayId:  pick(f, ['ID_Preventivo', 'ID Preventivo', 'ID']),
+    stato:      pick(f, F.Stato as unknown as string[]),
+    tipoSped:   pick(f, F.TipoSped as unknown as string[]),
+    incoterm:   pick(f, F.Incoterm as unknown as string[]),
+    valuta:     pick(f, F.Valuta as unknown as string[]),
+    ritiroData: pick(f, F.RitiroData as unknown as string[]),
+    noteGeneriche: pick(f, F.NoteGeneriche as unknown as string[]),
+    destination: destinatario.paese,
+    updatedAt:  String(f['Last modified time'] || f['Ultima Modifica'] || ''),
+    mittente,
+    destinatario,
+    colli,
+    fieldsRaw: f,
+  };
+}
+
