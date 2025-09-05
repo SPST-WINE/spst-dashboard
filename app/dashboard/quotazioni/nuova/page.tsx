@@ -8,7 +8,9 @@ import ColliCard, { Collo } from '@/components/nuova/ColliCard';
 import RitiroCard from '@/components/nuova/RitiroCard';
 import { getIdToken } from '@/lib/firebase-client-auth';
 import { getUserProfile } from '@/lib/api';
-import { Select } from '@/components/nuova/Field';
+
+type TipoSped = 'B2B' | 'B2C' | 'Sample';
+type Incoterm = 'DAP' | 'DDP' | 'EXW';
 
 const blankParty: Party = {
   ragioneSociale: '',
@@ -19,20 +21,6 @@ const blankParty: Party = {
   indirizzo: '',
   telefono: '',
   piva: '',
-};
-
-type SuccessInfo = {
-  recId: string;
-  displayId: string;
-  tipoSped: 'B2B' | 'B2C' | 'Sample';
-  incoterm: 'DAP' | 'DDP' | 'EXW';
-  dataRitiro?: string;
-  colli: number;
-  formato: 'Pacco' | 'Pallet';
-  contenuto?: string;
-  mittente: Party;
-  destinatario: Party;
-  note?: string;
 };
 
 export default function NuovaQuotazionePage() {
@@ -56,17 +44,18 @@ export default function NuovaQuotazionePage() {
   const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
   const [ritiroNote, setRitiroNote] = useState('');
 
-  // Parametri commerciali
-  const [tipoSped, setTipoSped] = useState<'B2B' | 'B2C' | 'Sample'>('B2B');
-  const [incoterm, setIncoterm] = useState<'DAP' | 'DDP' | 'EXW'>('DAP');
+  // Selettori business
+  const [tipoSped, setTipoSped] = useState<TipoSped>('B2B');
+  const [incoterm, setIncoterm] = useState<Incoterm>('DAP');
 
-  // Note
+  // Note generiche
   const [noteGeneriche, setNoteGeneriche] = useState('');
 
   // UI
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
-  const [success, setSuccess] = useState<SuccessInfo | null>(null);
+  const [okId, setOkId] = useState<string | null>(null); // recId Airtable
+  const [okDisplayId, setOkDisplayId] = useState<string | null>(null); // ID_Preventivo formula
 
   // Prefill mittente da profilo & email utente
   useEffect(() => {
@@ -76,22 +65,36 @@ export default function NuovaQuotazionePage() {
         const r = await getUserProfile(getIdToken);
         if (!cancelled && r?.ok) {
           if (r.email) setEmail(r.email);
-          if (r.party) setMittente(prev => ({ ...prev, ...r.party }));
+          if (r.party) {
+            setMittente((prev) => ({ ...prev, ...r.party }));
+          }
         }
-      } catch {}
+      } catch {
+        // Ignora, utente compila a mano
+      }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Validazione minima
+  // Validazione minima per la quotazione
   function validate(): string[] {
     const errs: string[] = [];
     if (!mittente.ragioneSociale?.trim()) errs.push('Inserisci la ragione sociale del mittente.');
     if (!destinatario.ragioneSociale?.trim()) errs.push('Inserisci la ragione sociale del destinatario.');
     if (!ritiroData) errs.push('Seleziona il giorno di ritiro.');
-    const invalid = colli.some(c =>
-      c.lunghezza_cm == null || c.larghezza_cm == null || c.altezza_cm == null || c.peso_kg == null ||
-      (c.lunghezza_cm ?? 0) <= 0 || (c.larghezza_cm ?? 0) <= 0 || (c.altezza_cm ?? 0) <= 0 || (c.peso_kg ?? 0) <= 0
+    // Almeno un collo completo
+    const invalid = colli.some(
+      (c) =>
+        c.lunghezza_cm == null ||
+        c.larghezza_cm == null ||
+        c.altezza_cm == null ||
+        c.peso_kg == null ||
+        (c.lunghezza_cm ?? 0) <= 0 ||
+        (c.larghezza_cm ?? 0) <= 0 ||
+        (c.altezza_cm ?? 0) <= 0 ||
+        (c.peso_kg ?? 0) <= 0,
     );
     if (invalid) errs.push('Inserisci misure e pesi > 0 per ogni collo.');
     return errs;
@@ -104,24 +107,23 @@ export default function NuovaQuotazionePage() {
       setErrors(v);
       topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
+    } else {
+      setErrors([]);
     }
-    setErrors([]);
-    setSaving(true);
 
+    setSaving(true);
     try {
       const t = await getIdToken();
-      const noteCombined = [noteGeneriche, ritiroNote?.trim() ? `Note ritiro: ${ritiroNote.trim()}` : '']
-        .filter(Boolean)
-        .join('\n');
 
+      // Mappatura verso API /api/quotazioni (airtable.quotes)
       const payload = {
         createdByEmail: email || undefined,
-        customerEmail: email || undefined,
+        customerEmail: email || undefined, // popola Email_Cliente
         valuta: 'EUR' as const,
-        tipoSped,
-        incoterm,
         ritiroData: ritiroData ? ritiroData.toISOString() : undefined,
-        noteGeneriche: noteCombined || undefined,
+        noteGeneriche: noteGeneriche || undefined,
+        tipoSped, // 'B2B' | 'B2C' | 'Sample'
+        incoterm, // 'DAP' | 'DDP' | 'EXW'
         mittente: {
           ragioneSociale: mittente.ragioneSociale || undefined,
           indirizzo: mittente.indirizzo || undefined,
@@ -140,7 +142,7 @@ export default function NuovaQuotazionePage() {
           telefono: destinatario.telefono || undefined,
           taxId: destinatario.piva || undefined, // -> Destinatario_Tax
         },
-        colli: (colli || []).map(c => ({
+        colli: (colli || []).map((c) => ({
           qty: 1,
           l1_cm: c.lunghezza_cm ?? undefined,
           l2_cm: c.larghezza_cm ?? undefined,
@@ -157,23 +159,12 @@ export default function NuovaQuotazionePage() {
         },
         body: JSON.stringify(payload),
       });
-      const j = await res.json();
 
+      const j = await res.json();
       if (!res.ok || !j?.ok) throw new Error(j?.error || 'SERVER_ERROR');
 
-      setSuccess({
-        recId: j.id,
-        displayId: j.displayId || j.id,
-        tipoSped,
-        incoterm,
-        dataRitiro: ritiroData?.toLocaleDateString(),
-        colli: colli.length,
-        formato,
-        contenuto,
-        mittente,
-        destinatario,
-        note: noteCombined || undefined,
-      });
+      setOkId(j.id as string);
+      setOkDisplayId((j.displayId as string) ?? null);
       topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
       console.error('Errore creazione preventivo', e);
@@ -183,109 +174,136 @@ export default function NuovaQuotazionePage() {
     }
   }
 
-  // Success UI
-if (okId) {
-  return (
-    <div ref={topRef} className="space-y-4">
-      <h2 className="text-lg font-semibold">Quotazione inviata</h2>
+  // Success UI (riepilogo completo)
+  if (okId) {
+    const fmtDate =
+      ritiroData ? ritiroData.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
 
-      <div className="rounded-2xl border bg-white p-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <div className="text-sm">
-              <div className="font-medium">ID Preventivo</div>
-              <div className="font-mono">
-                {okDisplayId || '—'}
+    return (
+      <div ref={topRef} className="space-y-4">
+        <h1 className="text-2xl font-semibold text-slate-800">Quotazione inviata</h1>
+
+        <div className="rounded-2xl border bg-white p-5">
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="space-y-2">
+              <div className="text-sm text-slate-500">ID Preventivo</div>
+              <div className="font-mono text-base">{okDisplayId || '—'}</div>
+              <div className="text-xs text-slate-400">Record: {okId}</div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="text-sm text-slate-500">Tipo spedizione</div>
+                <div className="font-medium">{tipoSped}</div>
               </div>
-            </div>
-
-            <div className="mt-3 text-sm">
-              <div className="font-medium">Tipo spedizione</div>
-              <div>{tipoSped || '—'}</div>
-            </div>
-
-            <div className="mt-3 text-sm">
-              <div className="font-medium">Data ritiro</div>
-              <div>{ritiroData ? ritiroData.toLocaleDateString() : '—'}</div>
-            </div>
-
-            <div className="mt-3 text-sm">
-              <div className="font-medium">Mittente</div>
-              <div>{mittente.ragioneSociale || '—'}</div>
-              <div className="text-slate-500 text-xs">
-                {[mittente.indirizzo, mittente.cap, mittente.citta, mittente.paese].filter(Boolean).join(' ')}
+              <div>
+                <div className="text-sm text-slate-500">Incoterm</div>
+                <div className="font-medium">{incoterm}</div>
               </div>
-            </div>
-
-            <div className="mt-3 text-sm">
-              <div className="font-medium">Destinatario</div>
-              <div>{destinatario.ragioneSociale || '—'}</div>
-              <div className="text-slate-500 text-xs">
-                {[destinatario.indirizzo, destinatario.cap, destinatario.citta, destinatario.paese].filter(Boolean).join(' ')}
+              <div>
+                <div className="text-sm text-slate-500">Data ritiro</div>
+                <div className="font-medium">{fmtDate}</div>
+              </div>
+              <div>
+                <div className="text-sm text-slate-500">Colli</div>
+                <div className="font-medium">
+                  {colli.length} ({formato})
+                </div>
               </div>
             </div>
           </div>
 
-          <div>
-            <div className="text-sm">
-              <div className="font-medium">Incoterm</div>
-              <div>{incoterm || '—'}</div>
-            </div>
-
-            <div className="mt-3 text-sm">
-              <div className="font-medium">Colli</div>
-              <div className="overflow-x-auto rounded-lg border mt-1">
-                <table className="min-w-[440px] text-sm">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium">#</th>
-                      <th className="px-3 py-2 text-left font-medium">L (cm)</th>
-                      <th className="px-3 py-2 text-left font-medium">W (cm)</th>
-                      <th className="px-3 py-2 text-left font-medium">H (cm)</th>
-                      <th className="px-3 py-2 text-left font-medium">Peso (Kg)</th>
+          {/* Colli - dimensioni/peso */}
+          <div className="mt-6">
+            <div className="mb-2 text-sm font-semibold text-spst-blue">Dettaglio colli</div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-slate-500">
+                  <tr>
+                    <th className="py-2 pr-4">#</th>
+                    <th className="py-2 pr-4">L (cm)</th>
+                    <th className="py-2 pr-4">W (cm)</th>
+                    <th className="py-2 pr-4">H (cm)</th>
+                    <th className="py-2 pr-4">Peso (kg)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {colli.map((c, i) => (
+                    <tr key={i} className="border-t">
+                      <td className="py-2 pr-4">{i + 1}</td>
+                      <td className="py-2 pr-4">{c.lunghezza_cm}</td>
+                      <td className="py-2 pr-4">{c.larghezza_cm}</td>
+                      <td className="py-2 pr-4">{c.altezza_cm}</td>
+                      <td className="py-2 pr-4">{c.peso_kg}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {colli.map((c, i) => (
-                      <tr key={i} className="border-t">
-                        <td className="px-3 py-2">{i + 1}</td>
-                        <td className="px-3 py-2">{c.lunghezza_cm ?? '—'}</td>
-                        <td className="px-3 py-2">{c.larghezza_cm ?? '—'}</td>
-                        <td className="px-3 py-2">{c.altezza_cm ?? '—'}</td>
-                        <td className="px-3 py-2">{c.peso_kg ?? '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="text-xs text-slate-500 mt-1">
-                Formato: {formato} {contenuto ? `• Contenuto: ${contenuto}` : ''}
-              </div>
-            </div>
-
-            <div className="mt-3 text-sm">
-              <div className="font-medium">Note</div>
-              <div className="whitespace-pre-line">{noteGeneriche || '—'}</div>
-              {ritiroNote ? <div className="text-xs text-slate-500 mt-1">Note ritiro: {ritiroNote}</div> : null}
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-        </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Link href="/dashboard/quotazioni" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">
-            Le mie quotazioni
-          </Link>
-          <Link href="/dashboard/quotazioni/nuova" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">
-            Nuova quotazione
-          </Link>
+          {/* Mittente / Destinatario */}
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div>
+              <div className="mb-1 text-sm font-semibold text-spst-blue">Mittente</div>
+              <div className="text-sm">
+                <div className="font-medium">{mittente.ragioneSociale}</div>
+                <div>
+                  {mittente.indirizzo}
+                  {mittente.indirizzo ? ', ' : ''}
+                  {mittente.citta} {mittente.cap} {mittente.paese}
+                </div>
+                {mittente.piva ? <div>P.IVA / Tax: {mittente.piva}</div> : null}
+                {mittente.telefono ? <div>{mittente.telefono}</div> : null}
+              </div>
+            </div>
+            <div>
+              <div className="mb-1 text-sm font-semibold text-spst-blue">Destinatario</div>
+              <div className="text-sm">
+                <div className="font-medium">{destinatario.ragioneSociale}</div>
+                <div>
+                  {destinatario.indirizzo}
+                  {destinatario.indirizzo ? ', ' : ''}
+                  {destinatario.citta} {destinatario.cap} {destinatario.paese}
+                </div>
+                {destinatario.piva ? <div>Tax ID / EORI: {destinatario.piva}</div> : null}
+                {destinatario.telefono ? <div>{destinatario.telefono}</div> : null}
+              </div>
+            </div>
+          </div>
+
+          {/* Note */}
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div>
+              <div className="mb-1 text-sm font-semibold text-spst-blue">Contenuto</div>
+              <div className="text-sm">{contenuto || '—'}</div>
+            </div>
+            <div>
+              <div className="mb-1 text-sm font-semibold text-spst-blue">Note</div>
+              <div className="text-sm whitespace-pre-line">{noteGeneriche || '—'}</div>
+              {ritiroNote ? (
+                <div className="text-sm text-slate-600">Note ritiro: {ritiroNote}</div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-wrap gap-2">
+            <Link href="/dashboard/quotazioni" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">
+              Le mie quotazioni
+            </Link>
+            <Link
+              href="/dashboard/quotazioni/nuova"
+              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
+            >
+              Nuova quotazione
+            </Link>
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
-
-  // FORM
+  // FORM (layout “di prima” + titoli blu)
   return (
     <div ref={topRef} className="space-y-6">
       <div className="flex items-center justify-between">
@@ -297,35 +315,43 @@ if (okId) {
 
       {!!errors.length && (
         <div className="rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
-          <div className="font-medium mb-1">Controlla questi campi:</div>
-          <ul className="list-disc ml-5 space-y-1">{errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+          <div className="mb-1 font-medium">Controlla questi campi:</div>
+          <ul className="ml-5 list-disc space-y-1">
+            {errors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
         </div>
       )}
 
-      {/* Parametri: tipo + incoterm */}
+      {/* Selettori business */}
       <div className="rounded-2xl border bg-white p-4">
-        <h2 className="mb-3 text-base font-semibold text-spst-blue">Parametri spedizione</h2>
+        <h2 className="mb-3 text-base font-semibold text-spst-blue">Dettagli spedizione</h2>
         <div className="grid gap-3 md:grid-cols-2">
-          <Select
-            label="Stai spedendo ad un privato? O ad una azienda?"
-            value={tipoSped}
-            onChange={(v) => setTipoSped(v as 'B2B' | 'B2C' | 'Sample')}
-            options={[
-              { label: 'B2C — privato / cliente', value: 'B2C' },
-              { label: 'B2B — azienda', value: 'B2B' },
-              { label: 'Sample — campionatura', value: 'Sample' },
-            ]}
-          />
-          <Select
-            label="Incoterm"
-            value={incoterm}
-            onChange={(v) => setIncoterm(v as 'DAP' | 'DDP' | 'EXW')}
-            options={[
-              { label: 'DAP — Delivered At Place', value: 'DAP' },
-              { label: 'DDP — Delivered Duty Paid', value: 'DDP' },
-              { label: 'EXW — Ex Works', value: 'EXW' },
-            ]}
-          />
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Tipo spedizione</label>
+            <select
+              className="w-full rounded-lg border px-3 py-2 text-sm"
+              value={tipoSped}
+              onChange={(e) => setTipoSped(e.target.value as TipoSped)}
+            >
+              <option value="B2B">B2B</option>
+              <option value="B2C">B2C</option>
+              <option value="Sample">Sample</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Incoterm</label>
+            <select
+              className="w-full rounded-lg border px-3 py-2 text-sm"
+              value={incoterm}
+              onChange={(e) => setIncoterm(e.target.value as Incoterm)}
+            >
+              <option value="DAP">DAP</option>
+              <option value="DDP">DDP</option>
+              <option value="EXW">EXW</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -360,7 +386,7 @@ if (okId) {
         <RitiroCard date={ritiroData} setDate={setRitiroData} note={ritiroNote} setNote={setRitiroNote} />
       </div>
 
-      {/* Note */}
+      {/* Note generiche */}
       <div className="rounded-2xl border bg-white p-4">
         <h2 className="mb-3 text-base font-semibold text-spst-blue">Note & documenti</h2>
         <label className="mb-1 block text-sm font-medium text-slate-700">Note generiche sulla spedizione</label>
@@ -371,6 +397,9 @@ if (okId) {
           className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-spst-blue/20"
           placeholder="Es. orari preferiti, vincoli, dettagli utili…"
         />
+        <p className="mt-2 text-xs text-slate-500">
+          Gli eventuali documenti richiesti saranno determinati automaticamente in back office.
+        </p>
       </div>
 
       {/* CTA */}
@@ -380,7 +409,7 @@ if (okId) {
           onClick={salva}
           disabled={saving}
           aria-busy={saving}
-          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+          className="inline-flex items-center gap-2 rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving && <span className="inline-block h-4 w-4 animate-spin rounded-full border border-slate-400 border-t-transparent" />}
           {saving ? 'Invio…' : 'Invia richiesta'}
