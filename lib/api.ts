@@ -254,3 +254,16 @@ export async function getPreventivo(
   // In altri casi potrebbe restituire direttamente l'oggetto
   return data ?? null;
 }
+
+// (estratto minimo da aggiungere in fondo al tuo lib/api.ts)
+export async function getPreventivo(
+  idOrDisplayId: string,
+  getIdToken?: GetIdToken
+): Promise<{ id: string; displayId?: string; fields: any; colli: any[] } | null> {
+  const data = await request<{ ok: boolean; row: any | null }>(
+    `/api/quotazioni/${encodeURIComponent(idOrDisplayId)}`,
+    { method: 'GET' },
+    getIdToken
+  );
+  return (data && (data as any).row) || null;
+}
