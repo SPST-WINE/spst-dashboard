@@ -341,6 +341,25 @@ function _push(dbg: any[] | undefined, label: string, extra?: any) {
   _log(label, extra ?? '');
 }
 
+// --- alias robusti per i campi dei Colli (lettura)
+const COLLI_ALIASES = {
+  L: ['L_cm','L','Lunghezza','Lunghezza (cm)','Lunghezza_cm','L1_cm','l1_cm'],
+  W: ['W_cm','W','Larghezza','Larghezza (cm)','Larghezza_cm','L2_cm','l2_cm'],
+  H: ['H_cm','H','Altezza','Altezza (cm)','Altezza_cm','L3_cm','l3_cm'],
+  Peso: ['Peso','Peso_kg','Peso (kg)','Peso Kg','Peso (Kg)'],
+  Qty: ['Quantita','Quantità','Qta','Qty'],
+} as const;
+
+function pickFirstNumberField(fields: Record<string, any>, aliases: string[]): number | undefined {
+  for (const k of aliases) {
+    const raw = fields?.[k];
+    const n = parseNum(raw);
+    if (n != null) return n;
+  }
+  return undefined;
+}
+
+
 // --- ordine dei campi da provare (uno per volta)
 const DISPLAY_FIELDS_TRY_ORDER = [
   'ID_Preventivo',
@@ -432,36 +451,56 @@ export async function getPreventivo(
     (rec.fields['ID Preventivo'] as string) ||
     undefined;
 
-   // 3) colli collegati — scan lato Node per evitare formule su linked
+    // 3) colli collegati — usa solo i due campi che sappiamo esistere in base al tuo file
   const colli: Array<{ id: string; fields: any }> = [];
   try {
-    _push(debug, 'colliScan:start', {});
+    const linkField = '{Preventivi}';      // linked field
+    const prevIdTxt = '{Preventivo_Id}';   // testo
+    const clauses = [
+      `FIND("${rec.id}", ARRAYJOIN(${linkField}))`,
+      `${prevIdTxt}="${rec.id}"`,
+      displayId ? `${prevIdTxt}="${displayId}"` : '',
+    ].filter(Boolean).join(',');
+    const filterByFormulaColli = `OR(${clauses})`;
+
+    _push(debug, 'colliQuery:start', { filterByFormulaColli });
+
     await b(TB_COLLI)
-      .select({ pageSize: 100 })
+      .select({ pageSize: 100, filterByFormula: filterByFormulaColli })
       .eachPage((rows, next) => {
         for (const r of rows) {
           const f = r.fields || {};
+          // normalizzo in uscita: se mancano i canonicali, li calcolo dagli alias
+          const Ln = pickFirstNumberField(f, COLLI_ALIASES.L);
+          const Wn = pickFirstNumberField(f, COLLI_ALIASES.W);
+          const Hn = pickFirstNumberField(f, COLLI_ALIASES.H);
+          const Pn = pickFirstNumberField(f, COLLI_ALIASES.Peso);
+          const Qn = pickFirstNumberField(f, COLLI_ALIASES.Qty);
 
-          const linkedArr: string[] = Array.isArray(f[C.LinkPreventivo[0]])
-            ? (f[C.LinkPreventivo[0]] as string[])
-            : [];
-          const linked = linkedArr.includes(rec.id);
+          const fields = { ...f };
+          if (fields['L_cm'] == null && Ln != null) fields['L_cm'] = Ln;
+          if (fields['W_cm'] == null && Wn != null) fields['W_cm'] = Wn;
+          if (fields['H_cm'] == null && Hn != null) fields['H_cm'] = Hn;
+          if (fields['Peso']  == null && Pn != null) fields['Peso']  = Pn;
+          if (fields['Quantita'] == null && Qn != null) fields['Quantita'] = Qn;
 
-          const txt = String(f[C.PreventivoIdTxt[0]] ?? '').trim();
-          const txtMatch = !!txt && (txt === rec.id || (displayId && txt === displayId));
+          colli.push({ id: r.id, fields });
 
-          if (linked || txtMatch) colli.push({ id: r.id, fields: r.fields });
+          // log compatto (solo le chiavi utili) per le prime 3 righe
+          if (colli.length <= 3) {
+            const keyz = Object.keys(f).filter(k => /L|W|H|Peso|Quant/i.test(k));
+            _push(debug, 'colli:sample', {
+              id: r.id,
+              keys: keyz,
+              values: keyz.reduce((acc, k) => ({ ...acc, [k]: f[k] }), {}),
+              normalized: { L_cm: fields['L_cm'], W_cm: fields['W_cm'], H_cm: fields['H_cm'], Peso: fields['Peso'], Quantita: fields['Quantita'] }
+            });
+          }
         }
         next();
       });
 
-    _push(debug, 'colliScan:done', { count: colli.length, sampleIds: colli.slice(0, 5).map(c => c.id) });
+    _push(debug, 'colliQuery:done', { count: colli.length, sampleIds: colli.slice(0, 5).map(c => c.id) });
   } catch (e: any) {
-    _push(debug, 'colliScan:error', { message: e?.message, status: e?.statusCode });
+    _push(debug, 'colliQuery:error', { message: e?.message, status: e?.statusCode });
   }
-
-  _push(debug, 'OK', { recId: rec.id, displayId, colli: colli.length });
-  return { id: rec.id, displayId, fields: rec.fields, colli };
-}
-
-
