@@ -244,31 +244,69 @@ export async function createPreventivo(
 // ---------------------------------------------------------------
 // LIST preventivi per email (filtro lato Node)
 // ---------------------------------------------------------------
+// ---------------------------------------------------------------
+// LIST preventivi per email (filtro lato Node) + fallback sort
+// ---------------------------------------------------------------
 export async function listPreventivi(
   opts?: { email?: string }
-): Promise<Array<{ id: string; displayId?: string; fields: any }>> {
+): Promise<Array<{ id: string; fields: any }>> {
   const b = base();
-  const all: Array<{ id: string; fields: any }> = [];
 
-  await b(TB_PREVENTIVI)
-    .select({ pageSize: 100, sort: [{ field: 'Last modified time', direction: 'desc' }] })
-    .eachPage((recs, next) => {
-      for (const r of recs) all.push({ id: r.id, fields: r.fields });
-      next();
+  const fetchAll = async (params: Airtable.SelectOptions) =>
+    new Promise<Array<{ id: string; fields: any }>>((resolve, reject) => {
+      const out: Array<{ id: string; fields: any }> = [];
+      b(TB_PREVENTIVI)
+        .select(params)
+        .eachPage(
+          (recs, next) => {
+            for (const r of recs) out.push({ id: r.id, fields: r.fields });
+            next();
+          },
+          (err) => (err ? reject(err) : resolve(out))
+        );
     });
 
-  // filtro opzionale x email
-  let filtered = all;
-  if (opts?.email) {
-    const needle = String(opts.email).toLowerCase();
-    const emailFields = [...F.EmailCliente, ...F.CreatoDaEmail];
-    filtered = all.filter(({ fields }) =>
-      emailFields.some((k) => {
-        const v = fields?.[k];
-        return typeof v === 'string' && v.toLowerCase() === needle;
-      })
-    );
+  let rows: Array<{ id: string; fields: any }> = [];
+  try {
+    // Primo tentativo: sort per "Last modified time"
+    rows = await fetchAll({
+      pageSize: 100,
+      sort: [{ field: 'Last modified time', direction: 'desc' }],
+    });
+  } catch (e: any) {
+    // Fallback se il campo non esiste nella base
+    if (e?.statusCode === 422 || e?.error === 'UNKNOWN_FIELD_NAME') {
+      console.warn(
+        '[airtable.quotes] listPreventivi: sort field missing, falling back to unsorted. Details:',
+        { message: e?.message, statusCode: e?.statusCode, airtable: e?.error }
+      );
+      rows = await fetchAll({ pageSize: 100 });
+    } else {
+      console.error('[airtable.quotes] listPreventivi fatal:', {
+        message: e?.message,
+        statusCode: e?.statusCode,
+        airtable: e?.error,
+      });
+      throw e;
+    }
   }
+
+  if (!opts?.email) return rows;
+
+  const needle = String(opts.email).toLowerCase();
+  const emailFields = [
+    ...F.EmailCliente,
+    ...F.CreatoDaEmail,
+  ];
+
+  return rows.filter(({ fields }) =>
+    emailFields.some((k) => {
+      const v = fields?.[k];
+      return typeof v === 'string' && v.toLowerCase() === needle;
+    })
+  );
+}
+
 
   // aggiungo displayId pronto
   return filtered.map((r) => ({
