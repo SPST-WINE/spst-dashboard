@@ -53,34 +53,42 @@ export default function NuovaQuotazionePage() {
     setErrors([]);
     setSaving(true);
     try {
-      await postPreventivo({
-        mittente: {
-          ragioneSociale: mittente.ragioneSociale,
-          paese: mittente.paese, citta: mittente.citta, cap: mittente.cap,
-          indirizzo: mittente.indirizzo, telefono: mittente.telefono || undefined,
-          taxId: mittente.piva || undefined,
-        },
-        destinatario: {
-          ragioneSociale: destinatario.ragioneSociale,
-          paese: destinatario.paese, citta: destinatario.citta, cap: destinatario.cap,
-          indirizzo: destinatario.indirizzo, telefono: destinatario.telefono || undefined,
-          taxId: destinatario.piva || undefined,
-        },
-        colli: colli.map(c => ({
-          quantita: 1,
-          lunghezza_cm: c.lunghezza_cm, larghezza_cm: c.larghezza_cm,
-          altezza_cm: c.altezza_cm, peso_kg: c.peso_kg
-        })),
-        valuta,
-        note,
-      }, getIdToken);
-      router.push('/dashboard/quotazioni');
-    } catch (e) {
-      setErrors(['Errore durante la creazione del preventivo. Riprova.']);
-    } finally {
-      setSaving(false);
-    }
-  }
+     await postPreventivo(
+  {
+    mittente: {
+      ragioneSociale: mittente.ragioneSociale,
+      paese: mittente.paese,
+      citta: mittente.citta,
+      cap: mittente.cap,
+      indirizzo: mittente.indirizzo,
+      telefono: mittente.telefono || undefined,
+      taxId: mittente.piva || undefined,
+    },
+    destinatario: {
+      ragioneSociale: destinatario.ragioneSociale,
+      paese: destinatario.paese,
+      citta: destinatario.citta,
+      cap: destinatario.cap,
+      indirizzo: destinatario.indirizzo,
+      telefono: destinatario.telefono || undefined,
+      taxId: destinatario.piva || undefined,
+    },
+    colli: (colli || []).map(c => ({
+      quantita: 1,
+      lunghezza_cm: c.lunghezza_cm ?? null,
+      larghezza_cm: c.larghezza_cm ?? null,
+      altezza_cm: c.altezza_cm ?? null,
+      peso_kg: c.peso_kg ?? null,
+    })),
+    valuta,                               // 'EUR' | 'USD' | 'GBP'
+    noteGeneriche: note,                  // <-- QUI il fix: mappa note -> noteGeneriche
+    ritiroData: ritiroData ? ritiroData.toISOString() : undefined,
+    tipoSped,                             // 'B2B' | 'B2C' | 'Sample' (se presenti nello state)
+    incoterm,                             // 'DAP' | 'DDP' | 'EXW'   (se presenti nello state)
+  },
+  getIdToken
+);
+
 
   return (
     <div className="space-y-4" ref={topRef}>
