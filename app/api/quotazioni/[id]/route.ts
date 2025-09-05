@@ -6,18 +6,22 @@ import { getPreventivo } from '@/lib/airtable.quotes';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
   const origin = req.headers.get('origin') ?? undefined;
   const cors = buildCorsHeaders(origin);
 
   try {
-    const id = decodeURIComponent(params.id);
+    const id = decodeURIComponent(ctx.params.id);
     const row = await getPreventivo(id);
     if (!row) {
       return NextResponse.json({ ok: false, error: 'NOT_FOUND' }, { status: 404, headers: cors });
     }
     return NextResponse.json({ ok: true, row }, { headers: cors });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || 'SERVER_ERROR' }, { status: 500, headers: cors });
+    console.error('GET /api/quotazioni/[id] error:', e);
+    return NextResponse.json(
+      { ok: false, error: e?.message || 'SERVER_ERROR' },
+      { status: 500, headers: cors }
+    );
   }
 }
