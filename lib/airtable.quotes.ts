@@ -173,11 +173,34 @@ async function tryCreateColloRow(
 // ---------------------------------------------------------------
 // CREATE preventivo
 // ---------------------------------------------------------------
-export async function createPreventivo(
-  payload: PreventivoPayload
-): Promise<{ id: string; displayId?: string }> {
+// Sostituisci TUTTA la listPreventivi con questa versione:
+
+export async function listPreventivi(
+  opts?: { email?: string }
+): Promise<Array<{ id: string; fields: any }>> {
   const b = base();
-  const debugSet: string[] = [];
+  const all: Array<{ id: string; fields: any }> = [];
+
+  await b(TB_PREVENTIVI)
+    .select({ pageSize: 100, sort: [{ field: 'Last modified time', direction: 'desc' }] })
+    .eachPage((recs, next) => {
+      for (const r of recs) all.push({ id: r.id, fields: r.fields });
+      next();
+    });
+
+  if (!opts?.email) return all;
+
+  const needle = String(opts.email).toLowerCase();
+  const emailFields = [...F.EmailCliente, ...F.CreatoDaEmail];
+
+  return all.filter(({ fields }) =>
+    emailFields.some((k) => {
+      const v = fields?.[k];
+      return typeof v === 'string' && v.toLowerCase() === needle;
+    })
+  );
+}
+
 
   try {
     // 1) record vuoto
