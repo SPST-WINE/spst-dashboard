@@ -343,11 +343,13 @@ function _push(dbg: any[] | undefined, label: string, extra?: any) {
 
 // --- alias robusti per i campi dei Colli (lettura)
 const COLLI_ALIASES = {
-  L: ['L_cm','L','Lunghezza','Lunghezza (cm)','Lunghezza_cm','L1_cm','l1_cm'],
-  W: ['W_cm','W','Larghezza','Larghezza (cm)','Larghezza_cm','L2_cm','l2_cm'],
-  H: ['H_cm','H','Altezza','Altezza (cm)','Altezza_cm','L3_cm','l3_cm'],
-  Peso: ['Peso','Peso_kg','Peso (kg)','Peso Kg','Peso (Kg)'],
+  L: ['L_cm','L','Lunghezza','Lunghezza (cm)','Lunghezza_cm','Lunghezza cm','L1_cm','l1_cm'],
+  W: ['W_cm','W','Larghezza','Larghezza (cm)','Larghezza_cm','Larghezza cm','L2_cm','l2_cm'],
+  H: ['H_cm','H','Altezza','Altezza (cm)','Altezza_cm','Altezza cm','L3_cm','l3_cm'],
+  Peso: ['Peso','Peso_kg','Peso (kg)','Peso Kg','Peso (Kg)','Peso_totale','Peso Totale Kg','Peso_Totale_Kg'],
   Qty: ['Quantita','Quantità','Qta','Qty'],
+  // campi testuali generici che potrebbero contenere "40x30x20"
+  DimText: ['Dimensioni','Dimensioni (cm)','Misure','Misure (cm)','Formato','Size','Sizes','Dims']
 } as const;
 
 function pickFirstNumberField(fields: Record<string, any>, aliases: ReadonlyArray<string>): number | undefined {
@@ -357,6 +359,55 @@ function pickFirstNumberField(fields: Record<string, any>, aliases: ReadonlyArra
     if (n != null) return n;
   }
   return undefined;
+}
+
+// Parsing "40x30x20", "40 x 30 x 20 cm", "L:40 W:30 H:20", "40/30/20", ecc.
+// Ritorna cm; se vede "mm" o numeri molto grandi, converte.
+function parseDimsFromText(v: any): { L?: number; W?: number; H?: number } | null {
+  if (typeof v !== 'string') return null;
+  const s = v.trim();
+  if (!s) return null;
+
+  const norm = s.replace(',', '.');
+
+  // 1) 40x30x20 (con x o × o / o -)
+  const m1 = norm.match(/(\d+(?:\.\d+)?)\s*[x×\/\-]\s*(\d+(?:\.\d+)?)\s*[x×\/\-]\s*(\d+(?:\.\d+)?)/i);
+  if (m1) {
+    let [ , a, b, c ] = m1;
+    const nums = [a,b,c].map(Number);
+    const hasMM = /mm\b/i.test(norm);
+    const factor = hasMM || nums.some(n => n > 200) ? 0.1 : 1; // euristica: >200 => probabilmente mm
+    return { L: nums[0]*factor, W: nums[1]*factor, H: nums[2]*factor };
+  }
+
+  // 2) L:40 W:30 H:20
+  const m2 = norm.match(/L\s*:?[\s]*([\d.]+).{0,10}W\s*:?[\s]*([\d.]+).{0,10}H\s*:?[\s]*([\d.]+)/i);
+  if (m2) {
+    let [ , a, b, c ] = m2;
+    const nums = [a,b,c].map(Number);
+    const hasMM = /mm\b/i.test(norm);
+    const factor = hasMM || nums.some(n => n > 200) ? 0.1 : 1;
+    return { L: nums[0]*factor, W: nums[1]*factor, H: nums[2]*factor };
+  }
+
+  return null;
+}
+
+// Tenta di estrarre L/W/H scansionando TUTTI i campi testuali di un record
+function scanAnyTextForDims(fields: Record<string, any>, dimTextKeys: ReadonlyArray<string>): { L?: number; W?: number; H?: number } | null {
+  // 1) prova i campi noti che potrebbero contenere testo con misure
+  for (const k of dimTextKeys) {
+    const parsed = parseDimsFromText(fields[k]);
+    if (parsed) return parsed;
+  }
+  // 2) in ultima istanza, scansiona tutti i valori stringa
+  for (const [k, v] of Object.entries(fields)) {
+    if (typeof v === 'string') {
+      const parsed = parseDimsFromText(v);
+      if (parsed) return parsed;
+    }
+  }
+  return null;
 }
 
 
@@ -469,36 +520,74 @@ export async function getPreventivo(
       .select({ pageSize: 100, filterByFormula: filterByFormulaColli })
       .eachPage((rows, next) => {
         for (const r of rows) {
-          const f = r.fields || {};
-          // normalizzo in uscita: se mancano i canonicali, li calcolo dagli alias
-          const Ln = pickFirstNumberField(f, COLLI_ALIASES.L);
-          const Wn = pickFirstNumberField(f, COLLI_ALIASES.W);
-          const Hn = pickFirstNumberField(f, COLLI_ALIASES.H);
-          const Pn = pickFirstNumberField(f, COLLI_ALIASES.Peso);
-          const Qn = pickFirstNumberField(f, COLLI_ALIASES.Qty);
+  const f = r.fields || {};
+  const fields = { ...f };
 
-          const fields = { ...f };
-          if (fields['L_cm'] == null && Ln != null) fields['L_cm'] = Ln;
-          if (fields['W_cm'] == null && Wn != null) fields['W_cm'] = Wn;
-          if (fields['H_cm'] == null && Hn != null) fields['H_cm'] = Hn;
-          if (fields['Peso']  == null && Pn != null) fields['Peso']  = Pn;
-          if (fields['Quantita'] == null && Qn != null) fields['Quantita'] = Qn;
+  // 1) prova alias numerici classici
+  let Ln = pickFirstNumberField(f, COLLI_ALIASES.L);
+  let Wn = pickFirstNumberField(f, COLLI_ALIASES.W);
+  let Hn = pickFirstNumberField(f, COLLI_ALIASES.H);
+  let Pn = pickFirstNumberField(f, COLLI_ALIASES.Peso);
+  let Qn = pickFirstNumberField(f, COLLI_ALIASES.Qty);
 
-          colli.push({ id: r.id, fields });
+  // 2) se mancano L/W/H, prova a parsare da testo nel collo
+  if ((Ln == null || Wn == null || Hn == null)) {
+    const parsed = scanAnyTextForDims(f, COLLI_ALIASES.DimText);
+    if (parsed) {
+      Ln = Ln ?? parsed.L;
+      Wn = Wn ?? parsed.W;
+      Hn = Hn ?? parsed.H;
+      _push(debug, 'colli:parsedFromText', { id: r.id, parsed });
+    }
+  }
 
-          // log compatto (solo le chiavi utili) per le prime 3 righe
-          if (colli.length <= 3) {
-            const keyz = Object.keys(f).filter(k => /L|W|H|Peso|Quant/i.test(k));
-            _push(debug, 'colli:sample', {
-              id: r.id,
-              keys: keyz,
-              values: keyz.reduce((acc, k) => ({ ...acc, [k]: f[k] }), {}),
-              normalized: { L_cm: fields['L_cm'], W_cm: fields['W_cm'], H_cm: fields['H_cm'], Peso: fields['Peso'], Quantita: fields['Quantita'] }
-            });
-          }
-        }
-        next();
-      });
+  // 3) se ancora mancano, prova fallback dal record Preventivo
+  if ((Ln == null || Wn == null || Hn == null)) {
+    const p = rec?.fields || {};
+    // alias lato preventivo (stesse chiavi dei colli, più campi testo generici)
+    const pL = pickFirstNumberField(p, COLLI_ALIASES.L);
+    const pW = pickFirstNumberField(p, COLLI_ALIASES.W);
+    const pH = pickFirstNumberField(p, COLLI_ALIASES.H);
+    if (Ln == null && pL != null) Ln = pL;
+    if (Wn == null && pW != null) Wn = pW;
+    if (Hn == null && pH != null) Hn = pH;
+
+    if (Ln == null || Wn == null || Hn == null) {
+      const parsedP = scanAnyTextForDims(p, COLLI_ALIASES.DimText);
+      if (parsedP) {
+        Ln = Ln ?? parsedP.L;
+        Wn = Wn ?? parsedP.W;
+        Hn = Hn ?? parsedP.H;
+        _push(debug, 'colli:parsedFromPreventivoText', { id: r.id, parsed: parsedP });
+      }
+    }
+  }
+
+  // 4) normalizzazione finale in uscita
+  if (fields['L_cm'] == null && Ln != null) fields['L_cm'] = Ln;
+  if (fields['W_cm'] == null && Wn != null) fields['W_cm'] = Wn;
+  if (fields['H_cm'] == null && Hn != null) fields['H_cm'] = Hn;
+  if (fields['Peso']  == null && Pn != null) fields['Peso']  = Pn;
+  if (fields['Quantita'] == null && Qn != null) fields['Quantita'] = Qn;
+
+  colli.push({ id: r.id, fields });
+
+  // log compatto (prime 3 righe)
+  if (colli.length <= 3) {
+    const keyz = Object.keys(f).slice(0, 30); // log non verboso
+    _push(debug, 'colli:sample', {
+      id: r.id,
+      keys: keyz,
+      normalized: {
+        L_cm: fields['L_cm'],
+        W_cm: fields['W_cm'],
+        H_cm: fields['H_cm'],
+        Peso: fields['Peso'],
+        Quantita: fields['Quantita']
+      }
+    });
+  }
+}
 
     _push(debug, 'colliQuery:done', { count: colli.length, sampleIds: colli.slice(0, 5).map(c => c.id) });
   } catch (e: any) {
