@@ -2,133 +2,156 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { getIdToken } from '@/lib/firebase-client-auth';
 
-type Row = {
-  id: string;
-  displayId?: string;
-  fields: any;
-  colli: Array<{ id: string; fields: any }>;
-};
+// chiamata diretta per evitare dipendenze: /api/quotazioni/[id]
+async function fetchPreventivo(id: string) {
+  const token = await getIdToken();
+  const res = await fetch(`/api/quotazioni/${encodeURIComponent(id)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json?.ok === false) throw new Error(json?.error || `HTTP_${res.status}`);
+  return json?.row as { id: string; displayId?: string; fields: any; colli: any[] } | null;
+}
+
+function Field({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className="text-sm">
+      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="font-medium">{value || '—'}</div>
+    </div>
+  );
+}
 
 export default function QuoteDetailPage({ params }: { params: { id: string } }) {
-  const [row, setRow] = useState<Row | null>(null);
+  const { id } = params;
+  const [row, setRow] = useState<any | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let abort = false;
     (async () => {
       setLoading(true);
+      setErr(null);
       try {
-        const res = await fetch(`/api/quotazioni/${encodeURIComponent(params.id)}`);
-        const j = await res.json();
-        if (!abort) setRow(j?.row || null);
+        const r = await fetchPreventivo(id);
+        if (!abort) setRow(r);
+      } catch (e: any) {
+        if (!abort) setErr(e?.message || 'Errore');
       } finally {
         if (!abort) setLoading(false);
       }
     })();
     return () => { abort = true; };
-  }, [params.id]);
+  }, [id]);
 
   if (loading) return <div className="text-sm text-slate-500">Caricamento…</div>;
-  if (!row) return <div className="text-sm text-rose-600">Preventivo non trovato.</div>;
+  if (err) return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-rose-700">
+        {err || 'Preventivo non trovato.'}
+      </div>
+      <Link href="/dashboard/quotazioni" className="rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50">
+        Torna alla lista
+      </Link>
+    </div>
+  );
+  if (!row) return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-rose-700">
+        Preventivo non trovato.
+      </div>
+      <Link href="/dashboard/quotazioni" className="rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50">
+        Torna alla lista
+      </Link>
+    </div>
+  );
 
   const f = row.fields || {};
-  const idVis = row.displayId || row.id;
+  const idDisplay = row.displayId || id;
 
-  const stato = f['Stato_Computato'] || f['Stato'] || 'In lavorazione';
-  const tipoSped = f['Tipo_Spedizione'] || f['Tipologia'] || f['Tipo'] || '—';
-  const incoterm = f['Incoterm'] || '—';
-  const ritiro = f['Ritiro_Data'] || f['RitiroData'] || '—';
+  // campi principali
+  const tipoSped = f['Tipo_Spedizione'] || f['Tipologia'] || f['Tipo'] || f['TipoSped'] || f['Tipo spedizione'] || '—';
+  const stato = f['Stato'] || f['Status'] || '—';
+  const incoterm = f['Incoterm'] || f['Incoterms'] || '—';
 
-  const mittNome = f['Mittente_Nome'] || '—';
-  const mittAddr = [f['Mittente_Indirizzo'], f['Mittente_Citta'], f['Mittente_Paese']].filter(Boolean).join(', ');
-  const destNome = f['Destinatario_Nome'] || '—';
-  const destAddr = [f['Destinatario_Indirizzo'], f['Destinatario_Citta'], f['Destinatario_Paese']].filter(Boolean).join(', ');
+  // Data Ritiro: prendi "Data Ritiro" (spazio) o altri alias
+  const ritiroDate =
+    f['Data Ritiro'] || f['Ritiro_Data'] || f['Data_Ritiro'] || f['RitiroData'] || f['PickUp_Date'] || '';
 
-  const colli = row.colli || [];
+  // mittente / destinatario
+  const M_rs = f['Mittente_Nome'] || f['Mittente'] || '';
+  const M_addr = [f['Mittente_Indirizzo'], f['Mittente_Citta'], f['Mittente_CAP'], f['Mittente_Paese']]
+    .filter(Boolean).join(', ');
+
+  const D_rs = f['Destinatario_Nome'] || f['Destinatario'] || '';
+  const D_addr = [f['Destinatario_Indirizzo'], f['Destinatario_Citta'], f['Destinatario_CAP'], f['Destinatario_Paese']]
+    .filter(Boolean).join(', ');
+
+  const colli: any[] = Array.isArray(row.colli) ? row.colli : [];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Dettaglio preventivo</h1>
-        <Link href="/dashboard/quotazioni" className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50">
-          Torna alla lista
-        </Link>
-      </div>
+    <div className="space-y-6">
+      <h2 className="text-lg font-semibold">Dettaglio preventivo</h2>
 
-      <div className="rounded-2xl border bg-white p-4">
-        <div className="grid gap-6 sm:grid-cols-2">
-          <div>
-            <div className="text-sm text-slate-500">ID Preventivo</div>
-            <div className="font-medium">{idVis}</div>
-          </div>
-          <div>
-            <div className="text-sm text-slate-500">Stato</div>
-            <div className="font-medium">{stato || 'In lavorazione'}</div>
-          </div>
-          <div>
-            <div className="text-sm text-slate-500">Tipo spedizione</div>
-            <div className="font-medium">{tipoSped}</div>
-          </div>
-          <div>
-            <div className="text-sm text-slate-500">Incoterm</div>
-            <div className="font-medium">{incoterm}</div>
-          </div>
-          <div>
-            <div className="text-sm text-slate-500">Data ritiro</div>
-            <div className="font-medium">{ritiro || '—'}</div>
-          </div>
-        </div>
+      <div className="grid gap-4 rounded-xl border bg-white p-4 shadow-sm md:grid-cols-2">
+        <Field label="ID Preventivo" value={idDisplay} />
+        <Field label="Stato" value={stato} />
+        <Field label="Tipo spedizione" value={tipoSped} />
+        <Field label="Incoterm" value={incoterm} />
+        <Field label="Data ritiro" value={ritiroDate ? String(ritiroDate) : '—'} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border bg-white p-4">
-          <h2 className="mb-2 text-base font-semibold text-spst-blue">Mittente</h2>
-          <div className="text-sm">
-            <div className="font-medium">{mittNome}</div>
-            <div className="text-slate-600">{mittAddr || '—'}</div>
-          </div>
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <div className="mb-2 text-sm font-semibold">Mittente</div>
+          <div className="text-sm font-medium">{M_rs || '—'}</div>
+          <div className="text-sm text-slate-600">{M_addr || '—'}</div>
         </div>
-        <div className="rounded-2xl border bg-white p-4">
-          <h2 className="mb-2 text-base font-semibold text-spst-blue">Destinatario</h2>
-          <div className="text-sm">
-            <div className="font-medium">{destNome}</div>
-            <div className="text-slate-600">{destAddr || '—'}</div>
-          </div>
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <div className="mb-2 text-sm font-semibold">Destinatario</div>
+          <div className="text-sm font-medium">{D_rs || '—'}</div>
+          <div className="text-sm text-slate-600">{D_addr || '—'}</div>
         </div>
       </div>
 
-      <div className="rounded-2xl border bg-white p-4">
-        <h2 className="mb-3 text-base font-semibold text-spst-blue">Colli</h2>
+      <div className="rounded-xl border bg-white p-4 shadow-sm">
+        <div className="mb-2 text-sm font-semibold">Colli</div>
+
         {colli.length === 0 ? (
           <div className="text-sm text-slate-500">Nessun collo indicato.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
+            <table className="min-w-[600px] w-full text-sm">
               <thead>
                 <tr className="text-left text-slate-500">
-                  <th className="py-2 pr-4">Quantità</th>
-                  <th className="py-2 pr-4">L (cm)</th>
-                  <th className="py-2 pr-4">W (cm)</th>
-                  <th className="py-2 pr-4">H (cm)</th>
-                  <th className="py-2 pr-4">Peso (kg)</th>
+                  <th className="w-10 py-2">#</th>
+                  <th className="py-2">Quantità</th>
+                  <th className="py-2">Dimensioni (cm)</th>
+                  <th className="py-2">Peso (kg)</th>
                 </tr>
               </thead>
               <tbody>
-                {colli.map((c) => {
+                {colli.map((c, idx) => {
                   const cf = c.fields || {};
-                  const qty = cf['Quantita'] ?? cf['Quantità'] ?? cf['Qty'] ?? 1;
-                  const L = cf['Lato 1'] ?? cf['L_cm'] ?? cf['Lunghezza'] ?? cf['L'] ?? '—';
-                  const W = cf['Lato 2'] ?? cf['W_cm'] ?? cf['Larghezza'] ?? cf['W'] ?? '—';
-                  const H = cf['Lato 3'] ?? cf['H_cm'] ?? cf['Altezza'] ?? cf['H'] ?? '—';
-                  const P = cf['Peso (Kg)'] ?? cf['Peso_Kg'] ?? cf['Peso'] ?? cf['Kg'] ?? '—';
+                  const qta = cf['Quantita'] ?? cf['Quantità'] ?? cf['Qty'] ?? cf['Q.ta'] ?? 1;
+
+                  const L = cf['L_cm'];
+                  const W = cf['W_cm'];
+                  const H = cf['H_cm'];
+                  const hasDims = [L, W, H].some((v) => v != null && v !== '');
+                  const dims = hasDims ? `${L ?? '—'} × ${W ?? '—'} × ${H ?? '—'}` : '—';
+
+                  const peso = cf['Peso'] ?? cf['Peso (Kg)'] ?? cf['Peso_Kg'] ?? cf['Kg'] ?? '—';
+
                   return (
                     <tr key={c.id} className="border-t">
-                      <td className="py-2 pr-4">{qty}</td>
-                      <td className="py-2 pr-4">{L}</td>
-                      <td className="py-2 pr-4">{W}</td>
-                      <td className="py-2 pr-4">{H}</td>
-                      <td className="py-2 pr-4">{P}</td>
+                      <td className="py-2">{idx + 1}</td>
+                      <td className="py-2">{qta ?? '—'}</td>
+                      <td className="py-2">{dims}</td>
+                      <td className="py-2">{peso ?? '—'}</td>
                     </tr>
                   );
                 })}
@@ -137,6 +160,10 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
           </div>
         )}
       </div>
+
+      <Link href="/dashboard/quotazioni" className="inline-block rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50">
+        Torna alla lista
+      </Link>
     </div>
   );
 }
