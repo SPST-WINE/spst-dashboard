@@ -307,20 +307,46 @@ export async function getPreventivo(idOrDisplayId: string): Promise<{
   let rec: any | null = null;
   try {
     rec = await b(TB_PREVENTIVI).find(idOrDisplayId);
-  } catch {
-    // 2) cerca per ID_Preventivo
-    const found: any[] = [];
+  } catch {}
+
+  // 2) prova con filterByFormula su ID_Preventivo
+  if (!rec) {
+    try {
+      const found: any[] = [];
+      await b(TB_PREVENTIVI)
+        .select({
+          pageSize: 50,
+          filterByFormula: `OR({ID_Preventivo}="${idOrDisplayId}", {ID Preventivo}="${idOrDisplayId}")`,
+        })
+        .eachPage((rows, next) => {
+          for (const r of rows) found.push(r);
+          next();
+        });
+      rec = found[0] || null;
+    } catch {}
+  }
+
+  // 3) fallback finale: scan e match lato Node
+  if (!rec) {
+    const all: any[] = [];
     await b(TB_PREVENTIVI)
-      .select({
-        pageSize: 50,
-        filterByFormula: `OR({ID_Preventivo}="${idOrDisplayId}", {ID Preventivo}="${idOrDisplayId}")`,
-      })
+      .select({ pageSize: 100 })
       .eachPage((rows, next) => {
-        for (const r of rows) found.push(r);
+        for (const r of rows) all.push(r);
         next();
       });
-    rec = found[0] || null;
+    rec =
+      all.find((r) => {
+        const f = r.fields || {};
+        const disp =
+          (f['ID_Preventivo'] as string) ||
+          (f['ID Preventivo'] as string) ||
+          (f['ID'] as string) ||
+          '';
+        return String(disp).trim() === String(idOrDisplayId).trim();
+      }) || null;
   }
+
   if (!rec) return null;
 
   // colli collegati (via linked record o campo testo)
@@ -330,7 +356,9 @@ export async function getPreventivo(idOrDisplayId: string): Promise<{
     .eachPage((rows, next) => {
       for (const r of rows) {
         const f = r.fields || {};
-        const linkedArr: string[] = Array.isArray(f[C.LinkPreventivo[0]]) ? (f[C.LinkPreventivo[0]] as string[]) : [];
+        const linkedArr: string[] = Array.isArray(f[C.LinkPreventivo[0]])
+          ? (f[C.LinkPreventivo[0]] as string[])
+          : [];
         const linked = linkedArr.includes(rec.id);
         const txtId = (f[C.PreventivoIdTxt[0]] as string) === rec.id;
         if (linked || txtId) colli.push({ id: r.id, fields: r.fields });
