@@ -55,7 +55,7 @@ const faqs: Array<{ q: string; a: string }> = [
   { q: 'Chi paga i costi accessori?',
     a: 'Di norma il mittente (salvo accordi). Nascono da fuori formato, giacenze o errori di imballo.' },
   { q: 'Cosa sono gli Incoterm?',
-    a: 'Termini internazionali che definiscono chi paga cosa (trasporto, assicurazione, dazi, responsabilità).' },
+    a: 'Termini internazionali che definiscono chi paga cosa (trasporto, assicurazione, dazi, responsabilità). DDP = Tutto a carico del mittente, DAP = Spedizione a carico del mittente, dazi ed oneri doganali a carico del destinatario, EXW = Tutto a carico del destinatario' },
   { q: 'Chi paga la dogana?',
     a: "Dipende dall'Incoterm. In genere l’importatore, ma può essere a carico del mittente se previsto." },
   { q: 'Cosa è una dogana?',
