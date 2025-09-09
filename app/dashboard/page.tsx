@@ -16,7 +16,8 @@ import {
 import { F } from "@/lib/airtable.schema";
 import { format, isToday } from "date-fns";
 import { it } from "date-fns/locale";
-import { getIdToken } from "@/lib/firebase-client-auth"; // ← niente onAuthStateChanged
+import { getIdToken } from "@/lib/firebase-client-auth";
+import { useEffect, useMemo, useState, useCallback } from "react";
 
 // ------- helpers -------
 function norm(val?: string | null) {
@@ -53,9 +54,19 @@ const ACTIVE_STATES = new Set([
   "Unknown",
 ]);
 
-import { useEffect, useMemo, useState, useCallback } from "react";
-
 type Row = { id: string; fields: Record<string, any>; _createdTime?: string };
+
+// Attende il token Firebase con piccoli retry (utile all’avvio della pagina)
+async function ensureAuthToken(maxAttempts = 8, delayMs = 250): Promise<string | null> {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const t = await getIdToken();
+      if (t) return t;
+    } catch {}
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return null;
+}
 
 export default function DashboardOverview() {
   const [email, setEmail] = useState<string | null>(null);
@@ -65,22 +76,34 @@ export default function DashboardOverview() {
   const fetchRows = useCallback(async () => {
     setLoading(true);
     try {
-      // leggo email da localStorage (set dal login client)
       const e = localStorage.getItem("userEmail") || null;
       setEmail(e);
 
-      const token = await getIdToken().catch(() => null);
+      // Se non ho email locale, provo a ottenere il token (con retry) per far filtrare il server
+      const token = e ? await getIdToken().catch(() => null) : await ensureAuthToken();
+
+      // Se mancano sia email che token → non faccio la fetch (evita dati di altri)
+      if (!e && !token) {
+        setRows([]);
+        setLoading(false);
+        return;
+      }
+
       const qs = new URLSearchParams({
-        ...(e ? { email: e } : {}), // se manca, la API userà l'email dal token
+        ...(e ? { email: e } : {}), // se c’è email locale la passo sempre
         sort: "ritiro_desc",
       });
+
       const res = await fetch(`/api/spedizioni?${qs.toString()}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
+
       if (!res.ok) {
         setRows([]);
+        setLoading(false);
         return;
       }
+
       const json = await res.json();
       const data: Row[] = Array.isArray(json) ? json : json.rows ?? [];
       setRows(data);
@@ -92,17 +115,16 @@ export default function DashboardOverview() {
   }, []);
 
   useEffect(() => {
-    // prima lettura
+    // Prima lettura
     fetchRows();
 
-    // ricarica quando:
-    // 1) cambia localStorage.userEmail (es. login in altra tab)
+    // ricarica quando cambia userEmail (al login in un’altra tab)
     const onStorage = (ev: StorageEvent) => {
       if (ev.key === "userEmail") fetchRows();
     };
     window.addEventListener("storage", onStorage);
 
-    // 2) si torna sulla tab (es. utente ha appena fatto login)
+    // ricarica al focus (es. token diventato disponibile)
     const onFocus = () => fetchRows();
     window.addEventListener("focus", onFocus);
 
@@ -247,7 +269,7 @@ export default function DashboardOverview() {
       {/* Tracking a tutta riga */}
       <section>
         <div className="rounded-2xl border bg-white p-4">
-          <h3 className="mb-3 text-sm font-semibold text-[#f7911e]">Tracking spedizioni</h3>
+          <h3 className="mb-3 text sm font-semibold text-[#f7911e]">Tracking spedizioni</h3>
           {loading ? (
             <p className="text-sm text-slate-500">Caricamento…</p>
           ) : trackingItems.length === 0 ? (
@@ -309,7 +331,9 @@ export default function DashboardOverview() {
                 <li key={r.id} className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Calendar className="h-4 w-4 text-[#1c3e5e]" />
-                    <span>{format(r.date!, "d MMMM yyyy", { locale: it })} – {r.city} {r.country ? `(${r.country})` : ""}</span>
+                    <span>
+                      {format(r.date!, "d MMMM yyyy", { locale: it })} – {r.city} {r.country ? `(${r.country})` : ""}
+                    </span>
                   </div>
                 </li>
               ))}
