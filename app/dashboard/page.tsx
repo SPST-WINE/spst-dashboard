@@ -1,6 +1,5 @@
 // app/dashboard/page.tsx
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+"use client";
 
 import Link from "next/link";
 import {
@@ -14,11 +13,10 @@ import {
   ArrowRight,
   Calendar,
 } from "lucide-react";
-
-import { listSpedizioni } from "@/lib/airtable";
 import { F } from "@/lib/airtable.schema";
 import { format, isToday } from "date-fns";
 import { it } from "date-fns/locale";
+import { onAuthStateChanged, getIdToken } from "@/lib/firebase-client-auth";
 
 // ------- helpers -------
 function norm(val?: string | null) {
@@ -55,17 +53,63 @@ const ACTIVE_STATES = new Set([
   "Unknown",
 ]);
 
-export default async function DashboardOverview() {
-  const rows: any[] = await listSpedizioni();
+import { useEffect, useMemo, useState } from "react";
+
+type Row = { id: string; fields: Record<string, any>; _createdTime?: string };
+
+export default function DashboardOverview() {
+  const [email, setEmail] = useState<string | null>(null);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(async (u) => {
+      const e = u?.email ?? localStorage.getItem("userEmail") ?? null;
+      setEmail(e);
+
+      if (!e) {
+        setRows([]);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const token = await getIdToken();
+        const qs = new URLSearchParams({
+          email: e,
+          sort: "ritiro_desc",
+        });
+        const res = await fetch(`/api/spedizioni?${qs.toString()}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        const json = await res.json();
+        const data: Row[] = Array.isArray(json) ? json : json.rows ?? [];
+        setRows(data);
+      } catch {
+        setRows([]);
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    return () => unsub();
+  }, []);
 
   // KPI
-  const inCorso = rows.filter((r) => ACTIVE_STATES.has(norm(r.fields["Stato"] || r.fields["Tracking Status"]))).length;
-  const inConsegnaOggi = rows.filter((r) => {
-    const stato = norm(r.fields["Stato"] || r.fields["Tracking Status"]);
-    const etaStr = r.fields["ETA"];
-    const eta = etaStr ? new Date(etaStr) : null;
-    return stato === "In consegna" || (eta && isToday(eta));
-  }).length;
+  const { inCorso, inConsegnaOggi } = useMemo(() => {
+    const inCorso = rows.filter((r) =>
+      ACTIVE_STATES.has(norm(r.fields["Stato"] || r.fields["Tracking Status"]))
+    ).length;
+
+    const inConsegnaOggi = rows.filter((r) => {
+      const stato = norm(r.fields["Stato"] || r.fields["Tracking Status"]);
+      const etaStr = r.fields["ETA"];
+      const eta = etaStr ? new Date(etaStr) : null;
+      return stato === "In consegna" || (eta && isToday(eta));
+    }).length;
+
+    return { inCorso, inConsegnaOggi };
+  }, [rows]);
 
   const kpi = [
     { label: "Spedizioni in corso", value: String(inCorso), icon: Truck },
@@ -74,49 +118,56 @@ export default async function DashboardOverview() {
   ] as const;
 
   // Tracking items (senza ETA nel testo)
-  const trackingItems = rows
-    .filter((r) => ACTIVE_STATES.has(norm(r.fields["Stato"] || r.fields["Tracking Status"])))
-    .slice(0, 10)
-    .map((r) => {
-      const ref = r.fields["ID Spedizione"] || r.id;
-      const city = r.fields["Destinatario - Città"] || "";
-      const country = r.fields["Destinatario - Paese"] || "";
-      const stato = r.fields["Tracking Status"] || r.fields["Stato"] || "—";
+  const trackingItems = useMemo(() => {
+    return rows
+      .filter((r) => ACTIVE_STATES.has(norm(r.fields["Stato"] || r.fields["Tracking Status"])))
+      .slice(0, 10)
+      .map((r) => {
+        const ref = r.fields["ID Spedizione"] || r.id;
+        const city = r.fields["Destinatario - Città"] || "";
+        const country = r.fields["Destinatario - Paese"] || "";
+        const stato = r.fields["Tracking Status"] || r.fields["Stato"] || "—";
 
-      const carrier =
-        (typeof r.fields[F.Corriere] === "object" && r.fields[F.Corriere]?.name) ||
-        r.fields[F.Corriere] ||
-        null;
+        const carrier =
+          (typeof r.fields[F.Corriere] === "object" && (r.fields as any)[F.Corriere]?.name) ||
+          r.fields[F.Corriere] ||
+          null;
 
-      const code = r.fields[F.TrackingNumber] || null;
-      const url = r.fields[F.TrackingURL] || buildTrackingUrl(carrier, code);
+        const code = r.fields[F.TrackingNumber] || null;
+        const url = r.fields[F.TrackingURL] || buildTrackingUrl(carrier, code);
 
-      return {
-        id: r.id,
-        ref,
-        dest: [city, country].filter(Boolean).join(" (") + (country ? ")" : ""),
-        stato,
-        url,
-      };
-    });
+        return {
+          id: r.id,
+          ref,
+          dest: [city, country].filter(Boolean).join(" (") + (country ? ")" : ""),
+          stato,
+          url,
+        };
+      });
+  }, [rows]);
 
   // Ritiri programmati (per card in basso a destra)
-  const ritiri = rows
-    .map((r) => {
-      const d = r.fields["Ritiro - Data"] ? new Date(r.fields["Ritiro - Data"]) : null;
-      const city = r.fields["Destinatario - Città"] || "";
-      const country = r.fields["Destinatario - Paese"] || "";
-      return { id: r.id, date: d, city, country };
-    })
-    .filter((r) => r.date && r.date >= new Date(new Date().toDateString()))
-    .sort((a, b) => a.date!.getTime() - b.date!.getTime())
-    .slice(0, 5);
+  const ritiri = useMemo(() => {
+    return rows
+      .map((r) => {
+        const d = r.fields["Ritiro - Data"] ? new Date(r.fields["Ritiro - Data"]) : null;
+        const city = r.fields["Destinatario - Città"] || "";
+        const country = r.fields["Destinatario - Paese"] || "";
+        return { id: r.id, date: d, city, country };
+      })
+      .filter((r) => r.date && r.date >= new Date(new Date().toDateString()))
+      .sort((a, b) => a.date!.getTime() - b.date!.getTime())
+      .slice(0, 5);
+  }, [rows]);
 
   return (
     <div className="space-y-8">
       <header>
         <h1 className="text-2xl font-semibold text-slate-800">Overview</h1>
-        <p className="text-slate-500 text-sm mt-1">Riepilogo account, azioni rapide e tracking.</p>
+        <p className="text-slate-500 text-sm mt-1">
+          Riepilogo account, azioni rapide e tracking.
+          {email ? null : " (accedi per vedere le tue spedizioni)"}
+        </p>
       </header>
 
       {/* KPI */}
@@ -130,7 +181,9 @@ export default async function DashboardOverview() {
                 </span>
                 <div>
                   <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-                  <div className="text-xl font-semibold text-slate-900">{value}</div>
+                  <div className="text-xl font-semibold text-slate-900">
+                    {loading ? "…" : value}
+                  </div>
                 </div>
               </div>
             </div>
@@ -178,7 +231,9 @@ export default async function DashboardOverview() {
       <section>
         <div className="rounded-2xl border bg-white p-4">
           <h3 className="mb-3 text-sm font-semibold text-[#f7911e]">Tracking spedizioni</h3>
-          {trackingItems.length === 0 ? (
+          {loading ? (
+            <p className="text-sm text-slate-500">Caricamento…</p>
+          ) : trackingItems.length === 0 ? (
             <p className="text-sm text-slate-500">Nessuna spedizione in corso.</p>
           ) : (
             <div className="divide-y">
@@ -231,7 +286,7 @@ export default async function DashboardOverview() {
         {/* Ritiri (dx) */}
         <div className="rounded-2xl border bg-white p-4">
           <h3 className="mb-3 text-sm font-semibold text-[#f7911e]">Ritiri programmati</h3>
-          {ritiri.length === 0 ? (
+          {!loading && ritiri.length === 0 ? (
             <p className="text-sm text-slate-500">Nessun ritiro programmato.</p>
           ) : (
             <ul className="space-y-3 text-sm">
