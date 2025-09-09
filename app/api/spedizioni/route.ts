@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { buildCorsHeaders } from '@/lib/cors';
 import { adminAuth } from '@/lib/firebase-admin';
 import { createSpedizioneWebApp, listSpedizioni } from '@/lib/airtable';
+import { F } from '@/lib/airtable.schema';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,14 +18,14 @@ async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
   if (m) {
     try {
       const decoded = await adminAuth().verifyIdToken(m[1], true);
-      return decoded.email || decoded.firebase?.identities?.email?.[0] || undefined;
+      return decoded.email || (decoded.firebase as any)?.identities?.email?.[0] || undefined;
     } catch {}
   }
   const session = req.cookies.get('spst_session')?.value;
   if (session) {
     try {
       const decoded = await adminAuth().verifySessionCookie(session, true);
-      return decoded.email || decoded.firebase?.identities?.email?.[0] || undefined;
+      return decoded.email || (decoded.firebase as any)?.identities?.email?.[0] || undefined;
     } catch {}
   }
   return undefined;
@@ -40,14 +41,40 @@ export async function GET(req: NextRequest) {
     const q = searchParams.get('q') || undefined;
     const sort = (searchParams.get('sort') as any) || undefined;
 
-    const email = emailParam || (await getEmailFromAuth(req));
+    // 🔐 email obbligatoria (via query o token). Niente liste globali.
+    const email = (emailParam || (await getEmailFromAuth(req)) || '').trim().toLowerCase();
+    if (!email) {
+      return NextResponse.json(
+        { ok: false, error: 'EMAIL_REQUIRED' },
+        { status: 401, headers: cors }
+      );
+    }
+
     const rows = await listSpedizioni({
-      ...(email ? { email } : {}),
+      email,
       ...(q ? { q } : {}),
       ...(sort ? { sort } : {}),
     });
 
-    return NextResponse.json({ ok: true, rows }, { headers: cors });
+    // Hard-filter extra lato server (a prova di alias/maiuc/minusc)
+    const candidates = new Set<string>([
+      F.CreatoDaEmail,
+      'Creato da',
+      'Creato da (email)',
+      'Created By Email',
+      'Email_Cliente',
+      'Customer_Email',
+    ]);
+    const safeRows = rows.filter((r) => {
+      const f = r.fields || {};
+      for (const k of candidates) {
+        const v = f?.[k];
+        if (typeof v === 'string' && v.trim().toLowerCase() === email) return true;
+      }
+      return false;
+    });
+
+    return NextResponse.json({ ok: true, rows: safeRows }, { headers: cors });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
