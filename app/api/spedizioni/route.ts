@@ -3,7 +3,6 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { buildCorsHeaders } from '@/lib/cors';
 import { adminAuth } from '@/lib/firebase-admin';
 import { createSpedizioneWebApp, listSpedizioni } from '@/lib/airtable';
-import { F } from '@/lib/airtable.schema';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,22 +12,19 @@ export async function OPTIONS(req: NextRequest) {
   return new NextResponse(null, { status: 204, headers: buildCorsHeaders(origin) });
 }
 
-async function getEmailFromAuth(req: NextRequest): Promise<string | undefined> {
+/**
+ * Estrae l'email SOLO dal Bearer token dell'Authorization header.
+ * (Niente cookie: evita di “ereditare” sessioni di altri utenti.)
+ */
+async function getEmailFromBearer(req: NextRequest): Promise<string | undefined> {
   const m = (req.headers.get('authorization') ?? '').match(/^Bearer\s+(.+)$/i);
-  if (m) {
-    try {
-      const decoded = await adminAuth().verifyIdToken(m[1], true);
-      return decoded.email || (decoded.firebase as any)?.identities?.email?.[0] || undefined;
-    } catch {}
+  if (!m) return undefined;
+  try {
+    const decoded = await adminAuth().verifyIdToken(m[1], true);
+    return decoded.email || decoded.firebase?.identities?.email?.[0] || undefined;
+  } catch {
+    return undefined;
   }
-  const session = req.cookies.get('spst_session')?.value;
-  if (session) {
-    try {
-      const decoded = await adminAuth().verifySessionCookie(session, true);
-      return decoded.email || (decoded.firebase as any)?.identities?.email?.[0] || undefined;
-    } catch {}
-  }
-  return undefined;
 }
 
 export async function GET(req: NextRequest) {
@@ -41,13 +37,14 @@ export async function GET(req: NextRequest) {
     const q = searchParams.get('q') || undefined;
     const sort = (searchParams.get('sort') as any) || undefined;
 
-    // 🔐 email obbligatoria (via query o token). Niente liste globali.
-    const email = (emailParam || (await getEmailFromAuth(req)) || '').trim().toLowerCase();
+    // 1) preferisci SEMPRE il Bearer (email sicura dal token)
+    const emailFromToken = await getEmailFromBearer(req);
+    // 2) se non c'è token, usa la querystring (meno sicura ma OK per client già autenticato)
+    const email = emailFromToken || emailParam;
+
+    // Se non abbiamo né token né email esplicita => non ritorniamo dati
     if (!email) {
-      return NextResponse.json(
-        { ok: false, error: 'EMAIL_REQUIRED' },
-        { status: 401, headers: cors }
-      );
+      return NextResponse.json({ ok: true, rows: [] }, { headers: cors });
     }
 
     const rows = await listSpedizioni({
@@ -56,25 +53,7 @@ export async function GET(req: NextRequest) {
       ...(sort ? { sort } : {}),
     });
 
-    // Hard-filter extra lato server (a prova di alias/maiuc/minusc)
-    const candidates = new Set<string>([
-      F.CreatoDaEmail,
-      'Creato da',
-      'Creato da (email)',
-      'Created By Email',
-      'Email_Cliente',
-      'Customer_Email',
-    ]);
-    const safeRows = rows.filter((r) => {
-      const f = r.fields || {};
-      for (const k of candidates) {
-        const v = f?.[k];
-        if (typeof v === 'string' && v.trim().toLowerCase() === email) return true;
-      }
-      return false;
-    });
-
-    return NextResponse.json({ ok: true, rows: safeRows }, { headers: cors });
+    return NextResponse.json({ ok: true, rows }, { headers: cors });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || 'SERVER_ERROR' },
@@ -90,7 +69,7 @@ export async function POST(req: NextRequest) {
   try {
     const payload: any = await req.json();
 
-    // Opzione: creazione session cookie da token
+    // Opzione: creazione session cookie da token (usata altrove; NON letta in GET)
     if (payload.token) {
       const sessionCookie = await adminAuth().createSessionCookie(payload.token, {
         expiresIn: 60 * 60 * 24 * 5 * 1000,
@@ -126,9 +105,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fallback: createdByEmail da auth se non presente
+    // Fallback: createdByEmail dal Bearer se non presente
     if (!payload.createdByEmail) {
-      const email = await getEmailFromAuth(req);
+      const email = await getEmailFromBearer(req);
       if (email) payload.createdByEmail = email;
     }
 
