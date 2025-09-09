@@ -16,7 +16,7 @@ import {
 import { F } from "@/lib/airtable.schema";
 import { format, isToday } from "date-fns";
 import { it } from "date-fns/locale";
-import { onAuthStateChanged, getIdToken } from "@/lib/firebase-client-auth";
+import { getIdToken } from "@/lib/firebase-client-auth"; // ← niente onAuthStateChanged
 
 // ------- helpers -------
 function norm(val?: string | null) {
@@ -53,7 +53,7 @@ const ACTIVE_STATES = new Set([
   "Unknown",
 ]);
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 
 type Row = { id: string; fields: Record<string, any>; _createdTime?: string };
 
@@ -62,38 +62,55 @@ export default function DashboardOverview() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const unsub = onAuthStateChanged(async (u) => {
-      const e = u?.email ?? localStorage.getItem("userEmail") ?? null;
+  const fetchRows = useCallback(async () => {
+    setLoading(true);
+    try {
+      // leggo email da localStorage (set dal login client)
+      const e = localStorage.getItem("userEmail") || null;
       setEmail(e);
 
-      if (!e) {
+      const token = await getIdToken().catch(() => null);
+      const qs = new URLSearchParams({
+        ...(e ? { email: e } : {}), // se manca, la API userà l'email dal token
+        sort: "ritiro_desc",
+      });
+      const res = await fetch(`/api/spedizioni?${qs.toString()}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
         setRows([]);
-        setLoading(false);
         return;
       }
-
-      try {
-        const token = await getIdToken();
-        const qs = new URLSearchParams({
-          email: e,
-          sort: "ritiro_desc",
-        });
-        const res = await fetch(`/api/spedizioni?${qs.toString()}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        const json = await res.json();
-        const data: Row[] = Array.isArray(json) ? json : json.rows ?? [];
-        setRows(data);
-      } catch {
-        setRows([]);
-      } finally {
-        setLoading(false);
-      }
-    });
-
-    return () => unsub();
+      const json = await res.json();
+      const data: Row[] = Array.isArray(json) ? json : json.rows ?? [];
+      setRows(data);
+    } catch {
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    // prima lettura
+    fetchRows();
+
+    // ricarica quando:
+    // 1) cambia localStorage.userEmail (es. login in altra tab)
+    const onStorage = (ev: StorageEvent) => {
+      if (ev.key === "userEmail") fetchRows();
+    };
+    window.addEventListener("storage", onStorage);
+
+    // 2) si torna sulla tab (es. utente ha appena fatto login)
+    const onFocus = () => fetchRows();
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [fetchRows]);
 
   // KPI
   const { inCorso, inConsegnaOggi } = useMemo(() => {
@@ -117,7 +134,7 @@ export default function DashboardOverview() {
     { label: "Azioni richieste", value: "0", icon: AlertTriangle },
   ] as const;
 
-  // Tracking items (senza ETA nel testo)
+  // Tracking items
   const trackingItems = useMemo(() => {
     return rows
       .filter((r) => ACTIVE_STATES.has(norm(r.fields["Stato"] || r.fields["Tracking Status"])))
@@ -146,7 +163,7 @@ export default function DashboardOverview() {
       });
   }, [rows]);
 
-  // Ritiri programmati (per card in basso a destra)
+  // Ritiri programmati
   const ritiri = useMemo(() => {
     return rows
       .map((r) => {
@@ -267,9 +284,8 @@ export default function DashboardOverview() {
         </div>
       </section>
 
-      {/* Supporto + Ritiri (ritiri spostati in basso a destra) */}
+      {/* Supporto + Ritiri */}
       <section className="grid gap-6 lg:grid-cols-2">
-        {/* Supporto (sx) */}
         <div className="rounded-2xl border bg-white p-4">
           <h3 className="mb-3 text-sm font-semibold text-[#f7911e]">Supporto</h3>
           <p className="text-sm text-slate-600">Hai bisogno di aiuto? Siamo a disposizione per domande su compliance, documenti e tracking.</p>
@@ -283,7 +299,6 @@ export default function DashboardOverview() {
           </div>
         </div>
 
-        {/* Ritiri (dx) */}
         <div className="rounded-2xl border bg-white p-4">
           <h3 className="mb-3 text-sm font-semibold text-[#f7911e]">Ritiri programmati</h3>
           {!loading && ritiri.length === 0 ? (
