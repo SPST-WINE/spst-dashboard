@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Package, Boxes, Search, ArrowUpDown } from 'lucide-react';
 import Drawer from '@/components/Drawer';
 import ShipmentDetail from '@/components/ShipmentDetail';
+import { getIdToken } from '@/lib/firebase-client-auth';
 
 type Row = {
   id: string;
@@ -142,15 +143,35 @@ export default function SpedizioniClient() {
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (q.trim()) params.set('q', q.trim());
-    if (sort) params.set('sort', sort);
 
-    fetch(`/api/spedizioni?${params.toString()}`, { cache: 'no-store' })
-      .then(r => r.json())
-      .then(j => {
+    async function load() {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (q.trim()) params.set('q', q.trim());
+        if (sort) params.set('sort', sort);
+
+        // Auth: prova Bearer token, altrimenti fallback ?email= da localStorage
+        const headers: HeadersInit = {};
+        try {
+          const token = await getIdToken();
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+        } catch {
+          // ignore
+        }
+        if (!('Authorization' in headers)) {
+          const email = typeof window !== 'undefined' ? localStorage.getItem('userEmail') : '';
+          if (email) params.set('email', email);
+        }
+
+        const res = await fetch(`/api/spedizioni?${params.toString()}`, {
+          headers,
+          cache: 'no-store',
+        });
+        const j = await res.json().catch(() => ({}));
+
         if (!alive) return;
+
         if (j?.ok) {
           // flatten: { id, _createdTime, ...fields }
           const flat: Row[] = (j.rows || []).map((r: any) => ({
@@ -162,10 +183,14 @@ export default function SpedizioniClient() {
         } else {
           setRows([]);
         }
-      })
-      .catch(() => alive && setRows([]))
-      .finally(() => alive && setLoading(false));
+      } catch {
+        if (alive) setRows([]);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }
 
+    load();
     return () => {
       alive = false;
     };
