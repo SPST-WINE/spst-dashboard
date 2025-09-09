@@ -72,104 +72,98 @@ Team SPST`;
 
     const preheader = `Spedizione confermata — ${idSped}. Riceverai a breve i documenti necessari.`;
 
-    const html = `
-<!doctype html>
+    // ===== HTML con stile coerente all'altra mail =====
+    const html = `<!doctype html>
 <html lang="it">
   <head>
-    <meta charset="utf-8">
-    <meta http-equiv="x-ua-compatible" content="ie=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="x-apple-disable-message-reformatting" />
     <title>${subject}</title>
-    <style>
-      img { border:0; outline:none; text-decoration:none; display:block; }
-      table { border-collapse:collapse; }
-      a { text-decoration:none; }
-      .btn { border-radius:10px; font-weight:600; }
-      @media (max-width: 620px) {
-        .container { width:100% !important; }
-        .px { padding-left:20px !important; padding-right:20px !important; }
-      }
-    </style>
   </head>
-  <body style="margin:0; background:${BRAND_BG};">
-    <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
-      ${preheader}
-    </div>
+  <body style="margin:0;background:${BRAND_BG};font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+    <!-- Preheader -->
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${preheader}</div>
 
-    <table role="presentation" width="100%" bgcolor="${BRAND_BG}">
-      <tr><td align="center" style="padding:28px 16px;">
-        <table role="presentation" width="600" class="container" style="width:600px; max-width:100%; background:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 4px 14px rgba(0,0,0,0.07);">
-          <tr>
-            <td class="px" style="padding:22px 28px; background:${BRAND_PRIMARY};">
-              <img src="${LOGO_URL}" alt="SPST" width="120" height="auto" style="filter: brightness(110%);" />
-            </td>
-          </tr>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BRAND_BG};padding:24px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0">
+            <!-- Header brand -->
+            <tr>
+              <td style="background:${BRAND_PRIMARY};padding:20px 24px;">
+                ${LOGO_URL ? `<img src="${LOGO_URL}" alt="SPST" style="height:28px;display:block;border:0;filter:brightness(110%);" />` : ``}
+              </td>
+            </tr>
 
-          <tr>
-            <td class="px" style="padding:28px;">
-              <h1 style="margin:0 0 6px; font-family:Inter,Arial,sans-serif; font-size:22px; line-height:1.3; color:#111827;">
-                Spedizione confermata ✅
-              </h1>
-              <p style="margin:0 0 14px; font-family:Inter,Arial,sans-serif; font-size:14px; color:#374151;">
-                Grazie! La tua richiesta di spedizione è stata registrata.
-              </p>
+            <!-- Body -->
+            <tr>
+              <td style="padding:24px;">
+                <h1 style="margin:0 0 8px 0;font-size:20px;color:#0f172a;">Spedizione confermata ✅</h1>
+                <p style="margin:0 0 14px 0;color:#374151;font-size:14px;line-height:1.55;">
+                  Grazie! La tua richiesta di spedizione è stata registrata.
+                </p>
 
-              <table role="presentation" style="width:100%; margin:16px 0 8px;">
-                <tr>
-                  <td style="font-family:Inter,Arial,sans-serif; font-size:12px; color:#6b7280; padding-bottom:4px;">ID spedizione</td>
-                </tr>
-                <tr>
-                  <td style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb; color:#111827;">
-                    ${idSped}
-                  </td>
-                </tr>
-              </table>
+                <!-- ID box -->
+                <table role="presentation" style="width:100%;margin:16px 0 8px;">
+                  <tr>
+                    <td style="font-size:12px;color:#6b7280;padding-bottom:4px;">ID spedizione</td>
+                  </tr>
+                  <tr>
+                    <td style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;font-size:14px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;color:#111827;">
+                      ${idSped}
+                    </td>
+                  </tr>
+                </table>
 
-              <p style="margin:16px 0 0; font-family:Inter,Arial,sans-serif; font-size:14px; color:#374151;">
-                Stiamo elaborando la tua spedizione: a breve troverai in <strong>Area Riservata</strong> e riceverai via email
-                tutti i documenti necessari.
-              </p>
-              <p style="margin:10px 0 18px; font-family:Inter,Arial,sans-serif; font-size:14px; color:#374151;">
-                Riceverai indicazioni dettagliate sulla <strong>preparazione del collo</strong> e sui <strong>documenti da applicare</strong>
-                nella mail di evasione.
-              </p>
+                <p style="margin:16px 0 0;color:#374151;font-size:14px;line-height:1.55;">
+                  Stiamo elaborando la tua spedizione: a breve troverai in <strong>Area Riservata</strong> e riceverai via email
+                  tutti i documenti necessari.
+                </p>
+                <p style="margin:10px 0 18px;color:#374151;font-size:14px;line-height:1.55;">
+                  Riceverai indicazioni dettagliate sulla <strong>preparazione del collo</strong> e sui <strong>documenti da applicare</strong>
+                  nella mail di evasione.
+                </p>
 
-              <table role="presentation" width="100%" style="margin:4px 0 6px;">
-                <tr>
-                  <td align="left" style="padding:6px 0;">
-                    <a href="${INFO_URL}" class="btn" style="display:inline-block; background:${BRAND_PRIMARY}; color:#ffffff; padding:12px 16px; font-family:Inter,Arial,sans-serif; font-size:14px;">
-                      Documenti & Informazioni utili
-                    </a>
-                  </td>
-                </tr>
-                <tr>
-                  <td align="left" style="padding:6px 0;">
-                    <a href="${WHATSAPP_URL}" class="btn" style="display:inline-block; background:${BRAND_ACCENT}; color:#111827; padding:12px 16px; font-family:Inter,Arial,sans-serif; font-size:14px;">
-                      Supporto WhatsApp
-                    </a>
-                  </td>
-                </tr>
-              </table>
+                <!-- CTAs -->
+                <table role="presentation" cellpadding="0" cellspacing="0" style="margin:4px 0 6px;">
+                  <tr>
+                    <td>
+                      <a href="${INFO_URL}" target="_blank"
+                         style="display:inline-block;background:${BRAND_PRIMARY};color:#fff;text-decoration:none;padding:12px 16px;border-radius:10px;font-weight:600;font-size:14px;">
+                        Documenti &amp; Informazioni utili
+                      </a>
+                    </td>
+                    <td style="width:10px"></td>
+                    <td>
+                      <a href="${WHATSAPP_URL}" target="_blank"
+                         style="display:inline-block;background:${BRAND_ACCENT};color:#111827;text-decoration:none;padding:12px 16px;border-radius:10px;font-weight:600;font-size:14px;">
+                        Supporto WhatsApp
+                      </a>
+                    </td>
+                  </tr>
+                </table>
 
-              <p style="margin:18px 0 0; font-family:Inter,Arial,sans-serif; font-size:12px; color:#6b7280;">
-                Suggerimento: conserva l’ID per eventuali comunicazioni con il team SPST.
-              </p>
-            </td>
-          </tr>
+                <p style="margin:18px 0 0;color:#6b7280;font-size:12px;">
+                  Suggerimento: conserva l’ID per eventuali comunicazioni con il team SPST.
+                </p>
+              </td>
+            </tr>
 
-          <tr>
-            <td style="padding:18px 28px; background:#f3f4f6;">
-              <p style="margin:0; font-family:Inter,Arial,sans-serif; font-size:11px; color:#6b7280;">
-                © ${new Date().getFullYear()} SPST • <a href="${DASH_URL}" style="color:#374151;">Area Riservata</a>
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td></tr>
+            <!-- Footer -->
+            <tr>
+              <td style="padding:16px 24px;background:#f3f4f6;color:#6b7280;font-size:12px;">
+                <p style="margin:0;">© ${new Date().getFullYear()} SPST • <a href="${DASH_URL}" target="_blank" style="color:#374151;">Area Riservata</a></p>
+              </td>
+            </tr>
+          </table>
+
+          <div style="color:#94a3b8;font-size:12px;margin-top:12px"> </div>
+        </td>
+      </tr>
     </table>
   </body>
-</html>
-`;
+</html>`;
 
     // 5) Invio via Resend (dynamic import per evitare errori in build)
     const { Resend } = await import('resend');
