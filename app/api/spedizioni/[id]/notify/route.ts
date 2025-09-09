@@ -99,7 +99,7 @@ Team SPST`;
             <!-- Body -->
             <tr>
               <td style="padding:24px;">
-                <h1 style="margin:0 0 8px 0;font-size:20px;color:#0f172a;">Spedizione confermata ✅</h1>
+                <h1 style="margin:0 0 8px 0;font-size:20px;color:#0f172a;">Spedizione confermata</h1>
                 <p style="margin:0 0 14px 0;color:#374151;font-size:14px;line-height:1.55;">
                   Grazie! La tua richiesta di spedizione è stata registrata.
                 </p>
