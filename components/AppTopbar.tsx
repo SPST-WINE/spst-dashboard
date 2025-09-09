@@ -8,6 +8,8 @@ type RouteItem = { href: string; label: string };
 const routes: RouteItem[] = [
   { href: '/dashboard/spedizioni', label: 'Le mie spedizioni' },
   { href: '/dashboard/nuova', label: 'Nuova spedizione' },
+  { href: '/dashboard/quotazioni', label: 'Quotazioni' },
+  { href: '/dashboard/quotazioni/nuova', label: 'Nuova Quotazione' }, 
   { href: '/dashboard/informazioni-utili', label: 'Informazioni utili' },
   { href: '/dashboard', label: 'Overview' }, // <- lasciata per ultima (fallback)
 ];
