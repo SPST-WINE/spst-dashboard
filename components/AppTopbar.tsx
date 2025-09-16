@@ -11,6 +11,7 @@ const routes: RouteItem[] = [
   { href: '/dashboard/quotazioni', label: 'Quotazioni' },
   { href: '/dashboard/quotazioni/nuova', label: 'Nuova Quotazione' }, 
   { href: '/dashboard/informazioni-utili', label: 'Informazioni utili' },
+  { href: '/dashboard/impostazioni', label: 'Impostazioni' },
   { href: '/dashboard', label: 'Overview' }, // <- lasciata per ultima (fallback)
 ];
 
