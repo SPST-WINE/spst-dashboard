@@ -32,7 +32,18 @@ function buildTrackingUrl(carrier?: string | null, code?: string | null) {
   if (c.includes("dhl")) return `https://www.dhl.com/track?tracking-number=${encodeURIComponent(n)}`;
   if (c.includes("ups")) return `https://www.ups.com/track?loc=it_IT&tracknum=${encodeURIComponent(n)}`;
   if (c.includes("fedex")) return `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(n)}`;
-  if (c.includes("tnt")) return `https://www.tnt.com/express/it_it/site/shipping-tools/tracking.html?cons=${encodeURIComponent(n)}`;
+
+  // 👇 TNT: domestico vs internazionale
+  if (c.includes("tnt")) {
+    const isDomestic = /^MY[0-9A-Z]+$/i.test(n);   // es. "MY09193362"
+    if (isDomestic) {
+      // Domestiche (Italia) → tnt.it
+      return `https://www.tnt.it/tracking/Tracking.do?cons=${encodeURIComponent(n)}`;
+    }
+    // Internazionali (solo numeri) → tnt.com
+    return `https://www.tnt.com/express/it_it/site/shipping-tools/tracking.html?searchType=con&cons=${encodeURIComponent(n)}`;
+  }
+
   if (c.includes("gls")) return `https://gls-group.com/track?match=${encodeURIComponent(n)}`;
   if (c.includes("brt")) return `https://vas.brt.it/vas/sped_numspe_par.htm?sped_num=${encodeURIComponent(n)}`;
   if (c.includes("poste")) return `https://www.poste.it/cerca/index.html#/risultati-spedizioni/${encodeURIComponent(n)}`;
@@ -40,6 +51,7 @@ function buildTrackingUrl(carrier?: string | null, code?: string | null) {
 
   return null;
 }
+
 
 const ACTIVE_STATES = new Set([
   "In elaborazione",
