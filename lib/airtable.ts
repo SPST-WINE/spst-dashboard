@@ -25,15 +25,18 @@ export type Collo = {
   peso_kg: number | null;
 };
 
+export type TipologiaPL = 'vino fermo' | 'vino spumante' | 'brochure/depliant';
+
 export type RigaPL = {
   etichetta: string;
-  bottiglie: number;
-  formato_litri: number;
-  gradazione: number;
-  prezzo: number;
+  tipologia: TipologiaPL;            // <<< NEW (single select)
+  bottiglie: number | null;
+  formato_litri: number | null;
+  gradazione: number | null;
+  prezzo: number | null;
   valuta: 'EUR' | 'USD' | 'GBP';
-  peso_netto_bott: number;
-  peso_lordo_bott: number;
+  peso_netto_bott: number | null;
+  peso_lordo_bott: number | null;
 };
 
 // -------------------------------------------------------------
@@ -299,14 +302,15 @@ export async function createSpedizioneWebApp(
     const rows = payload.packingList.map((r) => ({
       fields: {
         [FPL.LinkSped]: [recId],
-        [FPL.Etichetta]: r.etichetta,
-        [FPL.Bottiglie]: r.bottiglie,
-        [FPL.FormatoL]: r.formato_litri,
-        [FPL.Grad]: r.gradazione,
-        [FPL.Prezzo]: r.prezzo,
-        [FPL.Valuta]: r.valuta,
-        [FPL.PesoNettoBott]: r.peso_netto_bott,
-        [FPL.PesoLordoBott]: r.peso_lordo_bott,
+        [FPL.Etichetta]: optional(r.etichetta) ?? '',
+        [FPL.Tipologia]: r.tipologia,                 // <<< NEW: Single select (stringa esatta)
+        [FPL.Bottiglie]: optional(r.bottiglie),
+        [FPL.FormatoL]: optional(r.formato_litri),
+        [FPL.Grad]: optional(r.gradazione),
+        [FPL.Prezzo]: optional(r.prezzo),
+        [FPL.Valuta]: r.valuta || 'EUR',
+        [FPL.PesoNettoBott]: optional(r.peso_netto_bott),
+        [FPL.PesoLordoBott]: optional(r.peso_lordo_bott),
       },
     }));
     const BATCH = 10;
