@@ -102,6 +102,8 @@ export const FCOLLO = {
 export const FPL = {
   LinkSped: 'Spedizione',
   Etichetta: 'Etichetta',
+  // NEW single select case-sensitive
+  Tipologia: 'Tipologia',                          // 'vino fermo' | 'vino spumante' | 'brochure/depliant'
   Bottiglie: 'Bottiglie',
   FormatoL: 'Formato (L)',
   Grad: 'Gradazione (% vol)',
@@ -164,4 +166,3 @@ export const QCOLLO = {
   H: 'Altezza',
   Peso: 'Peso_Kg',
 } as const;
-
