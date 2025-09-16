@@ -209,7 +209,7 @@ export default function PackingListVino({ value, onChange, files, onFiles }: Pro
       <div className={`hidden md:grid ${COLS} ${GAP} pb-2 text-[11px] font-medium text-slate-500`}>
         <div>Etichetta</div>
         <div>Tipologia</div>
-        <div>Bott.</div>
+        <div>Quantità</div>
         <div>Formato (L)</div>
         <div>Grad. %</div>
         <div>Prezzo</div>
