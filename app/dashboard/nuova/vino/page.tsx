@@ -79,8 +79,19 @@ export default function NuovaVinoPage() {
   const [sameAsDest, setSameAsDest] = useState(false);
   const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined);
 
+  // ▼▼ FIX: aggiunta tipologia nella riga PL iniziale ▼▼
   const [pl, setPl] = useState<RigaPL[]>([
-    { etichetta: '', bottiglie: 1, formato_litri: 0.75, gradazione: 12, prezzo: 0, valuta: 'EUR', peso_netto_bott: 0.75, peso_lordo_bott: 1.3 },
+    {
+      etichetta: '',
+      tipologia: 'vino fermo',
+      bottiglie: 1,
+      formato_litri: 0.75,
+      gradazione: 12,
+      prezzo: 0,
+      valuta: 'EUR',
+      peso_netto_bott: 0.75,
+      peso_lordo_bott: 1.3,
+    },
   ]);
   const [plFiles, setPlFiles] = useState<File[]>([]);
 
@@ -140,25 +151,70 @@ export default function NuovaVinoPage() {
     }
   }
 
+  // --- Validazioni aggiuntive richieste ---
+  function isPhoneValid(raw?: string) {
+    if (!raw) return false;
+    const v = raw.replace(/\s+/g, '');
+    return /^\+?[1-9]\d{6,14}$/.test(v); // E.164-like
+  }
+
+  function validatePLConditional(rows: RigaPL[] | undefined): string[] {
+    const out: string[] = [];
+    if (!rows || rows.length === 0) {
+      out.push('Packing list obbligatoria per spedizioni vino.');
+      return out;
+    }
+    rows.forEach((r, i) => {
+      const idx = `Riga PL #${i + 1}`;
+      if (!r.etichetta?.trim()) out.push(`${idx}: etichetta prodotto mancante.`);
+      if (!r['tipologia']) out.push(`${idx}: seleziona la tipologia (vino fermo/spumante o brochure/depliant).`);
+
+      const isBrochure = r['tipologia'] === 'brochure/depliant';
+      if (isBrochure) {
+        if (!r.bottiglie || r.bottiglie <= 0) out.push(`${idx}: quantità (pezzi) > 0 obbligatoria per brochure/depliant.`);
+        if (r.peso_netto_bott == null || r.peso_netto_bott <= 0) out.push(`${idx}: peso netto/pezzo (kg) obbligatorio per brochure/depliant.`);
+        if (r.peso_lordo_bott == null || r.peso_lordo_bott <= 0) out.push(`${idx}: peso lordo/pezzo (kg) obbligatorio per brochure/depliant.`);
+      } else {
+        if (!r.bottiglie || r.bottiglie <= 0) out.push(`${idx}: numero bottiglie > 0 obbligatorio.`);
+        if (r.formato_litri == null || r.formato_litri <= 0) out.push(`${idx}: formato bottiglia (L) obbligatorio.`);
+        if (r.gradazione == null || Number.isNaN(r.gradazione)) out.push(`${idx}: gradazione alcolica (% vol) obbligatoria.`);
+        else if (r.gradazione < 4 || r.gradazione > 25) out.push(`${idx}: gradazione fuori range plausibile (4–25% vol).`);
+        if (r.peso_netto_bott == null || r.peso_netto_bott <= 0) out.push(`${idx}: peso netto/bottiglia (kg) obbligatorio.`);
+        if (r.peso_lordo_bott == null || r.peso_lordo_bott <= 0) out.push(`${idx}: peso lordo/bottiglia (kg) obbligatorio.`);
+      }
+    });
+    return out;
+  }
+
   function validate(): string[] {
     const errs: string[] = [];
+
+    // ✅ Telefoni obbligatori (mittente e destinatario)
+    if (!isPhoneValid(mittente.telefono)) errs.push('Telefono mittente obbligatorio in formato internazionale (es. +393201441789).');
+    if (!isPhoneValid(destinatario.telefono)) errs.push('Telefono destinatario obbligatorio in formato internazionale.');
 
     // ✅ CF/P.IVA DESTINATARIO solo per B2B e Sample (non B2C)
     if ((tipoSped === 'B2B' || tipoSped === 'Sample') && !destinatario.piva?.trim()) {
       errs.push(DEST_PIVA_MSG);
     }
 
+    // ✅ P.IVA/CF Mittente
     if (!mittente.piva?.trim()) errs.push('Partita IVA/Codice Fiscale del mittente mancante.');
 
+    // ✅ Colli completi e > 0
     colli.forEach((c, i) => {
       const miss = c.lunghezza_cm == null || c.larghezza_cm == null || c.altezza_cm == null || c.peso_kg == null;
       const nonPos = (c.lunghezza_cm ?? 0) <= 0 || (c.larghezza_cm ?? 0) <= 0 || (c.altezza_cm ?? 0) <= 0 || (c.peso_kg ?? 0) <= 0;
       if (miss || nonPos) errs.push(`Collo #${i + 1}: inserire tutte le misure e un peso > 0.`);
     });
 
+    // ✅ Data ritiro
     if (!ritiroData) errs.push('Seleziona il giorno di ritiro.');
 
-    // Se NON alleghi fattura, alcuni dati fattura sono obbligatori
+    // ✅ Packing list condizionale (OBBLIGATORIA)
+    errs.push(...validatePLConditional(pl));
+
+    // ✅ Dati fattura se non allego file
     if (!fatturaFile) {
       const fatt = sameAsDest ? destinatario : fatturazione;
       if (!fatt.ragioneSociale?.trim()) errs.push('Dati fattura: ragione sociale mancante.');
@@ -374,8 +430,8 @@ export default function NuovaVinoPage() {
           aria-busy={saving}
           className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
         >
-          {saving && <span className="inline-block h-4 w-4 animate-spin rounded-full border border-slate-400 border-t-transparent" />}
-          {saving ? 'Salvataggio…' : 'Salva'}
+        {saving && <span className="inline-block h-4 w-4 animate-spin rounded-full border border-slate-400 border-t-transparent" />}
+        {saving ? 'Salvataggio…' : 'Salva'}
         </button>
       </div>
     </div>
