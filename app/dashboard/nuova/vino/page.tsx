@@ -291,7 +291,7 @@ export default function NuovaVinoPage() {
 
   if (success) {
     const INFO_URL = process.env.NEXT_PUBLIC_INFO_URL || '/dashboard/informazioni-utili';
-    const WHATSAPP_URL_BASE = process.env.NEXT_PUBLIC_WHATSAPP_URL || 'https://wa.me/393000000000';
+    const WHATSAPP_URL_BASE = process.env.NEXT_PUBLIC_WHATSAPP_URL || 'https://wa.me/message/CP62RMFFDNZPO1';
     const whatsappHref = `${WHATSAPP_URL_BASE}?text=${encodeURIComponent(
       `Ciao SPST, ho bisogno di supporto sulla spedizione ${success.idSped}`
     )}`;
