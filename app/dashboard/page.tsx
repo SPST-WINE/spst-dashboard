@@ -315,7 +315,7 @@ export default function DashboardOverview() {
             <Link href="/dashboard/informazioni-utili" className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-[#1c3e5e] hover:bg-slate-50">
               <FileText className="h-4 w-4" /> Documenti utili
             </Link>
-            <Link href="https://wa.me/393204662570" target="_blank" className="inline-flex items-center gap-2 rounded-lg bg-[#f7911e] px-3 py-2 text-sm text-white hover:opacity-95">
+            <Link href="https://wa.me/message/CP62RMFFDNZPO1" target="_blank" className="inline-flex items-center gap-2 rounded-lg bg-[#f7911e] px-3 py-2 text-sm text-white hover:opacity-95">
               <HelpCircle className="h-4 w-4" /> WhatsApp
             </Link>
           </div>
