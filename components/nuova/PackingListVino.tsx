@@ -3,6 +3,7 @@
 import * as React from 'react';
 
 export type Valuta = 'EUR' | 'USD' | 'GBP';
+export type TipologiaPL = 'vino fermo' | 'vino spumante' | 'brochure/depliant';
 
 export type RigaPL = {
   etichetta: string;
@@ -13,6 +14,8 @@ export type RigaPL = {
   valuta: Valuta;
   peso_netto_bott: number | null;
   peso_lordo_bott: number | null;
+  // NEW
+  tipologia: TipologiaPL;
 };
 
 type Props = {
@@ -28,9 +31,10 @@ const ORANGE = '#f7911e';
 const inputCls =
   'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-[#1c3e5e]';
 
-// Stesse colonne/gap per header e righe → allineamento perfetto
+// +1 colonna: Tipologia (single select)
+// Layout: Etichetta | Tipologia | Bott. | Formato(L) | Grad% | Prezzo | Valuta | Peso netto | Peso lordo | Azioni
 const COLS =
-  'md:grid-cols-[minmax(180px,1fr)_96px_110px_100px_110px_110px_130px_130px_90px]';
+  'md:grid-cols-[minmax(160px,1fr)_150px_96px_110px_100px_110px_110px_130px_130px_90px]';
 const GAP = 'gap-3';
 
 const emptyRow: RigaPL = {
@@ -42,6 +46,7 @@ const emptyRow: RigaPL = {
   valuta: 'EUR',
   peso_netto_bott: null,
   peso_lordo_bott: null,
+  tipologia: 'vino fermo',
 };
 
 export default function PackingListVino({ value, onChange, files, onFiles }: Props) {
@@ -140,6 +145,7 @@ export default function PackingListVino({ value, onChange, files, onFiles }: Pro
       {/* HEADER — usa stesse colonne e stesso gap delle righe */}
       <div className={`hidden md:grid ${COLS} ${GAP} pb-2 text-[11px] font-medium text-slate-500`}>
         <div>Etichetta</div>
+        <div>Tipologia</div>
         <div>Bott.</div>
         <div>Formato (L)</div>
         <div>Grad. %</div>
@@ -152,85 +158,116 @@ export default function PackingListVino({ value, onChange, files, onFiles }: Pro
 
       {/* RIGHE */}
       <div className="space-y-3">
-        {rows.map((r, i) => (
-          <div key={i} className={`grid ${COLS} ${GAP} items-center`}>
-            <input
-              className={inputCls}
-              placeholder="Nome etichetta"
-              aria-label="Etichetta"
-              value={r.etichetta}
-              onChange={(e) => update(i, 'etichetta', e.target.value)}
-            />
-            <input
-              className={inputCls}
-              placeholder="1"
-              aria-label="Bottiglie"
-              inputMode="numeric"
-              value={r.bottiglie ?? ''}
-              onChange={(e) => update(i, 'bottiglie', toNumOrNull(e.target.value))}
-            />
-            <input
-              className={inputCls}
-              placeholder="0,75"
-              aria-label="Formato in litri"
-              inputMode="decimal"
-              value={r.formato_litri ?? ''}
-              onChange={(e) => update(i, 'formato_litri', toNumOrNull(e.target.value))}
-            />
-            <input
-              className={inputCls}
-              placeholder="12"
-              aria-label="Gradazione percentuale"
-              inputMode="decimal"
-              value={r.gradazione ?? ''}
-              onChange={(e) => update(i, 'gradazione', toNumOrNull(e.target.value))}
-            />
-            <input
-              className={inputCls}
-              placeholder="0"
-              aria-label="Prezzo unitario"
-              inputMode="decimal"
-              value={r.prezzo ?? ''}
-              onChange={(e) => update(i, 'prezzo', toNumOrNull(e.target.value))}
-            />
-            <select
-              className={inputCls}
-              aria-label="Valuta"
-              value={r.valuta}
-              onChange={(e) => update(i, 'valuta', e.target.value as Valuta)}
-            >
-              <option value="EUR">EUR</option>
-              <option value="USD">USD</option>
-              <option value="GBP">GBP</option>
-            </select>
-            <input
-              className={inputCls}
-              placeholder="0,75"
-              aria-label="Peso netto per bottiglia (kg)"
-              inputMode="decimal"
-              value={r.peso_netto_bott ?? ''}
-              onChange={(e) => update(i, 'peso_netto_bott', toNumOrNull(e.target.value))}
-            />
-            <input
-              className={inputCls}
-              placeholder="1,3"
-              aria-label="Peso lordo per bottiglia (kg)"
-              inputMode="decimal"
-              value={r.peso_lordo_bott ?? ''}
-              onChange={(e) => update(i, 'peso_lordo_bott', toNumOrNull(e.target.value))}
-            />
+        {rows.map((r, i) => {
+          const isBrochure = r.tipologia === 'brochure/depliant';
+          return (
+            <div key={i} className={`grid ${COLS} ${GAP} items-center`}>
+              {/* Etichetta */}
+              <input
+                className={inputCls}
+                placeholder="Nome etichetta"
+                aria-label="Etichetta"
+                value={r.etichetta}
+                onChange={(e) => update(i, 'etichetta', e.target.value)}
+              />
 
-            <div className="flex items-center justify-end">
-              <button
-                type="button"
-                onClick={() => remove(i)}
-                className="rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50"
+              {/* Tipologia (single select case-sensitive) */}
+              <select
+                className={inputCls}
+                aria-label="Tipologia"
+                value={r.tipologia}
+                onChange={(e) => update(i, 'tipologia', e.target.value as TipologiaPL)}
               >
-                Rimuovi
-              </button>
+                <option value="vino fermo">vino fermo</option>
+                <option value="vino spumante">vino spumante</option>
+                <option value="brochure/depliant">brochure/depliant</option>
+              </select>
+
+              {/* Quantità: bottiglie o pezzi */}
+              <input
+                className={inputCls}
+                placeholder={isBrochure ? 'pezzi' : 'bott.'}
+                aria-label="Quantità"
+                inputMode="numeric"
+                value={r.bottiglie ?? ''}
+                onChange={(e) => update(i, 'bottiglie', toNumOrNull(e.target.value))}
+              />
+
+              {/* Formato (L) — disabilitato per brochure */}
+              <input
+                className={inputCls}
+                placeholder="0,75"
+                aria-label="Formato in litri"
+                inputMode="decimal"
+                value={r.formato_litri ?? ''}
+                onChange={(e) => update(i, 'formato_litri', toNumOrNull(e.target.value))}
+                disabled={isBrochure}
+              />
+
+              {/* Gradazione — disabilitata per brochure */}
+              <input
+                className={inputCls}
+                placeholder="12"
+                aria-label="Gradazione percentuale"
+                inputMode="decimal"
+                value={r.gradazione ?? ''}
+                onChange={(e) => update(i, 'gradazione', toNumOrNull(e.target.value))}
+                disabled={isBrochure}
+              />
+
+              {/* Prezzo */}
+              <input
+                className={inputCls}
+                placeholder="0"
+                aria-label="Prezzo unitario"
+                inputMode="decimal"
+                value={r.prezzo ?? ''}
+                onChange={(e) => update(i, 'prezzo', toNumOrNull(e.target.value))}
+              />
+
+              {/* Valuta */}
+              <select
+                className={inputCls}
+                aria-label="Valuta"
+                value={r.valuta}
+                onChange={(e) => update(i, 'valuta', e.target.value as Valuta)}
+              >
+                <option value="EUR">EUR</option>
+                <option value="USD">USD</option>
+                <option value="GBP">GBP</option>
+              </select>
+
+              {/* Peso netto/lordo (per bottiglia o per pezzo) */}
+              <input
+                className={inputCls}
+                placeholder={isBrochure ? 'peso netto/pezzo (kg)' : 'peso netto/bott (kg)'}
+                aria-label="Peso netto"
+                inputMode="decimal"
+                value={r.peso_netto_bott ?? ''}
+                onChange={(e) => update(i, 'peso_netto_bott', toNumOrNull(e.target.value))}
+              />
+              <input
+                className={inputCls}
+                placeholder={isBrochure ? 'peso lordo/pezzo (kg)' : 'peso lordo/bott (kg)'}
+                aria-label="Peso lordo"
+                inputMode="decimal"
+                value={r.peso_lordo_bott ?? ''}
+                onChange={(e) => update(i, 'peso_lordo_bott', toNumOrNull(e.target.value))}
+              />
+
+              {/* Azioni */}
+              <div className="flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => remove(i)}
+                  className="rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50"
+                >
+                  Rimuovi
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {rows.length === 0 && (
           <div className="text-sm text-slate-500">
