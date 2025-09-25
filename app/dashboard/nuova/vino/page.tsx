@@ -89,8 +89,8 @@ export default function NuovaVinoPage() {
       gradazione: 12,
       prezzo: 0,
       valuta: 'EUR',
-      peso_netto_bott: 0.75,
-      peso_lordo_bott: 1.3,
+      peso_netto_bott: 1.2,
+      peso_lordo_bott: 1.5,
     },
   ]);
   const [plFiles, setPlFiles] = useState<File[]>([]);
