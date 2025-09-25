@@ -40,10 +40,11 @@ const emptyRow: RigaPL = {
   gradazione: null,
   prezzo: null,
   valuta: 'EUR',
-  peso_netto_bott: null,
-  peso_lordo_bott: null,
+  peso_netto_bott: 1.2,   // <— default
+  peso_lordo_bott: 1.5,   // <— default
   tipologia: 'vino fermo',
 };
+
 
 // Campi numerici gestiti in bozza stringa
 type NumKey =
@@ -207,17 +208,18 @@ export default function PackingListVino({ value, onChange, files, onFiles }: Pro
 
       {/* HEADER */}
       <div className={`hidden md:grid ${COLS} ${GAP} pb-2 text-[11px] font-medium text-slate-500`}>
-        <div>Etichetta</div>
-        <div>Tipologia</div>
-        <div>Quantità</div>
-        <div>Formato (L)</div>
-        <div>Grad. %</div>
-        <div>Prezzo</div>
-        <div>Valuta</div>
-        <div>Peso netto (kg)</div>
-        <div>Peso lordo (kg)</div>
-        <div className="select-none text-transparent">Azioni</div>
-      </div>
+  <div>Etichetta</div>
+  <div>Tipologia</div>
+  <div>Quantità</div>
+  <div>Formato (L)</div>
+  <div>Grad. %</div>
+  <div>Prezzo</div>
+  <div>Valuta</div>
+  <div>Peso netto bottiglia (kg)</div>   {/* cambiato */}
+  <div>Peso lordo bottiglia (kg)</div>   {/* cambiato */}
+  <div className="select-none text-transparent">Azioni</div>
+</div>
+
 
       {/* RIGHE */}
       <div className="space-y-3">
