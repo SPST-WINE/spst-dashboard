@@ -10,10 +10,10 @@ export type RigaPL = {
   bottiglie: number | null;
   formato_litri: number | null;
   gradazione: number | null;
-  prezzo: number | null;
+  prezzo: number | null;          // prezzo unitario (per bott./pezzo)
   valuta: Valuta;
-  peso_netto_bott: number | null;
-  peso_lordo_bott: number | null;
+  peso_netto_bott: number | null; // kg per bott./pezzo
+  peso_lordo_bott: number | null; // kg per bott./pezzo
   tipologia: TipologiaPL;
 };
 
@@ -44,8 +44,8 @@ const emptyRow: RigaPL = {
   gradazione: null,
   prezzo: null,
   valuta: 'EUR',
-  peso_netto_bott: DEFAULT_PESO_NETTO, // default
-  peso_lordo_bott: DEFAULT_PESO_LORDO, // default
+  peso_netto_bott: DEFAULT_PESO_NETTO,
+  peso_lordo_bott: DEFAULT_PESO_LORDO,
   tipologia: 'vino fermo',
 };
 
@@ -71,13 +71,12 @@ export default function PackingListVino({ value, onChange, files, onFiles }: Pro
   const rows = value ?? [];
   const fileList = files ?? [];
 
-  // Alla prima render, normalizza eventuali righe inizializzate con vecchi valori
+  // Normalizza eventuali righe iniziali con vecchi valori
   React.useEffect(() => {
     if (!rows || rows.length === 0) return;
 
     const normalized = rows.map((r) => ({
       ...r,
-      // porta ai nuovi default se null/undefined oppure se sono i vecchi valori storici 0.75 / 1.3
       peso_netto_bott:
         r.peso_netto_bott == null || r.peso_netto_bott === 0.75
           ? DEFAULT_PESO_NETTO
@@ -88,18 +87,14 @@ export default function PackingListVino({ value, onChange, files, onFiles }: Pro
           : r.peso_lordo_bott,
     }));
 
-    // evita loop: aggiorna solo se cambia qualcosa
-    if (JSON.stringify(normalized) !== JSON.stringify(rows)) {
-      onChange(normalized);
-    }
-    // esegui solo al mount
+    if (JSON.stringify(normalized) !== JSON.stringify(rows)) onChange(normalized);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Stato locale "bozza" per i campi numerici, così si può digitare 0, 0,7, ecc.
+  // Stato locale "bozza" per i campi numerici
   const [draft, setDraft] = React.useState<Array<Partial<Record<NumKey, string>>>>([]);
 
-  // inizializza/sincronizza la bozza quando cambia il numero di righe
+  // Sincronizza bozza quando cambia il numero di righe
   React.useEffect(() => {
     setDraft((prev) => {
       const next = rows.map((r, i) => {
@@ -117,7 +112,7 @@ export default function PackingListVino({ value, onChange, files, onFiles }: Pro
       });
       return next;
     });
-  }, [rows.length]); // mantieni l’editing corrente se la lunghezza non cambia
+  }, [rows.length]);
 
   const toNumber = (s: string): number | null => {
     if (!s || !s.trim()) return null;
@@ -178,6 +173,26 @@ export default function PackingListVino({ value, onChange, files, onFiles }: Pro
 
   const display = (i: number, k: NumKey) =>
     draft[i]?.[k] ?? (rows[i][k] != null ? String(rows[i][k] as number).replace('.', ',') : '');
+
+  // ===== RIEPILOGO TOTALE =====
+  const { pesoNettoTot, pesoLordoTot, prezzoTotByCur } = React.useMemo(() => {
+    const res = {
+      pesoNettoTot: 0,
+      pesoLordoTot: 0,
+      prezzoTotByCur: {} as Record<Valuta, number>,
+    };
+    for (const r of rows) {
+      const q = r.bottiglie ?? 0;
+      const pn = r.peso_netto_bott ?? 0;
+      const pl = r.peso_lordo_bott ?? 0;
+      const pr = r.prezzo ?? 0;
+      res.pesoNettoTot += q * pn;
+      res.pesoLordoTot += q * pl;
+      const cur = r.valuta ?? 'EUR';
+      res.prezzoTotByCur[cur] = (res.prezzoTotByCur[cur] ?? 0) + q * pr;
+    }
+    return res;
+  }, [rows]);
 
   return (
     <div className="rounded-2xl border bg-white p-4">
@@ -379,6 +394,24 @@ export default function PackingListVino({ value, onChange, files, onFiles }: Pro
         {rows.length === 0 && (
           <div className="text-sm text-slate-500">Nessuna riga. Aggiungi una riga per iniziare.</div>
         )}
+      </div>
+
+      {/* RIEPILOGO: badge a destra come nella card "Colli" */}
+      <div className="mt-3 flex justify-end">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="rounded-md border border-slate-300 bg-white px-2 py-1">
+            Peso netto totale: <span className="font-semibold">{pesoNettoTot.toFixed(2)} kg</span>
+          </span>
+          <span className="rounded-md border border-slate-300 bg-white px-2 py-1">
+            Peso lordo totale: <span className="font-semibold">{pesoLordoTot.toFixed(2)} kg</span>
+          </span>
+
+          {Object.entries(prezzoTotByCur).map(([cur, tot]) => (
+            <span key={cur} className="rounded-md border border-slate-300 bg-white px-2 py-1">
+              Prezzo totale {cur}: <span className="font-semibold">{tot.toFixed(2)} {cur}</span>
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );
