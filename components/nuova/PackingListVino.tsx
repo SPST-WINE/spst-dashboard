@@ -33,6 +33,10 @@ const COLS =
   'md:grid-cols-[minmax(160px,1fr)_150px_96px_110px_100px_110px_110px_130px_130px_90px]';
 const GAP = 'gap-3';
 
+// === DEFAULTS ===
+const DEFAULT_PESO_NETTO = 1.2;
+const DEFAULT_PESO_LORDO = 1.5;
+
 const emptyRow: RigaPL = {
   etichetta: '',
   bottiglie: null,
@@ -40,11 +44,10 @@ const emptyRow: RigaPL = {
   gradazione: null,
   prezzo: null,
   valuta: 'EUR',
-  peso_netto_bott: 1.2,   // <— default
-  peso_lordo_bott: 1.5,   // <— default
+  peso_netto_bott: DEFAULT_PESO_NETTO, // default
+  peso_lordo_bott: DEFAULT_PESO_LORDO, // default
   tipologia: 'vino fermo',
 };
-
 
 // Campi numerici gestiti in bozza stringa
 type NumKey =
@@ -68,19 +71,41 @@ export default function PackingListVino({ value, onChange, files, onFiles }: Pro
   const rows = value ?? [];
   const fileList = files ?? [];
 
+  // Alla prima render, normalizza eventuali righe inizializzate con vecchi valori
+  React.useEffect(() => {
+    if (!rows || rows.length === 0) return;
+
+    const normalized = rows.map((r) => ({
+      ...r,
+      // porta ai nuovi default se null/undefined oppure se sono i vecchi valori storici 0.75 / 1.3
+      peso_netto_bott:
+        r.peso_netto_bott == null || r.peso_netto_bott === 0.75
+          ? DEFAULT_PESO_NETTO
+          : r.peso_netto_bott,
+      peso_lordo_bott:
+        r.peso_lordo_bott == null || r.peso_lordo_bott === 1.3
+          ? DEFAULT_PESO_LORDO
+          : r.peso_lordo_bott,
+    }));
+
+    // evita loop: aggiorna solo se cambia qualcosa
+    if (JSON.stringify(normalized) !== JSON.stringify(rows)) {
+      onChange(normalized);
+    }
+    // esegui solo al mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Stato locale "bozza" per i campi numerici, così si può digitare 0, 0,7, ecc.
   const [draft, setDraft] = React.useState<Array<Partial<Record<NumKey, string>>>>([]);
 
   // inizializza/sincronizza la bozza quando cambia il numero di righe
   React.useEffect(() => {
-    setDraft(prev => {
+    setDraft((prev) => {
       const next = rows.map((r, i) => {
         const old = prev[i] || {};
         const initFromRow = (k: NumKey) =>
-          old[k] ??
-          (r[k] != null
-            ? String(r[k] as number).replace('.', ',')
-            : '');
+          old[k] ?? (r[k] != null ? String(r[k] as number).replace('.', ',') : '');
         return {
           bottiglie: initFromRow('bottiglie'),
           formato_litri: initFromRow('formato_litri'),
@@ -115,7 +140,7 @@ export default function PackingListVino({ value, onChange, files, onFiles }: Pro
   };
 
   const setDraftVal = (rowIdx: number, key: NumKey, val: string) => {
-    setDraft(prev => {
+    setDraft((prev) => {
       const next = prev.slice();
       next[rowIdx] = { ...(next[rowIdx] || {}), [key]: val };
       return next;
@@ -131,7 +156,7 @@ export default function PackingListVino({ value, onChange, files, onFiles }: Pro
   const addRow = () => onChange([...rows, { ...emptyRow }]);
   const remove = (i: number) => {
     onChange(rows.filter((_, j) => j !== i));
-    setDraft(d => d.filter((_, j) => j !== i));
+    setDraft((d) => d.filter((_, j) => j !== i));
   };
 
   const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -152,7 +177,7 @@ export default function PackingListVino({ value, onChange, files, onFiles }: Pro
   };
 
   const display = (i: number, k: NumKey) =>
-    (draft[i]?.[k] ?? (rows[i][k] != null ? String(rows[i][k] as number).replace('.', ',') : ''));
+    draft[i]?.[k] ?? (rows[i][k] != null ? String(rows[i][k] as number).replace('.', ',') : '');
 
   return (
     <div className="rounded-2xl border bg-white p-4">
@@ -208,18 +233,17 @@ export default function PackingListVino({ value, onChange, files, onFiles }: Pro
 
       {/* HEADER */}
       <div className={`hidden md:grid ${COLS} ${GAP} pb-2 text-[11px] font-medium text-slate-500`}>
-  <div>Etichetta</div>
-  <div>Tipologia</div>
-  <div>Quantità</div>
-  <div>Formato (L)</div>
-  <div>Grad. %</div>
-  <div>Prezzo</div>
-  <div>Valuta</div>
-  <div>Peso netto bottiglia (kg)</div>   {/* cambiato */}
-  <div>Peso lordo bottiglia (kg)</div>   {/* cambiato */}
-  <div className="select-none text-transparent">Azioni</div>
-</div>
-
+        <div>Etichetta</div>
+        <div>Tipologia</div>
+        <div>Quantità</div>
+        <div>Formato (L)</div>
+        <div>Grad. %</div>
+        <div>Prezzo</div>
+        <div>Valuta</div>
+        <div>Peso netto bottiglia (kg)</div>
+        <div>Peso lordo bottiglia (kg)</div>
+        <div className="select-none text-transparent">Azioni</div>
+      </div>
 
       {/* RIGHE */}
       <div className="space-y-3">
@@ -353,9 +377,7 @@ export default function PackingListVino({ value, onChange, files, onFiles }: Pro
         })}
 
         {rows.length === 0 && (
-          <div className="text-sm text-slate-500">
-            Nessuna riga. Aggiungi una riga per iniziare.
-          </div>
+          <div className="text-sm text-slate-500">Nessuna riga. Aggiungi una riga per iniziare.</div>
         )}
       </div>
     </div>
