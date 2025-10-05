@@ -35,13 +35,11 @@ type SuccessInfo = {
   destinatario: Party;
 };
 
-// messaggio usato per la validazione P.IVA/CF destinatario (B2B/Sample)
 const DEST_PIVA_MSG =
   'Per le spedizioni vino di tipo B2B o Sample è obbligatoria la Partita IVA / Codice Fiscale del destinatario.';
 
-// ---------- UTIL: parsing del Place (nuove API) ----------
+// ---------- UTIL: parsing Place (nuove API) ----------
 function parsePlace(place: any) {
-  // Le nuove API espongono addressComponents[].types + ...Text; le legacy address_components[].long_name
   const get = (t: string) =>
     place?.addressComponents?.find((c: any) => c.types?.includes(t)) ||
     place?.address_components?.find?.((c: any) => c.types?.includes(t));
@@ -71,7 +69,6 @@ export default function NuovaVinoPage() {
   const [mittente, setMittente] = useState<Party>(blankParty);
   const [destinatario, setDestinatario] = useState<Party>(blankParty);
 
-  // Prefill mittente da UTENTI (Airtable)
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -90,10 +87,8 @@ export default function NuovaVinoPage() {
   ]);
   const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
   const [contenuto, setContenuto] = useState<string>('');
-
   const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
   const [ritiroNote, setRitiroNote] = useState('');
-
   const [incoterm, setIncoterm] = useState<'DAP' | 'DDP' | 'EXW'>('DAP');
   const [valuta, setValuta] = useState<'EUR' | 'USD' | 'GBP'>('EUR');
   const [noteFatt, setNoteFatt] = useState('');
@@ -102,7 +97,6 @@ export default function NuovaVinoPage() {
   const [sameAsDest, setSameAsDest] = useState(false);
   const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined);
 
-  // ▼▼ FIX: aggiunta tipologia nella riga PL iniziale ▼▼
   const [pl, setPl] = useState<RigaPL[]>([
     {
       etichetta: '',
@@ -123,14 +117,12 @@ export default function NuovaVinoPage() {
   const [success, setSuccess] = useState<SuccessInfo | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
 
-  // se ho errori scorro su
   useEffect(() => {
     if (errors.length && topRef.current) {
       topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [errors.length]);
 
-  // ✅ pulizia automatica del messaggio P.IVA destinatario quando passo a B2C
   useEffect(() => {
     if (tipoSped === 'B2C') {
       setErrors(prev => prev.filter(msg => msg !== DEST_PIVA_MSG));
@@ -174,11 +166,10 @@ export default function NuovaVinoPage() {
     }
   }
 
-  // --- Validazioni aggiuntive richieste ---
   function isPhoneValid(raw?: string) {
     if (!raw) return false;
     const v = raw.replace(/\s+/g, '');
-    return /^\+?[1-9]\d{6,14}$/.test(v); // E.164-like
+    return /^\+?[1-9]\d{6,14}$/.test(v);
   }
 
   function validatePLConditional(rows: RigaPL[] | undefined): string[] {
@@ -211,33 +202,19 @@ export default function NuovaVinoPage() {
 
   function validate(): string[] {
     const errs: string[] = [];
-
-    // ✅ Telefoni obbligatori (mittente e destinatario)
     if (!isPhoneValid(mittente.telefono)) errs.push('Telefono mittente obbligatorio in formato internazionale (es. +393201441789).');
     if (!isPhoneValid(destinatario.telefono)) errs.push('Telefono destinatario obbligatorio in formato internazionale.');
-
-    // ✅ CF/P.IVA DESTINATARIO solo per B2B e Sample (non B2C)
     if ((tipoSped === 'B2B' || tipoSped === 'Sample') && !destinatario.piva?.trim()) {
       errs.push(DEST_PIVA_MSG);
     }
-
-    // ✅ P.IVA/CF Mittente
     if (!mittente.piva?.trim()) errs.push('Partita IVA/Codice Fiscale del mittente mancante.');
-
-    // ✅ Colli completi e > 0
     colli.forEach((c, i) => {
       const miss = c.lunghezza_cm == null || c.larghezza_cm == null || c.altezza_cm == null || c.peso_kg == null;
       const nonPos = (c.lunghezza_cm ?? 0) <= 0 || (c.larghezza_cm ?? 0) <= 0 || (c.altezza_cm ?? 0) <= 0 || (c.peso_kg ?? 0) <= 0;
       if (miss || nonPos) errs.push(`Collo #${i + 1}: inserire tutte le misure e un peso > 0.`);
     });
-
-    // ✅ Data ritiro
     if (!ritiroData) errs.push('Seleziona il giorno di ritiro.');
-
-    // ✅ Packing list condizionale (OBBLIGATORIA)
     errs.push(...validatePLConditional(pl));
-
-    // ✅ Dati fattura se non allego file
     if (!fatturaFile) {
       const fatt = sameAsDest ? destinatario : fatturazione;
       if (!fatt.ragioneSociale?.trim()) errs.push('Dati fattura: ragione sociale mancante.');
@@ -245,13 +222,11 @@ export default function NuovaVinoPage() {
         errs.push('Dati fattura: P.IVA/CF obbligatoria per B2B e Campionatura.');
       }
     }
-
     return errs;
   }
 
   const salva = async () => {
     if (saving) return;
-
     const v = validate();
     if (v.length) {
       setErrors(v);
@@ -259,7 +234,6 @@ export default function NuovaVinoPage() {
     } else {
       setErrors([]);
     }
-
     setSaving(true);
     try {
       const payload = {
@@ -286,7 +260,6 @@ export default function NuovaVinoPage() {
       const res = await postSpedizione(payload, getIdToken);
       await uploadAndAttach(res.id);
       try { await postSpedizioneNotify(res.id, getIdToken); } catch {}
-
       const idSped = await fetchIdSpedizione(res.id);
 
       setSuccess({
@@ -312,22 +285,13 @@ export default function NuovaVinoPage() {
     }
   };
 
-  // ---------- AUTOCOMPLETE sui campi originali ----------
-  // wrapper per poter cercare gli input indirizzo dentro le card
-  const mittenteCardRef = useRef<HTMLDivElement | null>(null);
-  const destinatarioCardRef = useRef<HTMLDivElement | null>(null);
-
-  // collega il web component gmpx-place-autocomplete a un input esistente
+  // ---------- AUTOCOMPLETE (aggancio affidabile via data-gmaps) ----------
   const attachAutocomplete = useCallback((input: HTMLInputElement, who: 'mittente' | 'destinatario') => {
     if (!input) return;
 
-    // id stabile richiesto da "for"
-    if (!input.id) input.id = `${who}-indirizzo-input`;
-
-    // evita doppio attach
+    if (!input.id) input.id = `input-indirizzo-${who}`;
     if (document.querySelector(`gmpx-place-autocomplete[for="${input.id}"]`)) return;
 
-    // crea il web component "headless" (non crea un input nuovo)
     const el = document.createElement('gmpx-place-autocomplete');
     el.setAttribute('for', input.id);
     el.setAttribute(
@@ -340,15 +304,13 @@ export default function NuovaVinoPage() {
       }),
     );
 
-    // inserisci accanto all'input
-    input.parentElement?.appendChild(el);
+    document.body.appendChild(el);
+    (el.style as any).zIndex = '9999';
 
-    // quando cambia il place selezionato
     el.addEventListener('gmpx-placechange', () => {
-      // @ts-ignore - value è esposto dal web component
+      // @ts-ignore
       const place = el.value || el.getAttribute('value');
       if (!place) return;
-
       const { via, city, province, postalCode, country } = parsePlace(place);
 
       if (who === 'mittente') {
@@ -371,26 +333,24 @@ export default function NuovaVinoPage() {
     });
   }, []);
 
-  // dopo il render, trova gli input "indirizzo" e attacca l'autocomplete
   useEffect(() => {
-    const sel = 'input[name*="indirizzo" i], input[autocomplete="street-address"]';
-
-    const mittInput = mittenteCardRef.current?.querySelector<HTMLInputElement>(sel) || undefined;
-    const destInput = destinatarioCardRef.current?.querySelector<HTMLInputElement>(sel) || undefined;
-
     const ready = () => (window as any).google && customElements.get('gmpx-place-autocomplete');
 
-    if (ready()) {
+    const tryAttach = () => {
+      const mittInput = document.querySelector<HTMLInputElement>('input[data-gmaps="indirizzo-mittente"]');
+      const destInput = document.querySelector<HTMLInputElement>('input[data-gmaps="indirizzo-destinatario"]');
       if (mittInput) attachAutocomplete(mittInput, 'mittente');
       if (destInput) attachAutocomplete(destInput, 'destinatario');
+    };
+
+    if (ready()) {
+      tryAttach();
       return;
     }
-
     const int = window.setInterval(() => {
       if (ready()) {
         window.clearInterval(int);
-        if (mittInput) attachAutocomplete(mittInput, 'mittente');
-        if (destInput) attachAutocomplete(destInput, 'destinatario');
+        tryAttach();
       }
     }, 250);
     return () => window.clearInterval(int);
@@ -486,17 +446,17 @@ export default function NuovaVinoPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        {/* --- MITTENTE (input originali) --- */}
-        <div ref={mittenteCardRef} className="rounded-2xl border bg-white p-4">
-          <PartyCard title="Mittente" value={mittente} onChange={setMittente} />
+        {/* MITTENTE */}
+        <div className="rounded-2xl border bg-white p-4">
+          <PartyCard title="Mittente" value={mittente} onChange={setMittente} gmapsTag="mittente" />
         </div>
-
-        {/* --- DESTINATARIO (input originali) --- */}
-        <div ref={destinatarioCardRef} className="rounded-2xl border bg-white p-4">
+        {/* DESTINATARIO */}
+        <div className="rounded-2xl border bg-white p-4">
           <PartyCard
             title="Destinatario"
             value={destinatario}
             onChange={setDestinatario}
+            gmapsTag="destinatario"
             extraSwitch={{
               label: 'Destinatario abilitato all’import',
               checked: destAbilitato,
