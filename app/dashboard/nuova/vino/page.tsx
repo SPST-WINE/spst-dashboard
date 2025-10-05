@@ -307,250 +307,337 @@ export default function NuovaVinoPage() {
   // AUTOCOMPLETE (Places "New" via REST) – nessun campo nuovo, dropdown custom
   // =====================================================================
 
-  const GMAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY as string;
-  const GMAPS_LANG = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_LANGUAGE || 'it') as string;
-  const GMAPS_REGION = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_REGION || 'IT') as string;
+ // ===================== AUTOCOMPLETE (Places New, REST) — DEBUG MODE =====================
+const GMAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY as string;
+const GMAPS_LANG = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_LANGUAGE || 'it') as string;
+const GMAPS_REGION = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_REGION || 'IT') as string;
 
-  type Suggestion = { id: string; main: string; secondary: string };
+const DEBUG_AC = true;
+const log = {
+  info: (...a: any[]) => DEBUG_AC && console.info('[AC]', ...a),
+  warn: (...a: any[]) => DEBUG_AC && console.warn('[AC]', ...a),
+  error: (...a: any[]) => DEBUG_AC && console.error('[AC]', ...a),
+  group: (title: string) => DEBUG_AC && console.groupCollapsed(`🧭 ${title}`),
+  groupEnd: () => DEBUG_AC && console.groupEnd(),
+};
 
-  function ensureAutocompleteStyles() {
-    if (document.getElementById('spst-gmaps-autocomplete-css')) return;
-    const st = document.createElement('style');
-    st.id = 'spst-gmaps-autocomplete-css';
-    st.textContent = `
-      .spst-ac-list{position:absolute; z-index:9999; background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.08); width:100%; max-height:260px; overflow:auto;}
-      .spst-ac-item{padding:.6rem .75rem; cursor:pointer; line-height:1.2; font-size:14px; display:flex; flex-direction:column; gap:2px}
-      .spst-ac-item:hover, .spst-ac-item[aria-selected="true"]{background:#f8fafc}
-      .spst-ac-main{font-weight:600; color:#0f172a}
-      .spst-ac-sec{font-size:12px; color:#64748b}
-    `;
-    document.head.appendChild(st);
+// css per il menu
+function ensureAutocompleteStyles() {
+  if (document.getElementById('spst-gmaps-autocomplete-css')) return;
+  const st = document.createElement('style');
+  st.id = 'spst-gmaps-autocomplete-css';
+  st.textContent = `
+    .spst-ac-list{position:absolute; z-index:9999; background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.08); width:100%; max-height:260px; overflow:auto;}
+    .spst-ac-item{padding:.6rem .75rem; cursor:pointer; line-height:1.2; font-size:14px; display:flex; flex-direction:column; gap:2px}
+    .spst-ac-item:hover, .spst-ac-item[aria-selected="true"]{background:#f8fafc}
+    .spst-ac-main{font-weight:600; color:#0f172a}
+    .spst-ac-sec{font-size:12px; color:#64748b}
+  `;
+  document.head.appendChild(st);
+}
+
+type Suggestion = { id: string; main: string; secondary: string };
+
+function createListEl(anchor: HTMLInputElement) {
+  const wrap = document.createElement('div');
+  wrap.className = 'spst-ac-list';
+  const place = () => {
+    const r = anchor.getBoundingClientRect();
+    wrap.style.left = `${window.scrollX + r.left}px`;
+    wrap.style.top  = `${window.scrollY + r.bottom + 4}px`;
+    wrap.style.width= `${r.width}px`;
+  };
+  place();
+  window.addEventListener('scroll', place, true);
+  window.addEventListener('resize', place);
+  (wrap as any)._cleanup = () => {
+    window.removeEventListener('scroll', place, true);
+    window.removeEventListener('resize', place);
+    wrap.remove();
+  };
+  document.body.appendChild(wrap);
+  return wrap;
+}
+
+function newSessionToken() {
+  return (crypto as any).randomUUID ? (crypto as any).randomUUID() : `${Date.now()}_${Math.random()}`;
+}
+
+// --- chiamate REST con log dettagliati
+async function fetchSuggestions(input: string, sessionToken: string): Promise<Suggestion[]> {
+  if (!GMAPS_API_KEY) {
+    log.warn('Manca NEXT_PUBLIC_GOOGLE_MAPS_API_KEY');
+    return [];
   }
+  const url = 'https://places.googleapis.com/v1/places:autocomplete';
+  const body = {
+    input,
+    languageCode: GMAPS_LANG,
+    regionCode: GMAPS_REGION,
+    sessionToken,
+    includedPrimaryTypes: ['street_address', 'premise', 'route', 'subpremise'],
+    includedRegionCodes: [GMAPS_REGION],
+  };
 
-  function createListEl(anchor: HTMLInputElement) {
-    const wrap = document.createElement('div');
-    wrap.className = 'spst-ac-list';
-    const place = () => {
-      const r = anchor.getBoundingClientRect();
-      wrap.style.left = `${window.scrollX + r.left}px`;
-      wrap.style.top = `${window.scrollY + r.bottom + 4}px`;
-      wrap.style.width = `${r.width}px`;
-    };
-    place();
-    window.addEventListener('scroll', place, true);
-    window.addEventListener('resize', place);
-    (wrap as any)._cleanup = () => {
-      window.removeEventListener('scroll', place, true);
-      window.removeEventListener('resize', place);
-      wrap.remove();
-    };
-    document.body.appendChild(wrap);
-    return wrap;
-  }
-
-  function newSessionToken() {
-    return (crypto as any).randomUUID ? (crypto as any).randomUUID() : `${Date.now()}_${Math.random()}`;
-  }
-
-  async function fetchSuggestions(input: string, sessionToken: string): Promise<Suggestion[]> {
-    if (!GMAPS_API_KEY) return [];
-    const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+  log.group('Autocomplete → request');
+  console.log('POST', url, body);
+  console.time('autocomplete');
+  let resp: Response | null = null;
+  try {
+    resp = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': GMAPS_API_KEY,
         'X-Goog-FieldMask': 'suggestions.placePrediction.placeId,suggestions.placePrediction.structuredFormat',
       },
-      body: JSON.stringify({
-        input,
-        languageCode: GMAPS_LANG,
-        regionCode: GMAPS_REGION,
-        sessionToken,
-        includedPrimaryTypes: ['street_address', 'premise', 'route', 'subpremise'],
-        includedRegionCodes: [GMAPS_REGION],
-      }),
+      body: JSON.stringify(body),
     });
-    const j = await res.json();
-    const arr = (j?.suggestions || []) as any[];
-    return arr
-      .map((s) => {
-        const pred = s.placePrediction || {};
-        const fmt = pred.structuredFormat || {};
-        return {
-          id: pred.placeId,
-          main: fmt.mainText?.text || '',
-          secondary: fmt.secondaryText?.text || '',
-        } as Suggestion;
-      })
-      .filter((s: Suggestion) => !!s.id && (!!s.main || !!s.secondary));
+  } catch (e) {
+    console.timeEnd('autocomplete');
+    log.error('Network error suggestions:', e);
+    log.groupEnd();
+    return [];
+  }
+  console.timeEnd('autocomplete');
+
+  // status e headers utili
+  console.log('status:', resp.status, resp.statusText);
+  console.log('x-cache?', resp.headers.get('x-cache') || '(n/a)');
+  let j: any;
+  try {
+    j = await resp.json();
+  } catch (e) {
+    log.error('JSON parse error (suggestions):', e);
+    log.groupEnd();
+    return [];
+  }
+  // errori API
+  if (!resp.ok || j?.error) {
+    log.error('API error (suggestions):', j?.error || j);
+    log.groupEnd();
+    return [];
   }
 
-  async function fetchPlaceDetails(placeId: string, sessionToken?: string) {
-    const url = new URL(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`);
-    url.searchParams.set('languageCode', GMAPS_LANG);
-    url.searchParams.set('regionCode', GMAPS_REGION);
-    if (sessionToken) url.searchParams.set('sessionToken', sessionToken);
-    const res = await fetch(url.toString(), {
+  const arr = (j?.suggestions || []) as any[];
+  const out = arr.map((s) => {
+    const pred = s.placePrediction || {};
+    const fmt  = pred.structuredFormat || {};
+    return {
+      id: pred.placeId,
+      main: fmt.mainText?.text || '',
+      secondary: fmt.secondaryText?.text || '',
+    } as Suggestion;
+  }).filter(s => s.id && (s.main || s.secondary));
+
+  console.table(out);
+  log.groupEnd();
+  return out;
+}
+
+async function fetchPlaceDetails(placeId: string, sessionToken?: string) {
+  const url = new URL(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`);
+  url.searchParams.set('languageCode', GMAPS_LANG);
+  url.searchParams.set('regionCode', GMAPS_REGION);
+  if (sessionToken) url.searchParams.set('sessionToken', sessionToken);
+
+  log.group('Place Details → request');
+  console.log('GET', url.toString());
+  console.time('placeDetails');
+
+  let resp: Response | null = null;
+  try {
+    resp = await fetch(url.toString(), {
       headers: {
         'X-Goog-Api-Key': GMAPS_API_KEY,
         'X-Goog-FieldMask': 'id,formattedAddress,addressComponents,location',
       },
     });
-    return res.json();
+  } catch (e) {
+    console.timeEnd('placeDetails');
+    log.error('Network error details:', e);
+    log.groupEnd();
+    return null;
+  }
+  console.timeEnd('placeDetails');
+  console.log('status:', resp.status, resp.statusText);
+
+  let j: any;
+  try {
+    j = await resp.json();
+  } catch (e) {
+    log.error('JSON parse error (details):', e);
+    log.groupEnd();
+    return null;
+  }
+  if (!resp.ok || j?.error) {
+    log.error('API error (details):', j?.error || j);
+    log.groupEnd();
+    return null;
   }
 
-  function parseAddressFromDetails(d: any) {
-    const comps: any[] = d?.addressComponents || [];
-    const get = (type: string) =>
-      comps.find((c) => Array.isArray(c.types) && c.types.includes(type)) || null;
+  console.log('details:', j);
+  log.groupEnd();
+  return j;
+}
 
-    const country = get('country');
-    const locality = get('locality') || get('postal_town');
-    const admin2 = get('administrative_area_level_2');
-    const admin1 = get('administrative_area_level_1');
-    const postal = get('postal_code');
-    const route = get('route');
-    const streetNumber = get('street_number');
-    const premise = get('premise');
+// parsing dai details
+function parseAddressFromDetails(d: any) {
+  const comps: any[] = d?.addressComponents || [];
+  const get = (type: string) =>
+    comps.find((c) => Array.isArray(c.types) && c.types.includes(type)) || null;
 
-    const line = [route?.shortText || route?.longText, streetNumber?.shortText || streetNumber?.longText, premise?.longText]
-      .filter(Boolean)
-      .join(' ');
+  const country = get('country');
+  const locality = get('locality') || get('postal_town');
+  const admin2 = get('administrative_area_level_2');
+  const admin1 = get('administrative_area_level_1');
+  const postal  = get('postal_code');
+  const route   = get('route');
+  const streetNumber = get('street_number');
+  const premise = get('premise');
 
-    return {
-      indirizzo: line || d?.formattedAddress || '',
-      citta: locality?.longText || admin2?.longText || admin1?.longText || '',
-      cap: postal?.shortText || postal?.longText || '',
-      paese: country?.shortText || country?.longText || '',
-    };
-  }
+  const line = [route?.shortText || route?.longText, streetNumber?.shortText || streetNumber?.longText, premise?.longText]
+    .filter(Boolean).join(' ');
 
-  function attachPlacesToInput(
-    input: HTMLInputElement,
-    who: 'mittente' | 'destinatario',
-    onFill: (patch: Partial<Party>) => void
-  ) {
-    ensureAutocompleteStyles();
-    let listEl: HTMLDivElement | null = null;
-    let items: Suggestion[] = [];
-    let highlighted = -1;
-    let session = newSessionToken();
-    let debounce: number | undefined;
+  return {
+    indirizzo: line || d?.formattedAddress || '',
+    citta: locality?.longText || admin2?.longText || admin1?.longText || '',
+    cap: postal?.shortText || postal?.longText || '',
+    paese: country?.shortText || country?.longText || '',
+  };
+}
 
-    const close = () => {
-      if (listEl) {
-        (listEl as any)._cleanup?.();
-        listEl = null;
-      }
-      items = [];
-      highlighted = -1;
-    };
+// collega al singolo input con log
+function attachPlacesToInput(
+  input: HTMLInputElement,
+  who: 'mittente' | 'destinatario',
+  onFill: (patch: Partial<Party>) => void
+) {
+  ensureAutocompleteStyles();
+  log.info(`attach → ${who}`, input);
 
-    const render = () => {
-      if (!items.length) {
-        close();
-        return;
-      }
-      if (!listEl) listEl = createListEl(input);
-      listEl.innerHTML = '';
-      items.forEach((sug, i) => {
-        const item = document.createElement('div');
-        item.className = 'spst-ac-item';
-        item.setAttribute('role', 'option');
-        if (i === highlighted) item.setAttribute('aria-selected', 'true');
-        const main = document.createElement('div');
-        main.className = 'spst-ac-main';
-        main.textContent = sug.main || sug.secondary;
-        const sec = document.createElement('div');
-        sec.className = 'spst-ac-sec';
-        sec.textContent = sug.secondary || '';
-        item.appendChild(main);
-        if (sug.secondary) item.appendChild(sec);
-        item.addEventListener('mousedown', async (e) => {
-          e.preventDefault();
-          await choose(i);
-        });
-        listEl!.appendChild(item);
+  let listEl: HTMLDivElement | null = null;
+  let items: Suggestion[] = [];
+  let highlighted = -1;
+  let session = newSessionToken();
+  let debounce: number | undefined;
+
+  const close = () => {
+    if (listEl) {
+      (listEl as any)._cleanup?.();
+      listEl = null;
+    }
+    items = [];
+    highlighted = -1;
+  };
+
+  const render = () => {
+    if (!items.length) { close(); return; }
+    if (!listEl) listEl = createListEl(input);
+    listEl.innerHTML = '';
+    items.forEach((sug, i) => {
+      const item = document.createElement('div');
+      item.className = 'spst-ac-item';
+      item.setAttribute('role', 'option');
+      if (i === highlighted) item.setAttribute('aria-selected', 'true');
+      const main = document.createElement('div');
+      main.className = 'spst-ac-main';
+      main.textContent = sug.main || sug.secondary;
+      const sec = document.createElement('div');
+      sec.className = 'spst-ac-sec';
+      sec.textContent = sug.secondary || '';
+      item.append(main);
+      if (sug.secondary) item.append(sec);
+      item.addEventListener('mousedown', async (e) => {
+        e.preventDefault();
+        log.info('choose', sug);
+        await choose(i);
       });
-    };
+      listEl!.appendChild(item);
+    });
+  };
 
-    const choose = async (idx: number) => {
-      const sel = items[idx];
-      if (!sel) return;
-      close();
-      input.value = sel.main + (sel.secondary ? `, ${sel.secondary}` : '');
-      const details = await fetchPlaceDetails(sel.id, session);
-      session = newSessionToken();
-      const addr = parseAddressFromDetails(details);
-      onFill({
-        indirizzo: addr.indirizzo,
-        citta: addr.citta,
-        cap: addr.cap,
-        paese: addr.paese,
-      });
-    };
+  const choose = async (idx: number) => {
+    const sel = items[idx];
+    if (!sel) return;
+    close();
+    input.value = sel.main + (sel.secondary ? `, ${sel.secondary}` : '');
+    const details = await fetchPlaceDetails(sel.id, session);
+    session = newSessionToken();
+    if (!details) return;
+    const addr = parseAddressFromDetails(details);
+    log.info('fill →', who, addr);
+    onFill(addr);
+  };
 
-    const onInput = () => {
-      const q = input.value.trim();
-      window.clearTimeout(debounce);
-      if (!q) {
-        close();
-        return;
-      }
-      debounce = window.setTimeout(async () => {
-        try {
-          items = await fetchSuggestions(q, session);
-          highlighted = -1;
-          render();
-        } catch {
-          close();
-        }
-      }, 180);
-    };
-
-    const onKey = async (e: KeyboardEvent) => {
-      if (!items.length) return;
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        highlighted = (highlighted + 1) % items.length;
+  const onInput = () => {
+    const q = input.value.trim();
+    window.clearTimeout(debounce);
+    if (!q) { close(); return; }
+    debounce = window.setTimeout(async () => {
+      try {
+        items = await fetchSuggestions(q, session);
+        highlighted = -1;
         render();
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        highlighted = (highlighted - 1 + items.length) % items.length;
-        render();
-      } else if (e.key === 'Enter' && highlighted >= 0) {
-        e.preventDefault();
-        await choose(highlighted);
-      } else if (e.key === 'Escape') {
+      } catch (e) {
+        log.error('onInput fetchSuggestions error:', e);
         close();
       }
-    };
+    }, 180);
+  };
 
-    const onBlur = () => setTimeout(close, 120);
+  const onKey = async (e: KeyboardEvent) => {
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); highlighted = (highlighted + 1) % items.length; render(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); highlighted = (highlighted - 1 + items.length) % items.length; render(); }
+    else if (e.key === 'Enter' && highlighted >= 0) { e.preventDefault(); await choose(highlighted); }
+    else if (e.key === 'Escape') { close(); }
+  };
 
-    input.addEventListener('input', onInput);
-    input.addEventListener('keydown', onKey);
-    input.addEventListener('blur', onBlur);
+  const onBlur = () => setTimeout(close, 120);
 
-    return () => {
-      input.removeEventListener('input', onInput);
-      input.removeEventListener('keydown', onKey);
-      input.removeEventListener('blur', onBlur);
-      close();
-    };
-  }
+  input.addEventListener('input', onInput);
+  input.addEventListener('keydown', onKey);
+  input.addEventListener('blur', onBlur);
 
-  // Collega l'autocomplete REST ai due input indirizzo (PartyCard deve avere data-gmaps)
-  useEffect(() => {
-    const mitt = document.querySelector<HTMLInputElement>('input[data-gmaps="indirizzo-mittente"]');
-    const dest = document.querySelector<HTMLInputElement>('input[data-gmaps="indirizzo-destinatario"]');
+  return () => {
+    input.removeEventListener('input', onInput);
+    input.removeEventListener('keydown', onKey);
+    input.removeEventListener('blur', onBlur);
+    close();
+  };
+}
 
-    const cleanups: Array<() => void> = [];
-    if (mitt) cleanups.push(attachPlacesToInput(mitt, 'mittente', (patch) => setMittente((p) => ({ ...p, ...patch }))));
-    if (dest) cleanups.push(attachPlacesToInput(dest, 'destinatario', (patch) => setDestinatario((p) => ({ ...p, ...patch }))));
+// hook di aggancio con log iniziali
+useEffect(() => {
+  const mitt = document.querySelector<HTMLInputElement>('input[data-gmaps="indirizzo-mittente"]');
+  const dest = document.querySelector<HTMLInputElement>('input[data-gmaps="indirizzo-destinatario"]');
+  log.group('Bootstrap autocomplete');
+  log.info('API key present?', !!GMAPS_API_KEY);
+  log.info('mittente input found?', !!mitt);
+  log.info('destinatario input found?', !!dest);
+  log.groupEnd();
 
-    return () => cleanups.forEach((fn) => fn());
-  }, []);
+  const cleanups: Array<() => void> = [];
+  if (mitt) cleanups.push(attachPlacesToInput(mitt, 'mittente', (patch) => setMittente((p) => ({ ...p, ...patch }))));
+  if (dest) cleanups.push(attachPlacesToInput(dest, 'destinatario', (patch) => setDestinatario((p) => ({ ...p, ...patch }))));
+
+  // funzione di diagnostica richiamabile da console
+  (window as any).SPSTPlacesDiag = async (q = 'Viale Suzzani 10, Milano') => {
+    console.log('SPSTPlacesDiag → query:', q);
+    const token = newSessionToken();
+    const s = await fetchSuggestions(q, token);
+    console.table(s);
+    if (s[0]?.id) {
+      const d = await fetchPlaceDetails(s[0].id, token);
+      console.log('details for first suggestion:', d);
+    }
+  };
+
+  return () => cleanups.forEach((fn) => fn());
+}, []);
+// ===================== FINE DEBUG AUTOCOMPLETE =====================
+
   // ===================== FINE AUTOCOMPLETE REST =========================
 
   if (success) {
