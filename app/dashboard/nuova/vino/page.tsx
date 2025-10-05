@@ -1,7 +1,7 @@
 // app/dashboard/nuova/vino/page.tsx
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import PartyCard, { Party } from '@/components/nuova/PartyCard';
 import ColliCard, { Collo } from '@/components/nuova/ColliCard';
@@ -38,7 +38,7 @@ type SuccessInfo = {
 const DEST_PIVA_MSG =
   'Per le spedizioni vino di tipo B2B o Sample è obbligatoria la Partita IVA / Codice Fiscale del destinatario.';
 
-// ---------- UTIL: parsing Place (nuove API) ----------
+// ---------- UTIL (legacy parse usato altrove se serve) ----------
 function parsePlace(place: any) {
   const get = (t: string) =>
     place?.addressComponents?.find((c: any) => c.types?.includes(t)) ||
@@ -69,6 +69,7 @@ export default function NuovaVinoPage() {
   const [mittente, setMittente] = useState<Party>(blankParty);
   const [destinatario, setDestinatario] = useState<Party>(blankParty);
 
+  // Prefill mittente da UTENTI (Airtable)
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -87,8 +88,10 @@ export default function NuovaVinoPage() {
   ]);
   const [formato, setFormato] = useState<'Pacco' | 'Pallet'>('Pacco');
   const [contenuto, setContenuto] = useState<string>('');
+
   const [ritiroData, setRitiroData] = useState<Date | undefined>(undefined);
   const [ritiroNote, setRitiroNote] = useState('');
+
   const [incoterm, setIncoterm] = useState<'DAP' | 'DDP' | 'EXW'>('DAP');
   const [valuta, setValuta] = useState<'EUR' | 'USD' | 'GBP'>('EUR');
   const [noteFatt, setNoteFatt] = useState('');
@@ -97,6 +100,7 @@ export default function NuovaVinoPage() {
   const [sameAsDest, setSameAsDest] = useState(false);
   const [fatturaFile, setFatturaFile] = useState<File | undefined>(undefined);
 
+  // ▼▼ iniziale PL ▼▼
   const [pl, setPl] = useState<RigaPL[]>([
     {
       etichetta: '',
@@ -117,12 +121,14 @@ export default function NuovaVinoPage() {
   const [success, setSuccess] = useState<SuccessInfo | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
 
+  // se ho errori scorro su
   useEffect(() => {
     if (errors.length && topRef.current) {
       topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [errors.length]);
 
+  // pulizia automatica del messaggio P.IVA destinatario quando passo a B2C
   useEffect(() => {
     if (tipoSped === 'B2C') {
       setErrors(prev => prev.filter(msg => msg !== DEST_PIVA_MSG));
@@ -166,10 +172,11 @@ export default function NuovaVinoPage() {
     }
   }
 
+  // --- Validazioni aggiuntive ---
   function isPhoneValid(raw?: string) {
     if (!raw) return false;
     const v = raw.replace(/\s+/g, '');
-    return /^\+?[1-9]\d{6,14}$/.test(v);
+    return /^\+?[1-9]\d{6,14}$/.test(v); // E.164-like
   }
 
   function validatePLConditional(rows: RigaPL[] | undefined): string[] {
@@ -202,19 +209,26 @@ export default function NuovaVinoPage() {
 
   function validate(): string[] {
     const errs: string[] = [];
+
     if (!isPhoneValid(mittente.telefono)) errs.push('Telefono mittente obbligatorio in formato internazionale (es. +393201441789).');
     if (!isPhoneValid(destinatario.telefono)) errs.push('Telefono destinatario obbligatorio in formato internazionale.');
+
     if ((tipoSped === 'B2B' || tipoSped === 'Sample') && !destinatario.piva?.trim()) {
       errs.push(DEST_PIVA_MSG);
     }
+
     if (!mittente.piva?.trim()) errs.push('Partita IVA/Codice Fiscale del mittente mancante.');
+
     colli.forEach((c, i) => {
       const miss = c.lunghezza_cm == null || c.larghezza_cm == null || c.altezza_cm == null || c.peso_kg == null;
       const nonPos = (c.lunghezza_cm ?? 0) <= 0 || (c.larghezza_cm ?? 0) <= 0 || (c.altezza_cm ?? 0) <= 0 || (c.peso_kg ?? 0) <= 0;
       if (miss || nonPos) errs.push(`Collo #${i + 1}: inserire tutte le misure e un peso > 0.`);
     });
+
     if (!ritiroData) errs.push('Seleziona il giorno di ritiro.');
+
     errs.push(...validatePLConditional(pl));
+
     if (!fatturaFile) {
       const fatt = sameAsDest ? destinatario : fatturazione;
       if (!fatt.ragioneSociale?.trim()) errs.push('Dati fattura: ragione sociale mancante.');
@@ -222,11 +236,13 @@ export default function NuovaVinoPage() {
         errs.push('Dati fattura: P.IVA/CF obbligatoria per B2B e Campionatura.');
       }
     }
+
     return errs;
   }
 
   const salva = async () => {
     if (saving) return;
+
     const v = validate();
     if (v.length) {
       setErrors(v);
@@ -234,6 +250,7 @@ export default function NuovaVinoPage() {
     } else {
       setErrors([]);
     }
+
     setSaving(true);
     try {
       const payload = {
@@ -260,6 +277,7 @@ export default function NuovaVinoPage() {
       const res = await postSpedizione(payload, getIdToken);
       await uploadAndAttach(res.id);
       try { await postSpedizioneNotify(res.id, getIdToken); } catch {}
+
       const idSped = await fetchIdSpedizione(res.id);
 
       setSuccess({
@@ -285,77 +303,255 @@ export default function NuovaVinoPage() {
     }
   };
 
-  // ---------- AUTOCOMPLETE (aggancio affidabile via data-gmaps) ----------
-  const attachAutocomplete = useCallback((input: HTMLInputElement, who: 'mittente' | 'destinatario') => {
-    if (!input) return;
+  // =====================================================================
+  // AUTOCOMPLETE (Places "New" via REST) – nessun campo nuovo, dropdown custom
+  // =====================================================================
 
-    if (!input.id) input.id = `input-indirizzo-${who}`;
-    if (document.querySelector(`gmpx-place-autocomplete[for="${input.id}"]`)) return;
+  const GMAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY as string;
+  const GMAPS_LANG = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_LANGUAGE || 'it') as string;
+  const GMAPS_REGION = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_REGION || 'IT') as string;
 
-    const el = document.createElement('gmpx-place-autocomplete');
-    el.setAttribute('for', input.id);
-    el.setAttribute(
-      'autocompleteoptions',
-      JSON.stringify({
-        componentRestrictions: {
-          country: ['it', 'fr', 'de', 'es', 'gb', 'us', 'ca', 'at', 'be', 'nl', 'se', 'dk', 'fi', 'no', 'cz', 'sk', 'pl'],
-        },
-        fields: ['address_components', 'formatted_address', 'geometry'],
+  type Suggestion = { id: string; main: string; secondary: string };
+
+  function ensureAutocompleteStyles() {
+    if (document.getElementById('spst-gmaps-autocomplete-css')) return;
+    const st = document.createElement('style');
+    st.id = 'spst-gmaps-autocomplete-css';
+    st.textContent = `
+      .spst-ac-list{position:absolute; z-index:9999; background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.08); width:100%; max-height:260px; overflow:auto;}
+      .spst-ac-item{padding:.6rem .75rem; cursor:pointer; line-height:1.2; font-size:14px; display:flex; flex-direction:column; gap:2px}
+      .spst-ac-item:hover, .spst-ac-item[aria-selected="true"]{background:#f8fafc}
+      .spst-ac-main{font-weight:600; color:#0f172a}
+      .spst-ac-sec{font-size:12px; color:#64748b}
+    `;
+    document.head.appendChild(st);
+  }
+
+  function createListEl(anchor: HTMLInputElement) {
+    const wrap = document.createElement('div');
+    wrap.className = 'spst-ac-list';
+    const place = () => {
+      const r = anchor.getBoundingClientRect();
+      wrap.style.left = `${window.scrollX + r.left}px`;
+      wrap.style.top = `${window.scrollY + r.bottom + 4}px`;
+      wrap.style.width = `${r.width}px`;
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    (wrap as any)._cleanup = () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+      wrap.remove();
+    };
+    document.body.appendChild(wrap);
+    return wrap;
+  }
+
+  function newSessionToken() {
+    return (crypto as any).randomUUID ? (crypto as any).randomUUID() : `${Date.now()}_${Math.random()}`;
+  }
+
+  async function fetchSuggestions(input: string, sessionToken: string): Promise<Suggestion[]> {
+    if (!GMAPS_API_KEY) return [];
+    const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': GMAPS_API_KEY,
+        'X-Goog-FieldMask': 'suggestions.placePrediction.placeId,suggestions.placePrediction.structuredFormat',
+      },
+      body: JSON.stringify({
+        input,
+        languageCode: GMAPS_LANG,
+        regionCode: GMAPS_REGION,
+        sessionToken,
+        includedPrimaryTypes: ['street_address', 'premise', 'route', 'subpremise'],
+        includedRegionCodes: [GMAPS_REGION],
       }),
-    );
-
-    document.body.appendChild(el);
-    (el.style as any).zIndex = '9999';
-
-    el.addEventListener('gmpx-placechange', () => {
-      // @ts-ignore
-      const place = el.value || el.getAttribute('value');
-      if (!place) return;
-      const { via, city, province, postalCode, country } = parsePlace(place);
-
-      if (who === 'mittente') {
-        setMittente(prev => ({
-          ...prev,
-          indirizzo: via || prev.indirizzo,
-          citta: city || prev.citta,
-          cap: postalCode || prev.cap,
-          paese: country || prev.paese,
-        }));
-      } else {
-        setDestinatario(prev => ({
-          ...prev,
-          indirizzo: via || prev.indirizzo,
-          citta: city || prev.citta,
-          cap: postalCode || prev.cap,
-          paese: country || prev.paese,
-        }));
-      }
     });
-  }, []);
+    const j = await res.json();
+    const arr = (j?.suggestions || []) as any[];
+    return arr
+      .map((s) => {
+        const pred = s.placePrediction || {};
+        const fmt = pred.structuredFormat || {};
+        return {
+          id: pred.placeId,
+          main: fmt.mainText?.text || '',
+          secondary: fmt.secondaryText?.text || '',
+        } as Suggestion;
+      })
+      .filter((s: Suggestion) => !!s.id && (!!s.main || !!s.secondary));
+  }
 
-  useEffect(() => {
-    const ready = () => (window as any).google && customElements.get('gmpx-place-autocomplete');
+  async function fetchPlaceDetails(placeId: string, sessionToken?: string) {
+    const url = new URL(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`);
+    url.searchParams.set('languageCode', GMAPS_LANG);
+    url.searchParams.set('regionCode', GMAPS_REGION);
+    if (sessionToken) url.searchParams.set('sessionToken', sessionToken);
+    const res = await fetch(url.toString(), {
+      headers: {
+        'X-Goog-Api-Key': GMAPS_API_KEY,
+        'X-Goog-FieldMask': 'id,formattedAddress,addressComponents,location',
+      },
+    });
+    return res.json();
+  }
 
-    const tryAttach = () => {
-      const mittInput = document.querySelector<HTMLInputElement>('input[data-gmaps="indirizzo-mittente"]');
-      const destInput = document.querySelector<HTMLInputElement>('input[data-gmaps="indirizzo-destinatario"]');
-      if (mittInput) attachAutocomplete(mittInput, 'mittente');
-      if (destInput) attachAutocomplete(destInput, 'destinatario');
+  function parseAddressFromDetails(d: any) {
+    const comps: any[] = d?.addressComponents || [];
+    const get = (type: string) =>
+      comps.find((c) => Array.isArray(c.types) && c.types.includes(type)) || null;
+
+    const country = get('country');
+    const locality = get('locality') || get('postal_town');
+    const admin2 = get('administrative_area_level_2');
+    const admin1 = get('administrative_area_level_1');
+    const postal = get('postal_code');
+    const route = get('route');
+    const streetNumber = get('street_number');
+    const premise = get('premise');
+
+    const line = [route?.shortText || route?.longText, streetNumber?.shortText || streetNumber?.longText, premise?.longText]
+      .filter(Boolean)
+      .join(' ');
+
+    return {
+      indirizzo: line || d?.formattedAddress || '',
+      citta: locality?.longText || admin2?.longText || admin1?.longText || '',
+      cap: postal?.shortText || postal?.longText || '',
+      paese: country?.shortText || country?.longText || '',
+    };
+  }
+
+  function attachPlacesToInput(
+    input: HTMLInputElement,
+    who: 'mittente' | 'destinatario',
+    onFill: (patch: Partial<Party>) => void
+  ) {
+    ensureAutocompleteStyles();
+    let listEl: HTMLDivElement | null = null;
+    let items: Suggestion[] = [];
+    let highlighted = -1;
+    let session = newSessionToken();
+    let debounce: number | undefined;
+
+    const close = () => {
+      if (listEl) {
+        (listEl as any)._cleanup?.();
+        listEl = null;
+      }
+      items = [];
+      highlighted = -1;
     };
 
-    if (ready()) {
-      tryAttach();
-      return;
-    }
-    const int = window.setInterval(() => {
-      if (ready()) {
-        window.clearInterval(int);
-        tryAttach();
+    const render = () => {
+      if (!items.length) {
+        close();
+        return;
       }
-    }, 250);
-    return () => window.clearInterval(int);
-  }, [attachAutocomplete]);
-  // ---------- /AUTOCOMPLETE ----------
+      if (!listEl) listEl = createListEl(input);
+      listEl.innerHTML = '';
+      items.forEach((sug, i) => {
+        const item = document.createElement('div');
+        item.className = 'spst-ac-item';
+        item.setAttribute('role', 'option');
+        if (i === highlighted) item.setAttribute('aria-selected', 'true');
+        const main = document.createElement('div');
+        main.className = 'spst-ac-main';
+        main.textContent = sug.main || sug.secondary;
+        const sec = document.createElement('div');
+        sec.className = 'spst-ac-sec';
+        sec.textContent = sug.secondary || '';
+        item.appendChild(main);
+        if (sug.secondary) item.appendChild(sec);
+        item.addEventListener('mousedown', async (e) => {
+          e.preventDefault();
+          await choose(i);
+        });
+        listEl!.appendChild(item);
+      });
+    };
+
+    const choose = async (idx: number) => {
+      const sel = items[idx];
+      if (!sel) return;
+      close();
+      input.value = sel.main + (sel.secondary ? `, ${sel.secondary}` : '');
+      const details = await fetchPlaceDetails(sel.id, session);
+      session = newSessionToken();
+      const addr = parseAddressFromDetails(details);
+      onFill({
+        indirizzo: addr.indirizzo,
+        citta: addr.citta,
+        cap: addr.cap,
+        paese: addr.paese,
+      });
+    };
+
+    const onInput = () => {
+      const q = input.value.trim();
+      window.clearTimeout(debounce);
+      if (!q) {
+        close();
+        return;
+      }
+      debounce = window.setTimeout(async () => {
+        try {
+          items = await fetchSuggestions(q, session);
+          highlighted = -1;
+          render();
+        } catch {
+          close();
+        }
+      }, 180);
+    };
+
+    const onKey = async (e: KeyboardEvent) => {
+      if (!items.length) return;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        highlighted = (highlighted + 1) % items.length;
+        render();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        highlighted = (highlighted - 1 + items.length) % items.length;
+        render();
+      } else if (e.key === 'Enter' && highlighted >= 0) {
+        e.preventDefault();
+        await choose(highlighted);
+      } else if (e.key === 'Escape') {
+        close();
+      }
+    };
+
+    const onBlur = () => setTimeout(close, 120);
+
+    input.addEventListener('input', onInput);
+    input.addEventListener('keydown', onKey);
+    input.addEventListener('blur', onBlur);
+
+    return () => {
+      input.removeEventListener('input', onInput);
+      input.removeEventListener('keydown', onKey);
+      input.removeEventListener('blur', onBlur);
+      close();
+    };
+  }
+
+  // Collega l'autocomplete REST ai due input indirizzo (PartyCard deve avere data-gmaps)
+  useEffect(() => {
+    const mitt = document.querySelector<HTMLInputElement>('input[data-gmaps="indirizzo-mittente"]');
+    const dest = document.querySelector<HTMLInputElement>('input[data-gmaps="indirizzo-destinatario"]');
+
+    const cleanups: Array<() => void> = [];
+    if (mitt) cleanups.push(attachPlacesToInput(mitt, 'mittente', (patch) => setMittente((p) => ({ ...p, ...patch }))));
+    if (dest) cleanups.push(attachPlacesToInput(dest, 'destinatario', (patch) => setDestinatario((p) => ({ ...p, ...patch }))));
+
+    return () => cleanups.forEach((fn) => fn());
+  }, []);
+  // ===================== FINE AUTOCOMPLETE REST =========================
 
   if (success) {
     const INFO_URL = process.env.NEXT_PUBLIC_INFO_URL || '/dashboard/informazioni-utili';
@@ -450,6 +646,7 @@ export default function NuovaVinoPage() {
         <div className="rounded-2xl border bg-white p-4">
           <PartyCard title="Mittente" value={mittente} onChange={setMittente} gmapsTag="mittente" />
         </div>
+
         {/* DESTINATARIO */}
         <div className="rounded-2xl border bg-white p-4">
           <PartyCard
