@@ -1,7 +1,7 @@
 // app/dashboard/nuova/altro/page.tsx
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import PartyCard, { Party } from '@/components/nuova/PartyCard';
 import ColliCard, { Collo } from '@/components/nuova/ColliCard';
@@ -17,17 +17,9 @@ import {
 import { getIdToken } from '@/lib/firebase-client-auth';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-const blankParty: Party = {
-  ragioneSociale: '',
-  referente: '',
-  paese: '',
-  citta: '',
-  cap: '',
-  indirizzo: '',
-  telefono: '',
-  piva: '',
-};
-
+// ------------------------------------------------------------
+// Costanti / tipi
+// ------------------------------------------------------------
 type SuccessInfo = {
   recId: string;
   idSped: string; // ID Spedizione "umano"
@@ -39,6 +31,150 @@ type SuccessInfo = {
   destinatario: Party;
 };
 
+type Suggestion = { id: string; main: string; secondary?: string };
+
+const GMAPS_LANG = process.env.NEXT_PUBLIC_GOOGLE_MAPS_LANGUAGE || 'it';
+const GMAPS_REGION = process.env.NEXT_PUBLIC_GOOGLE_MAPS_REGION || 'IT';
+
+const blankParty: Party = {
+  ragioneSociale: '',
+  referente: '',
+  paese: '',
+  citta: '',
+  cap: '',
+  indirizzo: '',
+  telefono: '',
+  piva: '',
+};
+
+const log = {
+  info: (...a: any[]) => console.log('%c[AC]', 'color:#1c3e5e', ...a),
+  warn: (...a: any[]) => console.warn('[AC]', ...a),
+  error: (...a: any[]) => console.error('[AC]', ...a),
+  group: (label: string) => console.groupCollapsed(`%c${label}`, 'color:#555'),
+  groupEnd: () => console.groupEnd(),
+};
+
+// ------------------------------------------------------------
+// Chiamate proxy Places (niente CORS/referrer)
+// ------------------------------------------------------------
+async function fetchSuggestions(input: string, sessionToken: string): Promise<Suggestion[]> {
+  const res = await fetch('/api/places/autocomplete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      input,
+      languageCode: GMAPS_LANG,
+      sessionToken,
+    }),
+  });
+
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || j?.error) {
+    console.error('[AC] autocomplete proxy error:', j?.error || j);
+    return [];
+  }
+
+  const arr = (j?.suggestions || []) as any[];
+  return arr
+    .map((s: any) => {
+      const pred = s.placePrediction || {};
+      const fmt = pred.structuredFormat || {};
+      return {
+        id: pred.placeId,
+        main: fmt?.mainText?.text || '',
+        secondary: fmt?.secondaryText?.text || '',
+      } as Suggestion;
+    })
+    .filter((s: Suggestion) => !!s.id && (!!s.main || !!s.secondary));
+}
+
+async function fetchPlaceDetails(placeId: string, sessionToken?: string) {
+  const params = new URLSearchParams({
+    placeId,
+    languageCode: GMAPS_LANG,
+    regionCode: GMAPS_REGION,
+  });
+  if (sessionToken) params.set('sessionToken', sessionToken);
+
+  const res = await fetch(`/api/places/details?${params.toString()}`);
+  const j = await res.json().catch(() => null);
+
+  if (!res.ok || (j as any)?.error) {
+    console.error('[AC] details proxy error:', (j as any)?.error || j);
+    return null;
+  }
+  return j;
+}
+
+// Reverse geocoding per fallback CAP
+async function fetchPostalCodeByLatLng(lat: number, lng: number, lang = 'it'): Promise<string> {
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lng: String(lng),
+    language: lang,
+  });
+  const res = await fetch(`/api/geo/reverse?${params.toString()}`);
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j) return '';
+
+  const search = (arr: any[]) => {
+    for (const r of arr || []) {
+      const c = (r.address_components || []).find((x: any) =>
+        Array.isArray(x.types) && x.types.includes('postal_code'),
+      );
+      if (c) return c.long_name || c.short_name || '';
+    }
+    return '';
+  };
+
+  return search(j.results) || '';
+}
+
+// ------------------------------------------------------------
+// Parsing indirizzo da Place Details
+// ------------------------------------------------------------
+function parseAddressFromDetails(d: any) {
+  const comps: any[] = d?.addressComponents || [];
+  const get = (type: string) =>
+    comps.find((c) => Array.isArray(c.types) && c.types.includes(type)) || null;
+
+  const country = get('country');
+  const locality = get('locality') || get('postal_town');
+  const admin2 = get('administrative_area_level_2');
+  const admin1 = get('administrative_area_level_1');
+  const postal = get('postal_code');
+  const route = get('route');
+  const streetNr = get('street_number');
+  const premise = get('premise');
+
+  // ✅ nome paese esteso (in italiano)
+  const countryName =
+    country?.longText || country?.long_name || country?.name || country?.shortText || '';
+
+  const line = [
+    route?.shortText || route?.longText || route?.short_name || route?.long_name,
+    streetNr?.shortText || streetNr?.longText || streetNr?.short_name || streetNr?.long_name,
+    premise?.longText || premise?.long_name,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return {
+    indirizzo: line || d?.formattedAddress || '',
+    citta: locality?.longText || locality?.long_name || admin2?.longText || admin1?.longText || '',
+    cap: postal?.shortText || postal?.longText || postal?.short_name || postal?.long_name || '',
+    paese: countryName || '',
+  };
+}
+
+function newSessionToken() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+// ------------------------------------------------------------
+// Pagina
+// ------------------------------------------------------------
 export default function NuovaAltroPage() {
   const router = useRouter();
 
@@ -57,7 +193,7 @@ export default function NuovaAltroPage() {
       try {
         const r = await getUserProfile(getIdToken);
         if (!cancelled && r?.ok && r?.party) {
-          setMittente(prev => ({ ...prev, ...r.party }));
+          setMittente((prev) => ({ ...prev, ...r.party }));
         }
       } catch {}
     })();
@@ -122,11 +258,11 @@ export default function NuovaAltroPage() {
     await postSpedizioneAttachments(
       spedId,
       { fattura: [{ url, filename: fatturaFile.name }] },
-      getIdToken
+      getIdToken,
     );
   }
 
-  // Validazione client
+  // Validazione client (come prima)
   function validate(): string[] {
     const errs: string[] = [];
 
@@ -191,7 +327,6 @@ export default function NuovaAltroPage() {
         fattDelega: delega,
         fatturaFileName: fatturaFile?.name || null,
         colli,
-        // nessuna packingList
       };
 
       // 1) Crea spedizione
@@ -228,13 +363,230 @@ export default function NuovaAltroPage() {
     }
   };
 
+  // ------------------------------------------------------------
+  // Autocomplete: menu custom sugli input esistenti
+  // ------------------------------------------------------------
+  const attachPlacesToInput = useCallback(
+    (input: HTMLInputElement, who: 'mittente' | 'destinatario') => {
+      if (!input || (input as any).__acAttached) return;
+      (input as any).__acAttached = true;
+
+      let session = newSessionToken();
+      let items: Suggestion[] = [];
+      let open = false;
+      let activeIndex = -1;
+
+      // dropdown
+      const dd = document.createElement('div');
+      dd.className = 'spst-ac-dd';
+      dd.style.cssText = [
+        'position:absolute',
+        'z-index:9999',
+        'background:#fff',
+        'border:1px solid #e2e8f0',
+        'border-radius:10px',
+        'box-shadow:0 8px 24px rgba(0,0,0,0.08)',
+        'padding:6px',
+        'display:none',
+      ].join(';');
+      const ul = document.createElement('ul');
+      ul.style.listStyle = 'none';
+      ul.style.margin = '0';
+      ul.style.padding = '0';
+      ul.style.maxHeight = '260px';
+      ul.style.overflowY = 'auto';
+      dd.appendChild(ul);
+      document.body.appendChild(dd);
+
+      const positionDD = () => {
+        const r = input.getBoundingClientRect();
+        dd.style.left = `${Math.round(r.left + window.scrollX)}px`;
+        dd.style.top = `${Math.round(r.bottom + window.scrollY + 6)}px`;
+        dd.style.width = `${Math.round(r.width)}px`;
+      };
+
+      const close = () => {
+        dd.style.display = 'none';
+        open = false;
+        activeIndex = -1;
+        ul.innerHTML = '';
+      };
+
+      const render = () => {
+        ul.innerHTML = '';
+        if (!items.length) {
+          const li = document.createElement('li');
+          li.textContent = 'Nessun suggerimento';
+          li.style.padding = '8px 10px';
+          li.style.color = '#8a8a8a';
+          ul.appendChild(li);
+          return;
+        }
+        items.forEach((s, i) => {
+          const li = document.createElement('li');
+          li.style.padding = '8px 10px';
+          li.style.borderRadius = '8px';
+          li.style.cursor = 'pointer';
+          li.onmouseenter = () => {
+            activeIndex = i;
+            highlight();
+          };
+          li.onclick = () => choose(i);
+          const main = document.createElement('div');
+          main.textContent = s.main;
+          main.style.fontWeight = '600';
+          main.style.fontSize = '13px';
+          const sec = document.createElement('div');
+          sec.textContent = s.secondary || '';
+          sec.style.fontSize = '12px';
+          sec.style.color = '#6b7280';
+          li.append(main, sec);
+          ul.appendChild(li);
+        });
+      };
+
+      const highlight = () => {
+        Array.from(ul.children).forEach((el, i) => {
+          (el as HTMLElement).style.background = i === activeIndex ? '#f1f5f9' : 'transparent';
+        });
+      };
+
+      const openMenu = () => {
+        positionDD();
+        dd.style.display = 'block';
+        open = true;
+        highlight();
+      };
+
+      const choose = async (idx: number) => {
+        const sel = items[idx];
+        if (!sel) return;
+        close();
+        input.value = sel.main + (sel.secondary ? `, ${sel.secondary}` : '');
+        const details = await fetchPlaceDetails(sel.id, session);
+        session = newSessionToken();
+        if (!details) return;
+
+        // parse base
+        const addr = parseAddressFromDetails(details);
+
+        // fallback CAP via reverse geocoding se mancante ma ho lat/lng
+        const lat = details?.location?.latitude;
+        const lng = details?.location?.longitude;
+        if (!addr.cap && typeof lat === 'number' && typeof lng === 'number') {
+          try {
+            const cap = await fetchPostalCodeByLatLng(lat, lng, GMAPS_LANG);
+            if (cap) addr.cap = cap;
+          } catch {}
+        }
+
+        log.info('fill →', who, addr);
+        if (who === 'mittente') {
+          setMittente((prev) => ({ ...prev, ...addr }));
+        } else {
+          setDestinatario((prev) => ({ ...prev, ...addr }));
+        }
+      };
+
+      const onInput = async () => {
+        const q = input.value.trim();
+        if (q.length < 3) {
+          close();
+          return;
+        }
+        log.group('Autocomplete → request');
+        log.info('query:', q);
+        items = await fetchSuggestions(q, session);
+        log.groupEnd();
+        render();
+        openMenu();
+      };
+
+      const onKey = (e: KeyboardEvent) => {
+        if (!open) return;
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          activeIndex = Math.min(activeIndex + 1, Math.max(items.length - 1, 0));
+          highlight();
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          activeIndex = Math.max(activeIndex - 1, 0);
+          highlight();
+        } else if (e.key === 'Enter' && activeIndex >= 0) {
+          e.preventDefault();
+          choose(activeIndex);
+        } else if (e.key === 'Escape') {
+          close();
+        }
+      };
+
+      const onBlur = () => {
+        setTimeout(() => {
+          if (!dd.contains(document.activeElement)) close();
+        }, 120);
+      };
+
+      const onResizeScroll = () => {
+        if (open) positionDD();
+      };
+
+      input.addEventListener('input', onInput);
+      input.addEventListener('keydown', onKey);
+      input.addEventListener('blur', onBlur);
+      window.addEventListener('resize', onResizeScroll);
+      window.addEventListener('scroll', onResizeScroll, true);
+
+      // cleanup
+      (input as any).__acDetach = () => {
+        input.removeEventListener('input', onInput);
+        input.removeEventListener('keydown', onKey);
+        input.removeEventListener('blur', onBlur);
+        window.removeEventListener('resize', onResizeScroll);
+        window.removeEventListener('scroll', onResizeScroll, true);
+        dd.remove();
+      };
+
+      log.info('attach →', who, input);
+    },
+    [],
+  );
+
+  // Aggancia agli input "Indirizzo" tramite data-gmaps impostato da PartyCard
+  useEffect(() => {
+    log.info('🧭 Bootstrap autocomplete');
+
+    const attachAll = () => {
+      const mitt = document.querySelector<HTMLInputElement>('input[data-gmaps="indirizzo-mittente"]');
+      const dest = document.querySelector<HTMLInputElement>('input[data-gmaps="indirizzo-destinatario"]');
+      if (mitt) attachPlacesToInput(mitt, 'mittente');
+      if (dest) attachPlacesToInput(dest, 'destinatario');
+    };
+
+    attachAll();
+
+    const mo = new MutationObserver(() => attachAll());
+    mo.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      mo.disconnect();
+      document
+        .querySelectorAll<HTMLInputElement>('input[data-gmaps="indirizzo-mittente"],input[data-gmaps="indirizzo-destinatario"]')
+        .forEach((el) => {
+          const d: any = el as any;
+          if (d.__acDetach) d.__acDetach();
+        });
+    };
+  }, [attachPlacesToInput]);
+
+  // ------------------------------------------------------------
   // UI success
+  // ------------------------------------------------------------
   if (success) {
     const INFO_URL = process.env.NEXT_PUBLIC_INFO_URL || '/dashboard/informazioni-utili';
     const WHATSAPP_URL_BASE =
       process.env.NEXT_PUBLIC_WHATSAPP_URL || 'https://wa.me/message/CP62RMFFDNZPO1';
     const whatsappHref = `${WHATSAPP_URL_BASE}?text=${encodeURIComponent(
-      `Ciao SPST, ho bisogno di supporto sulla spedizione ${success.idSped}`
+      `Ciao SPST, ho bisogno di supporto sulla spedizione ${success.idSped}`,
     )}`;
 
     return (
@@ -255,8 +607,7 @@ export default function NuovaAltroPage() {
               <span className="text-slate-500">Incoterm:</span> {success.incoterm}
             </div>
             <div>
-              <span className="text-slate-500">Data ritiro:</span>{' '}
-              {success.dataRitiro ?? '—'}
+              <span className="text-slate-500">Data ritiro:</span> {success.dataRitiro ?? '—'}
             </div>
             <div>
               <span className="text-slate-500">Colli:</span> {success.colli} ({success.formato})
@@ -305,7 +656,9 @@ export default function NuovaAltroPage() {
     );
   }
 
+  // ------------------------------------------------------------
   // UI form
+  // ------------------------------------------------------------
   return (
     <div className="space-y-4" ref={topRef}>
       <h2 className="text-lg font-semibold">Nuova spedizione — altro</h2>
@@ -335,17 +688,24 @@ export default function NuovaAltroPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <PartyCard title="Mittente" value={mittente} onChange={setMittente} />
-        <PartyCard
-          title="Destinatario"
-          value={destinatario}
-          onChange={setDestinatario}
-          extraSwitch={{
-            label: 'Destinatario abilitato all’import',
-            checked: destAbilitato,
-            onChange: setDestAbilitato,
-          }}
-        />
+        {/* MITTENTE */}
+        <div className="rounded-2xl border bg-white p-4">
+          <PartyCard title="Mittente" value={mittente} onChange={setMittente} gmapsTag="mittente" />
+        </div>
+        {/* DESTINATARIO */}
+        <div className="rounded-2xl border bg-white p-4">
+          <PartyCard
+            title="Destinatario"
+            value={destinatario}
+            onChange={setDestinatario}
+            gmapsTag="destinatario"
+            extraSwitch={{
+              label: 'Destinatario abilitato all’import',
+              checked: destAbilitato,
+              onChange: setDestAbilitato,
+            }}
+          />
+        </div>
       </div>
 
       {/* Nessuna Packing List qui */}
@@ -359,12 +719,7 @@ export default function NuovaAltroPage() {
         setContenuto={setContenuto}
       />
 
-      <RitiroCard
-        date={ritiroData}
-        setDate={setRitiroData}
-        note={ritiroNote}
-        setNote={setRitiroNote}
-      />
+      <RitiroCard date={ritiroData} setDate={setRitiroData} note={ritiroNote} setNote={setRitiroNote} />
 
       <FatturaCard
         incoterm={incoterm}
