@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 
 export async function GET(req: Request) {
-  const API_KEY = process.env.GOOGLE_MAPS_API_KEY; // chiave server-side
+  const API_KEY = process.env.GOOGLE_MAPS_API_KEY;
   if (!API_KEY) {
     return NextResponse.json({ error: 'Missing GOOGLE_MAPS_API_KEY' }, { status: 500 });
   }
@@ -10,8 +10,10 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const placeId = searchParams.get('placeId');
   const sessionToken = searchParams.get('sessionToken') || '';
-  const languageCode = searchParams.get('languageCode') || (process.env.NEXT_PUBLIC_GOOGLE_MAPS_LANGUAGE || 'it');
-  const regionCode = searchParams.get('regionCode') || (process.env.NEXT_PUBLIC_GOOGLE_MAPS_REGION || 'IT');
+  const languageCode =
+    searchParams.get('languageCode') || process.env.NEXT_PUBLIC_GOOGLE_MAPS_LANGUAGE || 'it';
+  const regionCode =
+    searchParams.get('regionCode') || process.env.NEXT_PUBLIC_GOOGLE_MAPS_REGION || 'IT';
 
   if (!placeId) {
     return NextResponse.json({ error: 'Missing placeId' }, { status: 400 });
@@ -26,6 +28,8 @@ export async function GET(req: Request) {
     headers: {
       'X-Goog-Api-Key': API_KEY,
       'X-Goog-FieldMask': 'id,formattedAddress,addressComponents,location',
+      // ✅ stesso workaround referrer
+      'Referer': process.env.NEXT_PUBLIC_SITE_ORIGIN || 'https://app.spst.it',
     },
   });
 
