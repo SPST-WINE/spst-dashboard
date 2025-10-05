@@ -13,6 +13,9 @@ import { postSpedizione, postSpedizioneAttachments, postSpedizioneNotify, ApiErr
 import { getIdToken } from '@/lib/firebase-client-auth';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
+// ✅ Autocomplete Google Places per indirizzi
+import AddressAutocomplete from '@/components/nuova/AddressAutocomplete';
+
 const blankParty: Party = {
   ragioneSociale: '',
   referente: '',
@@ -377,18 +380,63 @@ export default function NuovaVinoPage() {
         />
       </div>
 
+      {/* --- MITTENTE + autocomplete --- */}
       <div className="grid gap-4 md:grid-cols-2">
-        <PartyCard title="Mittente" value={mittente} onChange={setMittente} />
-        <PartyCard
-          title="Destinatario"
-          value={destinatario}
-          onChange={setDestinatario}
-          extraSwitch={{
-            label: 'Destinatario abilitato all’import',
-            checked: destAbilitato,
-            onChange: setDestAbilitato,
-          }}
-        />
+        <div className="space-y-2 rounded-2xl border bg-white p-4">
+          <PartyCard title="Mittente" value={mittente} onChange={setMittente} />
+          <div className="mt-2">
+            <label className="block text-sm text-slate-600 mb-1">Indirizzo mittente (autocomplete)</label>
+            <AddressAutocomplete
+              id="mittente-autocomplete"
+              placeholder="Scrivi l'indirizzo completo"
+              className="w-full rounded-lg border px-3 py-2"
+              defaultValue={mittente.indirizzo}
+              onSelect={(addr) => {
+                const via = [addr.street, addr.streetNumber].filter(Boolean).join(' ');
+                setMittente(prev => ({
+                  ...prev,
+                  indirizzo: via,
+                  cap: addr.postalCode || '',
+                  citta: addr.city || '',
+                  paese: addr.country || '',
+                }));
+              }}
+            />
+          </div>
+        </div>
+
+        {/* --- DESTINATARIO + autocomplete --- */}
+        <div className="space-y-2 rounded-2xl border bg-white p-4">
+          <PartyCard
+            title="Destinatario"
+            value={destinatario}
+            onChange={setDestinatario}
+            extraSwitch={{
+              label: 'Destinatario abilitato all’import',
+              checked: destAbilitato,
+              onChange: setDestAbilitato,
+            }}
+          />
+          <div className="mt-2">
+            <label className="block text-sm text-slate-600 mb-1">Indirizzo destinatario (autocomplete)</label>
+            <AddressAutocomplete
+              id="destinatario-autocomplete"
+              placeholder="Scrivi l'indirizzo completo"
+              className="w-full rounded-lg border px-3 py-2"
+              defaultValue={destinatario.indirizzo}
+              onSelect={(addr) => {
+                const via = [addr.street, addr.streetNumber].filter(Boolean).join(' ');
+                setDestinatario(prev => ({
+                  ...prev,
+                  indirizzo: via,
+                  cap: addr.postalCode || '',
+                  citta: addr.city || '',
+                  paese: addr.country || '',
+                }));
+              }}
+            />
+          </div>
+        </div>
       </div>
 
       <PackingListVino value={pl} onChange={setPl} files={plFiles} onFiles={setPlFiles} />
@@ -430,8 +478,8 @@ export default function NuovaVinoPage() {
           aria-busy={saving}
           className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
         >
-        {saving && <span className="inline-block h-4 w-4 animate-spin rounded-full border border-slate-400 border-t-transparent" />}
-        {saving ? 'Salvataggio…' : 'Salva'}
+          {saving && <span className="inline-block h-4 w-4 animate-spin rounded-full border border-slate-400 border-t-transparent" />}
+          {saving ? 'Salvataggio…' : 'Salva'}
         </button>
       </div>
     </div>
