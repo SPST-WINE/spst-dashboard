@@ -11,13 +11,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <AppTopbar />
         <main className="px-8 py-6">{children}</main>
 
-        {/* Google Maps / Places script, caricato una volta per tutta la dashboard */}
+        {/* Maps JavaScript + Places, con loading=async */}
         <Script
-          src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places&language=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_LANGUAGE || "it"}&region=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_REGION || "IT"}`}
+          src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places&language=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_LANGUAGE || "it"}&region=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_REGION || "IT"}&loading=async`}
+          strategy="afterInteractive"
+        />
+
+        {/* Libreria dei Web Components (Place Autocomplete Element) */}
+        <Script
+          src="https://unpkg.com/@googlemaps/extended-component-library@0.6/dist/index.min.js"
           strategy="afterInteractive"
         />
       </div>
     </div>
   );
 }
-
