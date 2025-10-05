@@ -383,122 +383,59 @@ export default function NuovaVinoPage() {
       : `${Date.now()}_${Math.random()}`;
   }
 
-  // fetch suggestions — parametri "rilassati" + log
-  async function fetchSuggestions(input: string, sessionToken: string): Promise<Suggestion[]> {
-    if (!GMAPS_API_KEY) {
-      log.warn('Manca NEXT_PUBLIC_GOOGLE_MAPS_API_KEY');
-      return [];
-    }
-    const url = 'https://places.googleapis.com/v1/places:autocomplete';
-    const body: any = {
+// === CLIENT → BACKEND PROXY (Next.js) ================================
+// Sostituisci interamente le due funzioni seguenti
+
+async function fetchSuggestions(input: string, sessionToken: string): Promise<Suggestion[]> {
+  const res = await fetch('/api/places/autocomplete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
       input,
-      languageCode: GMAPS_LANG,
+      languageCode: process.env.NEXT_PUBLIC_GOOGLE_MAPS_LANGUAGE || 'it',
       sessionToken,
-      includedPrimaryTypes: ['street_address', 'premise', 'route', 'subpremise'],
-      // hint (non vincolante) verso Italia
-      locationBias: {
-        circle: { center: { latitude: 41.87194, longitude: 12.56738 }, radius: 600000 },
-      },
-    };
+    }),
+  });
 
-    log.group('Autocomplete → request');
-    console.log('POST', url, body);
-    console.time('autocomplete');
-    let resp: Response;
-    try {
-      resp = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': GMAPS_API_KEY,
-          'X-Goog-FieldMask':
-            'suggestions.placePrediction.placeId,suggestions.placePrediction.structuredFormat',
-        },
-        body: JSON.stringify(body),
-      });
-    } catch (e) {
-      console.timeEnd('autocomplete');
-      log.error('Network error suggestions:', e);
-      log.groupEnd();
-      return [];
-    }
-    console.timeEnd('autocomplete');
-
-    let j: any;
-    try {
-      j = await resp.json();
-    } catch (e) {
-      log.error('JSON parse error (suggestions):', e);
-      log.groupEnd();
-      return [];
-    }
-
-    if (!resp.ok || j?.error) {
-      log.error('API error (suggestions):', j?.error || j);
-      log.groupEnd();
-      return [];
-    }
-
-    const arr = (j?.suggestions || []) as any[];
-    const out = arr
-      .map((s) => {
-        const pred = s.placePrediction || {};
-        const fmt = pred.structuredFormat || {};
-        return {
-          id: pred.placeId,
-          main: fmt.mainText?.text || '',
-          secondary: fmt.secondaryText?.text || '',
-        } as Suggestion;
-      })
-      .filter((s: Suggestion) => !!s.id && (!!s.main || !!s.secondary));
-
-    console.log('[AC] suggestions count =', out.length);
-    if (out.length) console.table(out);
-    log.groupEnd();
-    return out;
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || j?.error) {
+    console.error('[AC] autocomplete proxy error:', j?.error || j);
+    return [];
   }
 
-  async function fetchPlaceDetails(placeId: string, sessionToken?: string) {
-    const url = new URL(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`);
-    url.searchParams.set('languageCode', GMAPS_LANG);
-    url.searchParams.set('regionCode', GMAPS_REGION);
-    if (sessionToken) url.searchParams.set('sessionToken', sessionToken);
+  const arr = (j?.suggestions || []) as any[];
+  return arr
+    .map((s: any) => {
+      const pred = s.placePrediction || {};
+      const fmt = pred.structuredFormat || {};
+      return {
+        id: pred.placeId,
+        main: fmt?.mainText?.text || '',
+        secondary: fmt?.secondaryText?.text || '',
+      } as Suggestion;
+    })
+    .filter((s: Suggestion) => !!s.id && (!!s.main || !!s.secondary));
+}
 
-    log.group('Place Details → request');
-    console.log('GET', url.toString());
-    let resp: Response;
-    try {
-      resp = await fetch(url.toString(), {
-        headers: {
-          'X-Goog-Api-Key': GMAPS_API_KEY,
-          'X-Goog-FieldMask': 'id,formattedAddress,addressComponents,location',
-        },
-      });
-    } catch (e) {
-      log.error('Network error details:', e);
-      log.groupEnd();
-      return null;
-    }
+async function fetchPlaceDetails(placeId: string, sessionToken?: string) {
+  const params = new URLSearchParams({
+    placeId,
+    languageCode: process.env.NEXT_PUBLIC_GOOGLE_MAPS_LANGUAGE || 'it',
+    regionCode: process.env.NEXT_PUBLIC_GOOGLE_MAPS_REGION || 'IT',
+  });
+  if (sessionToken) params.set('sessionToken', sessionToken);
 
-    let j: any;
-    try {
-      j = await resp.json();
-    } catch (e) {
-      log.error('JSON parse error (details):', e);
-      log.groupEnd();
-      return null;
-    }
+  const res = await fetch(`/api/places/details?${params.toString()}`);
+  const j = await res.json().catch(() => null);
 
-    if (!resp.ok || j?.error) {
-      log.error('API error (details):', j?.error || j);
-      log.groupEnd();
-      return null;
-    }
-
-    console.log('[AC] details ok');
-    log.groupEnd();
-    return j;
+  if (!res.ok || (j as any)?.error) {
+    console.error('[AC] details proxy error:', (j as any)?.error || j);
+    return null;
   }
+  return j;
+}
+// ====================================================================
+
 
   function parseAddressFromDetails(d: any) {
     const comps: any[] = d?.addressComponents || [];
