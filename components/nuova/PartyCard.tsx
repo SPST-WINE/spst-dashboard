@@ -26,13 +26,16 @@ type Props = {
     checked: boolean;
     onChange: (v: boolean) => void;
   };
+
+  /** 🔹 Usato per collegare Google Maps Autocomplete ("mittente" o "destinatario") */
+  gmapsTag?: 'mittente' | 'destinatario';
 };
 
 const ORANGE = '#f7911e';
 const inputCls =
   'w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-[#1c3e5e]';
 
-export default function PartyCard({ title, value, onChange, extraSwitch }: Props) {
+export default function PartyCard({ title, value, onChange, extraSwitch, gmapsTag }: Props) {
   const set = <K extends keyof Party,>(k: K, v: Party[K]) => onChange({ ...value, [k]: v });
 
   return (
@@ -88,12 +91,19 @@ export default function PartyCard({ title, value, onChange, extraSwitch }: Props
           value={value.telefono}
           onChange={(e) => set('telefono', e.target.value)}
         />
+
+        {/* 🔹 Indirizzo con supporto a Google Maps */}
         <input
           className={'md:col-span-2 ' + inputCls}
           placeholder="Indirizzo"
           value={value.indirizzo}
           onChange={(e) => set('indirizzo', e.target.value)}
+          // 👇 Attributi per l'autocomplete
+          data-gmaps={gmapsTag ? `indirizzo-${gmapsTag}` : undefined}
+          id={gmapsTag ? `input-indirizzo-${gmapsTag}` : undefined}
+          autoComplete="street-address"
         />
+
         <input
           className={'md:col-span-2 ' + inputCls}
           placeholder="Partita IVA / Codice Fiscale"
