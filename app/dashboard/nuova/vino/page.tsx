@@ -425,18 +425,18 @@ export default function NuovaVinoPage() {
       let activeIndex = -1;
 
       // crea dropdown
-      const dd = document.createElement('div');
-      dd.className = 'spst-ac-dd';
-      Object.assign(dd.style, {
-        position: 'absolute',
-        zIndex: 9999,
-        background: '#fff',
-        border: '1px solid #e2e8f0',
-        borderRadius: '10px',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
-        padding: '6px',
-        display: 'none',
-      } as CSSStyleDeclaration);
+     const dd = document.createElement('div');
+dd.className = 'spst-ac-dd';
+dd.style.cssText = [
+  'position:absolute',
+  'z-index:9999',
+  'background:#fff',
+  'border:1px solid #e2e8f0',
+  'border-radius:10px',
+  'box-shadow:0 8px 24px rgba(0,0,0,0.08)',
+  'padding:6px',
+  'display:none',
+].join(';');
       const ul = document.createElement('ul');
       ul.style.listStyle = 'none';
       ul.style.margin = '0';
