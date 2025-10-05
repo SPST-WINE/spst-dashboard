@@ -1,7 +1,7 @@
 // app/dashboard/nuova/vino/page.tsx
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import PartyCard, { Party } from '@/components/nuova/PartyCard';
 import ColliCard, { Collo } from '@/components/nuova/ColliCard';
@@ -12,9 +12,6 @@ import { Select } from '@/components/nuova/Field';
 import { postSpedizione, postSpedizioneAttachments, postSpedizioneNotify, ApiError, getUserProfile } from '@/lib/api';
 import { getIdToken } from '@/lib/firebase-client-auth';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-
-// ✅ Autocomplete Google Places per indirizzi
-import AddressAutocomplete from '@/components/nuova/AddressAutocomplete';
 
 const blankParty: Party = {
   ragioneSociale: '',
@@ -41,6 +38,29 @@ type SuccessInfo = {
 // messaggio usato per la validazione P.IVA/CF destinatario (B2B/Sample)
 const DEST_PIVA_MSG =
   'Per le spedizioni vino di tipo B2B o Sample è obbligatoria la Partita IVA / Codice Fiscale del destinatario.';
+
+// ---------- UTIL: parsing del Place (nuove API) ----------
+function parsePlace(place: any) {
+  // Le nuove API espongono addressComponents[].types + ...Text; le legacy address_components[].long_name
+  const get = (t: string) =>
+    place?.addressComponents?.find((c: any) => c.types?.includes(t)) ||
+    place?.address_components?.find?.((c: any) => c.types?.includes(t));
+
+  const street = get('route')?.longText || get('route')?.long_name || '';
+  const streetNumber = get('street_number')?.longText || get('street_number')?.long_name || '';
+  const city =
+    get('locality')?.longText || get('locality')?.long_name ||
+    get('postal_town')?.longText || get('postal_town')?.long_name ||
+    get('administrative_area_level_3')?.longText || get('administrative_area_level_3')?.long_name || '';
+  const province =
+    get('administrative_area_level_2')?.shortText || get('administrative_area_level_2')?.short_name ||
+    get('administrative_area_level_1')?.shortText || get('administrative_area_level_1')?.short_name || '';
+  const postalCode = get('postal_code')?.longText || get('postal_code')?.long_name || '';
+  const country = get('country')?.shortText || get('country')?.short_name || '';
+
+  const via = [street, streetNumber].filter(Boolean).join(' ');
+  return { via, city, province, postalCode, country };
+}
 
 export default function NuovaVinoPage() {
   const router = useRouter();
@@ -292,6 +312,91 @@ export default function NuovaVinoPage() {
     }
   };
 
+  // ---------- AUTOCOMPLETE sui campi originali ----------
+  // wrapper per poter cercare gli input indirizzo dentro le card
+  const mittenteCardRef = useRef<HTMLDivElement | null>(null);
+  const destinatarioCardRef = useRef<HTMLDivElement | null>(null);
+
+  // collega il web component gmpx-place-autocomplete a un input esistente
+  const attachAutocomplete = useCallback((input: HTMLInputElement, who: 'mittente' | 'destinatario') => {
+    if (!input) return;
+
+    // id stabile richiesto da "for"
+    if (!input.id) input.id = `${who}-indirizzo-input`;
+
+    // evita doppio attach
+    if (document.querySelector(`gmpx-place-autocomplete[for="${input.id}"]`)) return;
+
+    // crea il web component "headless" (non crea un input nuovo)
+    const el = document.createElement('gmpx-place-autocomplete');
+    el.setAttribute('for', input.id);
+    el.setAttribute(
+      'autocompleteoptions',
+      JSON.stringify({
+        componentRestrictions: {
+          country: ['it', 'fr', 'de', 'es', 'gb', 'us', 'ca', 'at', 'be', 'nl', 'se', 'dk', 'fi', 'no', 'cz', 'sk', 'pl'],
+        },
+        fields: ['address_components', 'formatted_address', 'geometry'],
+      }),
+    );
+
+    // inserisci accanto all'input
+    input.parentElement?.appendChild(el);
+
+    // quando cambia il place selezionato
+    el.addEventListener('gmpx-placechange', () => {
+      // @ts-ignore - value è esposto dal web component
+      const place = el.value || el.getAttribute('value');
+      if (!place) return;
+
+      const { via, city, province, postalCode, country } = parsePlace(place);
+
+      if (who === 'mittente') {
+        setMittente(prev => ({
+          ...prev,
+          indirizzo: via || prev.indirizzo,
+          citta: city || prev.citta,
+          cap: postalCode || prev.cap,
+          paese: country || prev.paese,
+        }));
+      } else {
+        setDestinatario(prev => ({
+          ...prev,
+          indirizzo: via || prev.indirizzo,
+          citta: city || prev.citta,
+          cap: postalCode || prev.cap,
+          paese: country || prev.paese,
+        }));
+      }
+    });
+  }, []);
+
+  // dopo il render, trova gli input "indirizzo" e attacca l'autocomplete
+  useEffect(() => {
+    const sel = 'input[name*="indirizzo" i], input[autocomplete="street-address"]';
+
+    const mittInput = mittenteCardRef.current?.querySelector<HTMLInputElement>(sel) || undefined;
+    const destInput = destinatarioCardRef.current?.querySelector<HTMLInputElement>(sel) || undefined;
+
+    const ready = () => (window as any).google && customElements.get('gmpx-place-autocomplete');
+
+    if (ready()) {
+      if (mittInput) attachAutocomplete(mittInput, 'mittente');
+      if (destInput) attachAutocomplete(destInput, 'destinatario');
+      return;
+    }
+
+    const int = window.setInterval(() => {
+      if (ready()) {
+        window.clearInterval(int);
+        if (mittInput) attachAutocomplete(mittInput, 'mittente');
+        if (destInput) attachAutocomplete(destInput, 'destinatario');
+      }
+    }, 250);
+    return () => window.clearInterval(int);
+  }, [attachAutocomplete]);
+  // ---------- /AUTOCOMPLETE ----------
+
   if (success) {
     const INFO_URL = process.env.NEXT_PUBLIC_INFO_URL || '/dashboard/informazioni-utili';
     const WHATSAPP_URL_BASE = process.env.NEXT_PUBLIC_WHATSAPP_URL || 'https://wa.me/message/CP62RMFFDNZPO1';
@@ -380,33 +485,14 @@ export default function NuovaVinoPage() {
         />
       </div>
 
-      {/* --- MITTENTE + autocomplete --- */}
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2 rounded-2xl border bg-white p-4">
+        {/* --- MITTENTE (input originali) --- */}
+        <div ref={mittenteCardRef} className="rounded-2xl border bg-white p-4">
           <PartyCard title="Mittente" value={mittente} onChange={setMittente} />
-          <div className="mt-2">
-            <label className="block text-sm text-slate-600 mb-1">Indirizzo mittente (autocomplete)</label>
-            <AddressAutocomplete
-              id="mittente-autocomplete"
-              placeholder="Scrivi l'indirizzo completo"
-              className="w-full rounded-lg border px-3 py-2"
-              defaultValue={mittente.indirizzo}
-              onSelect={(addr) => {
-                const via = [addr.street, addr.streetNumber].filter(Boolean).join(' ');
-                setMittente(prev => ({
-                  ...prev,
-                  indirizzo: via,
-                  cap: addr.postalCode || '',
-                  citta: addr.city || '',
-                  paese: addr.country || '',
-                }));
-              }}
-            />
-          </div>
         </div>
 
-        {/* --- DESTINATARIO + autocomplete --- */}
-        <div className="space-y-2 rounded-2xl border bg-white p-4">
+        {/* --- DESTINATARIO (input originali) --- */}
+        <div ref={destinatarioCardRef} className="rounded-2xl border bg-white p-4">
           <PartyCard
             title="Destinatario"
             value={destinatario}
@@ -417,25 +503,6 @@ export default function NuovaVinoPage() {
               onChange: setDestAbilitato,
             }}
           />
-          <div className="mt-2">
-            <label className="block text-sm text-slate-600 mb-1">Indirizzo destinatario (autocomplete)</label>
-            <AddressAutocomplete
-              id="destinatario-autocomplete"
-              placeholder="Scrivi l'indirizzo completo"
-              className="w-full rounded-lg border px-3 py-2"
-              defaultValue={destinatario.indirizzo}
-              onSelect={(addr) => {
-                const via = [addr.street, addr.streetNumber].filter(Boolean).join(' ');
-                setDestinatario(prev => ({
-                  ...prev,
-                  indirizzo: via,
-                  cap: addr.postalCode || '',
-                  citta: addr.city || '',
-                  paese: addr.country || '',
-                }));
-              }}
-            />
-          </div>
         </div>
       </div>
 
