@@ -73,7 +73,7 @@ export default function FatturaCard({
     <div className="rounded-2xl border bg-white p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold" style={{ color: ORANGE }}>
-          Dati fattura
+          Dati fattura (o dati del Broker Doganale di riferimento)
         </h3>
 
         <div className="flex items-center gap-3">
